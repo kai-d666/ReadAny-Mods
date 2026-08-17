@@ -59,7 +59,7 @@ export function buildAITranslationPrompt(
 
 /** 内置词典查词提示词模板（{targetLang}/{sourceLang} 为占位符，由 buildDictionaryPrompt 替换） */
 export const DEFAULT_DICTIONARY_PROMPT = `你是电子词典，为阅读器提供词典式释义。将用户给出的单词或短语用{targetLang}解释，输出格式：
-1. 首行：音标（能确定时用 /.../ 标注）和词性标注（n. / v. / adj. / adv. 等）；动词变形或复数等先给出原形。
+1. 首行：词性标注（n. / v. / adj. / adv. 等）；动词变形或复数等先给出原形。
 2. 义项按 1. 2. 3. 编号分行列出，每行一个 {targetLang} 释义，常用义在前；如需语境判断，按输入所带语境解释。
 3. 主要义项各附一句简短例句（原文 + {targetLang} 译文），例句不超过 12 个词。
 4. 仅输出词条内容，禁止开场白、注释、来源说明或任何额外信息；内容紧凑、准确。`;
@@ -78,6 +78,17 @@ export function buildDictionaryPrompt(
   return tpl;
 }
 
+/** Extra request options for AI translation (dictionary mode tunes these) */
+export interface AITranslateOptions {
+  /** Custom system prompt; replaces the default translation prompt when set */
+  systemPrompt?: string;
+  temperature?: number;
+  topP?: number;
+  /** Repetition penalty — supported by DeepSeek / most OpenAI-compatible APIs */
+  repetitionPenalty?: number;
+  maxTokens?: number;
+}
+
 /** AI Translation - uses OpenAI-compatible API */
 export async function aiTranslate(
   texts: string[],
@@ -87,7 +98,7 @@ export async function aiTranslate(
   baseUrl: string,
   model: string,
   useExactRequestUrl = false,
-  systemPrompt?: string,
+  options: AITranslateOptions = {},
 ): Promise<string[]> {
   const requestUrl = buildOpenAICompatibleUrl(
     baseUrl,
@@ -103,8 +114,20 @@ export async function aiTranslate(
   }
 
   // Custom system prompt (e.g. dictionary mode) replaces the default translation prompt
-  const prompt = systemPrompt ?? buildAITranslationPrompt(sourceLang, targetLang);
-  console.log("[aiTranslate] systemPrompt provided:", !!systemPrompt, "prompt:", prompt.slice(0, 80));
+  const prompt = options.systemPrompt ?? buildAITranslationPrompt(sourceLang, targetLang);
+  console.log(
+    "[aiTranslate] systemPrompt provided:",
+    !!options.systemPrompt,
+    "prompt:",
+    prompt.slice(0, 80),
+    "opts:",
+    JSON.stringify({
+      temperature: options.temperature,
+      topP: options.topP,
+      repetitionPenalty: options.repetitionPenalty,
+      maxTokens: options.maxTokens,
+    }),
+  );
 
   // For single text, use simple translation
   if (texts.length === 1) {
@@ -120,8 +143,12 @@ export async function aiTranslate(
           },
           { role: "user", content: texts[0] },
         ],
-        temperature: 0.3,
-        max_tokens: 2048,
+        temperature: options.temperature ?? 0.3,
+        ...(options.topP !== undefined ? { top_p: options.topP } : {}),
+        ...(options.repetitionPenalty !== undefined
+          ? { repetition_penalty: options.repetitionPenalty }
+          : {}),
+        max_tokens: options.maxTokens ?? 2048,
       }),
     });
 
@@ -152,8 +179,12 @@ export async function aiTranslate(
               },
               { role: "user", content: text },
             ],
-            temperature: 0.3,
-            max_tokens: 2048,
+            temperature: options.temperature ?? 0.3,
+            ...(options.topP !== undefined ? { top_p: options.topP } : {}),
+            ...(options.repetitionPenalty !== undefined
+              ? { repetition_penalty: options.repetitionPenalty }
+              : {}),
+            max_tokens: options.maxTokens ?? 2048,
           }),
         });
         if (!response.ok) {

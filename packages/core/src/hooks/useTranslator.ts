@@ -112,6 +112,15 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
             }
           }
 
+          const dictionaryTuned =
+            mode === "dictionary"
+              ? {
+                  temperature: 0.2,
+                  topP: 0.8,
+                  repetitionPenalty: 1.1,
+                  maxTokens: 200,
+                }
+              : {};
           translatedTexts = await aiTranslate(
             needsTranslation.map((n) => n.text),
             sourceLang,
@@ -120,7 +129,10 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
             endpoint.baseUrl,
             model,
             endpoint.useExactRequestUrl || false,
-            systemPrompt,
+            {
+              systemPrompt,
+              ...dictionaryTuned,
+            },
           );
         } else if (providerId === "deepl") {
           const apiKey = translationConfig.provider.apiKey;
