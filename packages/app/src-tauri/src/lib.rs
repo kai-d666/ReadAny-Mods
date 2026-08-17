@@ -8,6 +8,12 @@ use std::sync::Mutex;
 use tauri::Manager;
 use vector::VectorDBState;
 
+/// Forward webview console output to stdout (dev terminal) for automated debugging.
+#[tauri::command]
+fn web_log(level: String, message: String) {
+    println!("[WEB:{level}] {message}");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -46,6 +52,7 @@ pub fn run() {
             vector::vector_reinit,
             vector::vector_shutdown,
             readany_cli::readany_cli_run,
+            web_log,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();

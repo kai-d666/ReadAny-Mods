@@ -11,13 +11,13 @@ import {
   type TranslationTargetLang,
   type TranslatorName,
 } from "@readany/core/types/translation";
-import { Check, ChevronDown, Copy, Languages, Loader2, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Languages, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface TranslationPopoverProps {
   text: string;
-  position: { x: number; y: number };
+  position: { x: number; y: number; top?: number; bottom?: number };
   onClose: () => void;
   /** Dictionary mode: uses the customizable dictionary prompt instead of the default translation prompt */
   dictionary?: boolean;
@@ -57,7 +57,11 @@ export function TranslationPopover({
     return p;
   }, [dictionary, translationConfig.dictionaryPrompt, targetLang, text]);
 
-  const { translate, loading, error, provider } = useTranslator({ targetLang, systemPrompt });
+  const { translate, loading, error, provider } = useTranslator({
+    targetLang,
+    systemPrompt,
+    mode: dictionary ? "dictionary" : "selection",
+  });
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,20 +90,27 @@ export function TranslationPopover({
       x = viewportWidth - halfWidth - PADDING;
     }
 
+    // Anchor with the word/selection's actual top and bottom edges so the
+    // popover never covers the highlighted content: when showing above, the
+    // popover's bottom edge sits just above the anchor top; when showing
+    // below, its top edge sits just below the anchor bottom.
+    const anchorTop = position.top ?? position.y;
+    const anchorBottom = position.bottom ?? position.y;
+
     // Calculate Y: prefer above selection, fallback to below
-    const spaceAbove = position.y - GAP;
-    const spaceBelow = viewportHeight - position.y - GAP;
+    const spaceAbove = anchorTop - GAP;
+    const spaceBelow = viewportHeight - anchorBottom - GAP;
 
     let y: number;
     let showAbove: boolean;
 
     if (spaceAbove >= popoverHeight) {
       // Enough space above - show above
-      y = position.y - GAP;
+      y = anchorTop - GAP;
       showAbove = true;
     } else if (spaceBelow >= popoverHeight) {
       // Not enough above, but enough below - show below
-      y = position.y + GAP;
+      y = anchorBottom + GAP;
       showAbove = false;
     } else {
       // Not enough space either way - use the side with more space
@@ -107,7 +118,7 @@ export function TranslationPopover({
         y = PADDING + popoverHeight;
         showAbove = true;
       } else {
-        y = position.y + GAP;
+        y = anchorBottom + GAP;
         // Clamp to bottom
         y = Math.min(y, viewportHeight - popoverHeight - PADDING);
         showAbove = false;
@@ -205,14 +216,20 @@ export function TranslationPopover({
     }
   };
 
-  // Get provider display name
+  // Get provider display name — must reflect the model actually used by this
+  // popover instance (dictionary mode reads dictionaryModel, normal mode
+  // selectionModel), showing the concrete model name rather than the endpoint.
   const aiConfig = useSettingsStore((s) => s.aiConfig);
-  const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
+  const sel = dictionary ? translationConfig.dictionaryModel : translationConfig.selectionModel;
+  const endpointId =
+    sel?.endpointId ||
+    translationConfig.provider.endpointId ||
+    aiConfig.activeEndpointId;
   const endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
   const providerLabel = TRANSLATOR_PROVIDERS.find((p) => p.id === provider);
   const providerName =
     provider === "ai"
-      ? endpoint?.name || "AI"
+      ? sel?.model || endpoint?.name || "AI"
       : providerLabel
         ? t(providerLabel.labelKey)
         : translationConfig.provider.name;
@@ -306,13 +323,6 @@ export function TranslationPopover({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
         </div>
 
         {/* Translation content */}

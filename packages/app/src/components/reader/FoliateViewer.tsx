@@ -758,6 +758,8 @@ export interface FoliateViewerHandle {
   goToCFI: (cfi: string) => Promise<void>;
   goToIndex: (index: number) => void;
   highlightCFITemporarily: (cfi: string, duration?: number) => void;
+  /** Clear any temporary native selection (long-press word lookup highlight) */
+  clearTemporarySelection: () => void;
   // biome-ignore lint: foliate-js annotation format
   addAnnotation: (annotation: any, remove?: boolean) => void;
   // biome-ignore lint: foliate-js annotation format
@@ -810,8 +812,8 @@ interface FoliateViewerProps {
   onSectionLoad?: (index: number) => void;
   onError?: (error: Error) => void;
   onSelection?: (selection: BookSelection | null) => void;
-  /** Long-press on a word: fired with the word text and its position in main-window coordinates */
-  onWordLookup?: (word: string, pos: { x: number; y: number }) => void;
+  /** Long-press on a word: fired with the word text and its position (incl. top/bottom edges) in main-window coordinates */
+  onWordLookup?: (word: string, pos: { x: number; y: number; top?: number; bottom?: number }) => void;
   onShowAnnotation?: (cfi: string, range: Range, index: number) => void;
   onToggleSearch?: () => void;
   onToggleToc?: () => void;
@@ -1676,6 +1678,17 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           };
 
           paintTemporaryHighlight(0);
+        },
+        clearTemporarySelection: () => {
+          const view = viewRef.current;
+          if (!view?.renderer) return;
+          try {
+            for (const content of view.renderer.getContents?.() ?? []) {
+              content.doc?.getSelection?.()?.removeAllRanges();
+            }
+          } catch {
+            // no-op
+          }
         },
         addAnnotation: (annotation: unknown, remove?: boolean) => {
           viewRef.current?.addAnnotation(annotation, remove);
@@ -2554,6 +2567,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           if (ev.button !== 0) return;
           longPressStart = { x: ev.clientX, y: ev.clientY };
           console.log("[LongPress] pointerdown", longPressStart);
+
+          // Notify the shell so open translation popovers can close on any
+          // click inside the reader content (iframe events don't bubble).
+          window.postMessage({ type: "iframe-pointerdown", bookKey }, "*");
           longPressTimer = setTimeout(() => {
             longPressTimer = null;
             console.log("[LongPress] timer fired");
@@ -2606,20 +2623,30 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             console.log("[LongPress] word:", word);
 
             // Convert iframe-local rect to main-window coordinates
-            // (same math as getSelectionFromView)
+            // (same math as getSelectionFromView). Include the word's top and
+            // bottom edges so the popover can avoid covering the highlighted word.
             const rect = range.getBoundingClientRect();
             const iframe = targetDoc.defaultView.frameElement as HTMLIFrameElement | null;
-            let pos: { x: number; y: number };
+            let pos: { x: number; y: number; top?: number; bottom?: number };
             if (iframe) {
               const r = iframe.getBoundingClientRect();
               const scaleX = iframe.clientWidth > 0 ? r.width / iframe.clientWidth : 1;
               const scaleY = iframe.clientHeight > 0 ? r.height / iframe.clientHeight : 1;
+              const top = r.top + rect.top * scaleY;
+              const bottom = r.top + (rect.top + rect.height) * scaleY;
               pos = {
                 x: r.left + (rect.left + rect.width / 2) * scaleX,
-                y: r.top + rect.top * scaleY,
+                y: top,
+                top,
+                bottom,
               };
             } else {
-              pos = { x: rect.left + rect.width / 2, y: rect.top };
+              pos = {
+                x: rect.left + rect.width / 2,
+                y: rect.top,
+                top: rect.top,
+                bottom: rect.top + rect.height,
+              };
             }
 
             longPressTriggered = true;
@@ -2629,6 +2656,16 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
               currentSelectionRange.current = null;
               onSelectionRef.current?.(null);
             }
+
+            // Highlight the word with the native text-selection style
+            try {
+              const sel = targetDoc.getSelection();
+              sel?.removeAllRanges();
+              sel?.addRange(range);
+            } catch {
+              // no-op: highlight is best-effort
+            }
+
             onWordLookupRef.current?.(word, pos);
           } catch {
             // Any failure silently aborts the long press

@@ -52,15 +52,9 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
 /** Searchable model list with filter input */
 function ModelSearchableList({
   models,
-  activeModel,
-  isEndpointActive,
-  onSelect,
   onRemove,
 }: {
   models: string[];
-  activeModel?: string;
-  isEndpointActive: boolean;
-  onSelect: (model: string) => void;
   onRemove: (model: string) => void;
 }) {
   const { t } = useTranslation();
@@ -68,16 +62,9 @@ function ModelSearchableList({
   const filtered = search.trim()
     ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase()))
     : models;
-  const currentActive = isEndpointActive ? activeModel : undefined;
 
   return (
     <div className="space-y-1.5">
-      {currentActive && models.includes(currentActive) && (
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground">{t("settings.ai_currentLabel")}:</span>
-          <span className="text-primary font-medium">{currentActive}</span>
-        </div>
-      )}
       <input
         type="text"
         className="w-full h-7 px-2.5 text-xs border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -89,30 +76,21 @@ function ModelSearchableList({
         {filtered.length === 0 ? (
           <div className="px-3 py-2 text-xs text-muted-foreground text-center">{t("settings.ai_noMatchingResults")}</div>
         ) : (
-          filtered.map((m) => {
-            const isActive = m === currentActive;
-            return (
-              <div
-                key={m}
-                className={`flex items-center justify-between px-2.5 py-1.5 text-xs border-b last:border-b-0 cursor-pointer hover:bg-muted/50 transition-colors ${isActive ? "bg-primary/5" : ""}`}
-                onClick={() => onSelect(m)}
-                onKeyDown={() => {}}
-                role="button"
-                tabIndex={0}
+          filtered.map((m) => (
+            <div
+              key={m}
+              className="flex items-center justify-between px-2.5 py-1.5 text-xs border-b last:border-b-0"
+            >
+              <span className="truncate text-foreground">{m}</span>
+              <button
+                type="button"
+                className="ml-2 text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                onClick={() => onRemove(m)}
               >
-                <span className={`truncate ${isActive ? "text-primary font-medium" : "text-foreground"}`}>
-                  {m}
-                </span>
-                <button
-                  type="button"
-                  className="ml-2 text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                  onClick={(e) => { e.stopPropagation(); onRemove(m); }}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))
         )}
       </div>
       <div className="text-[10px] text-muted-foreground">{t("settings.ai_totalModels", { count: models.length })}</div>
@@ -124,23 +102,17 @@ function EndpointCard({
   endpoint,
   isActive,
   isExpanded,
-  activeModel,
   onUpdate,
   onRemove,
   onFetchModels,
-  onSetActive,
-  onSetActiveModel,
   onToggleExpand,
 }: {
   endpoint: AIEndpoint;
   isActive: boolean;
   isExpanded: boolean;
-  activeModel?: string;
   onUpdate: (id: string, updates: Partial<AIEndpoint>) => void;
   onRemove: (id: string) => void;
   onFetchModels: (id: string) => void;
-  onSetActive: (id: string) => void;
-  onSetActiveModel: (model: string) => void;
   onToggleExpand: () => void;
 }) {
   const { t } = useTranslation();
@@ -257,19 +229,6 @@ function EndpointCard({
           </span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {!isActive && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSetActive(endpoint.id);
-              }}
-            >
-              {t("settings.ai_activeEndpoint")}
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="icon"
@@ -563,16 +522,7 @@ function EndpointCard({
 
             {/* Model list — searchable */}
             {endpoint.models.length > 0 ? (
-              <ModelSearchableList
-                models={endpoint.models}
-                activeModel={activeModel}
-                isEndpointActive={isActive}
-                onSelect={(m) => {
-                  onSetActive(endpoint.id);
-                  onSetActiveModel(m);
-                }}
-                onRemove={handleRemoveModel}
-              />
+              <ModelSearchableList models={endpoint.models} onRemove={handleRemoveModel} />
             ) : (
               <p className="text-xs text-muted-foreground">{t("settings.ai_noModels")}</p>
             )}
@@ -598,8 +548,6 @@ export function AISettings() {
 
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const activeEndpoint = aiConfig.endpoints.find((ep) => ep.id === aiConfig.activeEndpointId);
 
   const handleAddEndpoint = useCallback(() => {
     const defaultProvider: AIProviderType = "openai";
@@ -670,73 +618,15 @@ export function AISettings() {
               endpoint={ep}
               isActive={ep.id === aiConfig.activeEndpointId}
               isExpanded={expandedId === ep.id}
-              activeModel={aiConfig.activeModel}
               onUpdate={updateEndpoint}
               onRemove={removeEndpoint}
               onFetchModels={handleFetchModels}
-              onSetActive={setActiveEndpoint}
-              onSetActiveModel={setActiveModel}
               onToggleExpand={() => setExpandedId(expandedId === ep.id ? null : ep.id)}
             />
           ))}
         </div>
 
         {fetchError && <p className="mt-2 text-xs text-destructive">{fetchError}</p>}
-      </section>
-
-      {/* Active Model Selection */}
-      <section className="rounded-lg bg-muted/60 p-4">
-        <h2 className="mb-3 text-sm font-medium text-foreground">{t("settings.ai_activeModel")}</h2>
-
-        {/* Endpoint selector */}
-        {aiConfig.endpoints.length > 1 && (
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-muted-foreground">{t("settings.ai_activeEndpoint")}</span>
-            <Select value={aiConfig.activeEndpointId} onValueChange={setActiveEndpoint}>
-              <SelectTrigger className="w-[200px] h-8 text-sm">
-                <SelectValue placeholder={t("settings.ai_selectEndpoint")} />
-              </SelectTrigger>
-              <SelectContent>
-                {aiConfig.endpoints.map((ep) => (
-                  <SelectItem key={ep.id} value={ep.id}>
-                    {ep.name || ep.baseUrl}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        {/* Model selector */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">{t("settings.model")}</span>
-          {activeEndpoint && activeEndpoint.models.length > 0 ? (
-            <Select value={aiConfig.activeModel} onValueChange={setActiveModel}>
-              <SelectTrigger className="w-[260px] h-8 text-sm">
-                <SelectValue placeholder={t("settings.ai_selectModel")} />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                {activeEndpoint.models.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Input
-                value={aiConfig.activeModel}
-                onChange={(e) => setActiveModel(e.target.value)}
-                placeholder={t("settings.ai_selectModel")}
-                className="w-[260px] h-8 text-sm"
-              />
-            </div>
-          )}
-        </div>
-        {activeEndpoint && activeEndpoint.models.length === 0 && (
-          <p className="mt-2 text-xs text-muted-foreground">{t("settings.ai_noModels")}</p>
-        )}
       </section>
 
       {/* Parameters */}

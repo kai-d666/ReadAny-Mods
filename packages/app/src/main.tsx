@@ -142,11 +142,42 @@ i18nReady.then(() => {
   import("foliate-js/view.js").catch(() => {});
   import("foliate-js/paginator.js").catch(() => {});
 
-  // Forward webview console output to the Rust logger (terminal) for easy debugging
-  import("@tauri-apps/plugin-log")
-    .then(({ attachConsole }) => attachConsole())
+  // Forward webview console output to the Rust logger (terminal) for automated
+  // debugging: hijack console methods and invoke the rust web_log command.
+  import("@tauri-apps/api/core")
+    .then(({ invoke }) => {
+      const forward = (method: "log" | "info" | "warn" | "error" | "debug") => {
+        const original = console[method];
+        console[method] = (...args: unknown[]) => {
+          try {
+            const message = args
+              .map((a) =>
+                typeof a === "string"
+                  ? a
+                  : (() => {
+                      try {
+                        return JSON.stringify(a);
+                      } catch {
+                        return String(a);
+                      }
+                    })(),
+              )
+              .join(" ");
+            invoke("web_log", { level: method, message }).catch(() => {});
+          } catch {
+            // never break the app for logging
+          }
+          original.apply(console, args);
+        };
+      };
+      forward("log");
+      forward("info");
+      forward("warn");
+      forward("error");
+      forward("debug");
+    })
     .catch(() => {
-      /* browser-only dev page: no Tauri log plugin */
+      /* browser-only dev page: no Tauri runtime */
     });
 
   const rootElement = document.getElementById("root");

@@ -36,11 +36,21 @@ export type TranslationTargetLang =
   | "sv"
   | "ug";
 
+/** AI 模型选择（端点 + 模型），翻译面板两个子栏各自独立配置 */
+export interface AIModelSelection {
+  endpointId?: string;
+  model?: string;
+}
+
 export interface TranslationConfig {
   provider: TranslationProvider;
   targetLang: TranslationTargetLang;
   /** 词典查词（长按单词）提示词模板；留空/未设置时使用内置 DEFAULT_DICTIONARY_PROMPT */
   dictionaryPrompt?: string;
+  /** 取词翻译（选词翻译 / 整章翻译）使用的 AI 模型。未设置时使用对应功能直接报错，不跟随全局。 */
+  selectionModel?: AIModelSelection;
+  /** 长按翻译（词典查词）使用的 AI 模型。未设置时使用对应功能直接报错。 */
+  dictionaryModel?: AIModelSelection;
 }
 
 export const TRANSLATOR_PROVIDERS: Array<{ id: TranslatorName; labelKey: string }> = [

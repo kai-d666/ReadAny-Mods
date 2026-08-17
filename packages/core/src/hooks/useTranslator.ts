@@ -7,6 +7,10 @@
 import { useCallback, useState } from "react";
 import { useSettingsStore } from "../stores/settings-store";
 import { getFromCache, simpleHash, storeInCache } from "../translation/cache";
+import {
+  resolveTranslationModel,
+  type TranslationModelMode,
+} from "../translation/model-selection";
 import { aiTranslate, deeplTranslate, microsoftTranslate } from "../translation/providers";
 import type { AIConfig } from "../types";
 import type { TranslationConfig, TranslationTargetLang } from "../types/translation";
@@ -19,6 +23,13 @@ export interface UseTranslatorOptions {
   translationConfig?: TranslationConfig;
   /** 自定义 AI 系统提示词（如词典模式）；仅 ai provider 生效，缺省走默认翻译提示词 */
   systemPrompt?: string;
+  /**
+   * Translation mode for model resolution. When set, the corresponding
+   * translationConfig.selectionModel/dictionaryModel is required (no global
+   * fallback, errors when unset). When omitted, the legacy resolution
+   * (provider.endpointId/model || aiConfig.active*) is used.
+   */
+  mode?: TranslationModelMode;
 }
 
 export function useTranslator(options: UseTranslatorOptions = {}) {
@@ -28,6 +39,7 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
     aiConfig: aiConfigOverride,
     translationConfig: translationConfigOverride,
     systemPrompt,
+    mode,
   } = options;
   const translationConfigFromStore = useSettingsStore((s) => s.translationConfig);
   const aiConfigFromStore = useSettingsStore((s) => s.aiConfig);
@@ -75,12 +87,29 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
         let translatedTexts: string[];
 
         if (providerId === "ai") {
-          const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
-          const endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
-          const model = translationConfig.provider.model || aiConfig.activeModel;
+          let endpoint: AIConfig["endpoints"][number] | undefined;
+          let model: string;
 
-          if (!endpoint || (providerRequiresApiKey(endpoint.provider) && !endpoint.apiKey)) {
-            throw new Error("AI endpoint not configured. Please set up AI settings first.");
+          if (mode) {
+            // Explicit per-mode selection (no global fallback)
+            const resolved = resolveTranslationModel(
+              aiConfig,
+              mode === "dictionary"
+                ? translationConfig.dictionaryModel
+                : translationConfig.selectionModel,
+              mode,
+            );
+            endpoint = resolved.endpoint;
+            model = resolved.model;
+          } else {
+            // Legacy resolution (kept for app-expo compatibility)
+            const endpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
+            endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
+            model = translationConfig.provider.model || aiConfig.activeModel;
+
+            if (!endpoint || (providerRequiresApiKey(endpoint.provider) && !endpoint.apiKey)) {
+              throw new Error("AI endpoint not configured. Please set up AI settings first.");
+            }
           }
 
           translatedTexts = await aiTranslate(
@@ -147,7 +176,7 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
         throw err;
       }
     },
-    [sourceLang, targetLang, translationConfig, aiConfig, systemPrompt],
+    [sourceLang, targetLang, translationConfig, aiConfig, systemPrompt, mode],
   );
 
   return {

@@ -2,8 +2,11 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 /**
  * TranslationSettings — translation provider config
- * AI translation uses existing AI config from AI settings
- * Target language is selected in the translation popup
+ * The engine (microsoft / ai / deepl) is shared; when AI is selected the
+ * panel splits into two independent model choices:
+ *   - 取词翻译 (selection translation / whole-chapter translation)
+ *   - 长按翻译 (long-press dictionary lookup, with its own prompt)
+ * Each requires its own model — no global fallback.
  */
 import { Textarea } from "@/components/ui/textarea";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -11,37 +14,29 @@ import { TRANSLATOR_PROVIDERS } from "@readany/core/types/translation";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { TranslationModelSelector } from "./TranslationModelSelector";
 
 export function TranslationSettings() {
   const { t } = useTranslation();
-  const { translationConfig, updateTranslationConfig, aiConfig } = useSettingsStore();
-
-  const [modelOpen, setModelOpen] = useState(false);
-  const modelPopoverRef = useRef<HTMLDivElement>(null);
+  const { translationConfig, updateTranslationConfig } = useSettingsStore();
 
   const isAIProvider = translationConfig.provider.id === "ai";
   const isDeepLProvider = translationConfig.provider.id === "deepl";
 
-  // Get all endpoints with models
-  const endpointsWithModels = aiConfig.endpoints.filter((e) => e.models.length > 0);
-  const totalModels = endpointsWithModels.reduce((sum, ep) => sum + ep.models.length, 0);
-  const multipleEndpoints = endpointsWithModels.length > 1;
+  // Provider dropdown
+  const [providerOpen, setProviderOpen] = useState(false);
+  const providerPopoverRef = useRef<HTMLDivElement>(null);
 
-  // Find selected model
-  const selectedEndpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
-  const selectedModel = translationConfig.provider.model || aiConfig.activeModel;
-
-  // Close on outside click
   useEffect(() => {
-    if (!modelOpen) return;
+    if (!providerOpen) return;
     const handler = (e: MouseEvent) => {
-      if (modelPopoverRef.current && !modelPopoverRef.current.contains(e.target as Node)) {
-        setModelOpen(false);
+      if (providerPopoverRef.current && !providerPopoverRef.current.contains(e.target as Node)) {
+        setProviderOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [modelOpen]);
+  }, [providerOpen]);
 
   const handleProviderChange = (providerId: string) => {
     updateTranslationConfig({
@@ -51,17 +46,6 @@ export function TranslationSettings() {
         name: TRANSLATOR_PROVIDERS.find((p) => p.id === providerId)?.labelKey || "",
       },
     });
-  };
-
-  const handleModelSelect = (endpointId: string, model: string) => {
-    updateTranslationConfig({
-      provider: {
-        ...translationConfig.provider,
-        model,
-        endpointId,
-      },
-    });
-    setModelOpen(false);
   };
 
   const handleApiKeyChange = (apiKey: string) => {
@@ -82,21 +66,6 @@ export function TranslationSettings() {
     });
   };
 
-  // Provider dropdown
-  const [providerOpen, setProviderOpen] = useState(false);
-  const providerPopoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!providerOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (providerPopoverRef.current && !providerPopoverRef.current.contains(e.target as Node)) {
-        setProviderOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [providerOpen]);
-
   const currentProvider = TRANSLATOR_PROVIDERS.find((p) => p.id === translationConfig.provider.id);
 
   return (
@@ -108,7 +77,7 @@ export function TranslationSettings() {
         <p className="mb-4 text-xs text-muted-foreground">{t("settings.translation_desc")}</p>
 
         <div className="space-y-4">
-          {/* 翻译引擎选择 */}
+          {/* 翻译引擎选择（共用） */}
           <div className="space-y-2">
             <span className="text-sm text-foreground">{t("settings.translationProvider")}</span>
             <div className="relative" ref={providerPopoverRef}>
@@ -146,66 +115,71 @@ export function TranslationSettings() {
             </div>
           </div>
 
-          {/* AI 模型选择 (only show for AI provider) */}
+          {/* AI 引擎：取词翻译 / 长按翻译 两个独立子栏 */}
           {isAIProvider && (
-            <div className="space-y-2">
-              <span className="text-sm text-foreground">{t("settings.translationModel")}</span>
-              {endpointsWithModels.length > 0 ? (
-                <div className="relative" ref={modelPopoverRef}>
-                  <button
-                    type="button"
-                    onClick={() => totalModels > 1 && setModelOpen(!modelOpen)}
-                    className={`flex w-full items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm ${
-                      totalModels > 1 ? "hover:bg-muted" : ""
-                    }`}
-                  >
-                    <span className="truncate">{selectedModel || t("settings.selectModel")}</span>
-                    {totalModels > 1 && (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                  </button>
-                  {modelOpen && totalModels > 1 && (
-                    <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-lg border bg-background p-1 shadow-lg">
-                      <div className="max-h-60 overflow-y-auto">
-                        {endpointsWithModels.map((ep) => (
-                          <div key={ep.id}>
-                            {multipleEndpoints && (
-                              <div className="px-3 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground first:pt-1">
-                                {ep.name || ep.baseUrl}
-                              </div>
-                            )}
-                            {ep.models.map((model) => {
-                              const isActive =
-                                model === selectedModel && ep.id === selectedEndpointId;
-                              return (
-                                <button
-                                  key={`${ep.id}-${model}`}
-                                  type="button"
-                                  onClick={() => handleModelSelect(ep.id, model)}
-                                  className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                                    isActive ? "bg-primary/10 text-primary" : "hover:bg-muted"
-                                  }`}
-                                >
-                                  <span className="truncate">{model}</span>
-                                  {isActive && <Check className="h-4 w-4 shrink-0" />}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+            <>
+              {/* 取词翻译 */}
+              <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                <span className="text-sm font-medium text-foreground">
+                  {t("settings.translationSelectionTitle")}
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.translationSelectionDesc")}
+                </p>
+                <TranslationModelSelector
+                  value={translationConfig.selectionModel}
+                  onChange={(s) => updateTranslationConfig({ selectionModel: s })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.translationModelUnsetHint")}
+                </p>
+              </div>
+
+              {/* 长按翻译（词典查词） */}
+              <div className="space-y-2 rounded-lg border border-border/60 p-3">
+                <span className="text-sm font-medium text-foreground">
+                  {t("settings.translationDictionaryTitle")}
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.translationDictionaryDesc")}
+                </p>
+                <TranslationModelSelector
+                  value={translationConfig.dictionaryModel}
+                  onChange={(s) => updateTranslationConfig({ dictionaryModel: s })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.translationModelUnsetHint")}
+                </p>
+
+                {/* 词典查词提示词（仅长按生效） */}
+                <div className="space-y-2 pt-1">
+                  <span className="text-sm text-foreground">
+                    {t("settings.dictionaryPromptTitle")}
+                  </span>
+                  <Textarea
+                    rows={6}
+                    value={translationConfig.dictionaryPrompt ?? ""}
+                    placeholder={t("settings.dictionaryPromptPlaceholder")}
+                    onChange={(e) => updateTranslationConfig({ dictionaryPrompt: e.target.value })}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.dictionaryPromptDesc")}
+                    </p>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                      onClick={() => updateTranslationConfig({ dictionaryPrompt: "" })}
+                    >
+                      {t("settings.dictionaryPromptReset")}
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <div className="rounded-lg border border-input bg-background px-3 py-2 text-sm text-muted-foreground">
-                  {t("settings.noModelsFetched")}
-                </div>
-              )}
-            </div>
+              </div>
+            </>
           )}
 
-          {/* DeepL API Key (only show for DeepL) */}
+          {/* DeepL API Key（仅 DeepL 引擎） */}
           {isDeepLProvider && (
             <div className="space-y-4">
               <div className="space-y-2">
@@ -235,27 +209,6 @@ export function TranslationSettings() {
               </div>
             </div>
           )}
-
-          {/* 词典查词提示词（长按单词时使用的 AI 提示词） */}
-          <div className="space-y-2">
-            <span className="text-sm text-foreground">{t("settings.dictionaryPromptTitle")}</span>
-            <Textarea
-              rows={6}
-              value={translationConfig.dictionaryPrompt ?? ""}
-              placeholder={t("settings.dictionaryPromptPlaceholder")}
-              onChange={(e) => updateTranslationConfig({ dictionaryPrompt: e.target.value })}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">{t("settings.dictionaryPromptDesc")}</p>
-              <button
-                type="button"
-                className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                onClick={() => updateTranslationConfig({ dictionaryPrompt: "" })}
-              >
-                {t("settings.dictionaryPromptReset")}
-              </button>
-            </div>
-          </div>
         </div>
       </section>
     </div>

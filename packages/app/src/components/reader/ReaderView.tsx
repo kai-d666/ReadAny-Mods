@@ -547,6 +547,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       foliateRef.current?.applyChapterTranslationVisibility(originalVisible, translationVisible),
     getCurrentCfi: () => readerTab?.currentCfi,
     goToCfi: (cfi) => foliateRef.current?.goToCFI(cfi),
+    requireModelSelection: true,
   });
 
   // Track which highlights have been rendered (id -> {cfi, note, color}) to detect changes
@@ -752,6 +753,10 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [translationText, setTranslationText] = useState("");
   const [translationPos, setTranslationPos] = useState({ x: 0, y: 0 });
   const [translationMode, setTranslationMode] = useState<"normal" | "dictionary">("normal");
+  // Ref mirror so the window message handler can close the popover without
+  // re-registering its listener every time the popover opens/closes.
+  const showTranslationRef = useRef(showTranslation);
+  showTranslationRef.current = showTranslation;
   const [searchResults, setSearchResults] = useState<number>(0);
   const [searchIndex, setSearchIndex] = useState<number>(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -1759,8 +1764,17 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const handleTranslate = useCallback(() => {
     if (selection?.text) {
+      // Anchor on the selection's actual top/bottom edges (main-window
+      // coords) so the popover never covers the highlighted text.
+      let pos: { x: number; y: number; top?: number; bottom?: number } = selectionPos;
+      const rects = selection.rects;
+      if (rects && rects.length > 0) {
+        const top = Math.min(...rects.map((r) => r.top));
+        const bottom = Math.max(...rects.map((r) => r.bottom));
+        pos = { ...selectionPos, top, bottom };
+      }
       setTranslationText(selection.text);
-      setTranslationPos(selectionPos);
+      setTranslationPos(pos);
       setTranslationMode("normal");
       setShowTranslation(true);
     }
@@ -1768,12 +1782,36 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   }, [selection, selectionPos]);
 
   // Long-press word lookup: opens the same translation popover in dictionary mode
-  const handleWordLookup = useCallback((word: string, pos: { x: number; y: number }) => {
-    setTranslationText(word);
-    setTranslationPos(pos);
-    setTranslationMode("dictionary");
-    setShowTranslation(true);
+  const handleWordLookup = useCallback(
+    (word: string, pos: { x: number; y: number; top?: number; bottom?: number }) => {
+      setTranslationText(word);
+      setTranslationPos(pos);
+      setTranslationMode("dictionary");
+      setShowTranslation(true);
+    },
+    [],
+  );
+
+  // Close the translation popover and clear the temporary word highlight
+  const closeTranslationPopover = useCallback(() => {
+    setShowTranslation(false);
+    setTranslationText("");
+    foliateRef.current?.clearTemporarySelection();
   }, []);
+
+  // Any pointer press inside the reader content closes an open translation
+  // popover (iframe events don't bubble to the main document, so FoliateViewer
+  // forwards them via an iframe-pointerdown message).
+  useEffect(() => {
+    const handlePointerDown = (event: MessageEvent) => {
+      const data = event.data;
+      if (data?.type !== "iframe-pointerdown") return;
+      if (data.bookKey !== bookId) return;
+      if (showTranslationRef.current) closeTranslationPopover();
+    };
+    window.addEventListener("message", handlePointerDown);
+    return () => window.removeEventListener("message", handlePointerDown);
+  }, [bookId, closeTranslationPopover]);
 
   const handleAskAI = useCallback(() => {
     if (selection?.text) {
@@ -3017,10 +3055,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 text={translationText}
                 position={translationPos}
                 dictionary={translationMode === "dictionary"}
-                onClose={() => {
-                  setShowTranslation(false);
-                  setTranslationText("");
-                }}
+                onClose={closeTranslationPopover}
               />
             )}
           </div>

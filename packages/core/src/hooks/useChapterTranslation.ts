@@ -23,6 +23,7 @@ import type {
   ChapterTranslationResult,
 } from "../translation/chapter-translator";
 import { translateChapter } from "../translation/chapter-translator";
+import { resolveTranslationModel } from "../translation/model-selection";
 import type { AIConfig } from "../types";
 import type { TranslationConfig } from "../types/translation";
 
@@ -59,6 +60,8 @@ export interface UseChapterTranslationOptions {
   getCurrentCfi?: () => string | undefined;
   /** Navigate to a CFI — used to restore position after translation injection */
   goToCfi?: (cfi: string) => void | Promise<void>;
+  /** Desktop: require translationConfig.selectionModel (error when unset instead of falling back to global) */
+  requireModelSelection?: boolean;
 }
 
 export function useChapterTranslation(options: UseChapterTranslationOptions) {
@@ -74,6 +77,7 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     applyVisibility,
     getCurrentCfi,
     goToCfi,
+    requireModelSelection = false,
   } = options;
 
   const [state, setState] = useState<ChapterTranslationState>({ status: "idle" });
@@ -113,16 +117,31 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
         config.targetLang = overrideTargetLang as typeof config.targetLang;
       }
       if (config.provider.id === "ai") {
-        const endpointId = config.provider.endpointId || aiConfig.activeEndpointId;
-        const endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
-        if (endpoint) {
+        if (requireModelSelection) {
+          const { endpoint, model } = resolveTranslationModel(
+            aiConfig,
+            config.selectionModel,
+            "selection",
+          );
           config.provider = {
             ...config.provider,
             apiKey: endpoint.apiKey,
             baseUrl: endpoint.baseUrl,
             useExactRequestUrl: endpoint.useExactRequestUrl,
-            model: config.provider.model || aiConfig.activeModel,
+            model,
           };
+        } else {
+          const endpointId = config.provider.endpointId || aiConfig.activeEndpointId;
+          const endpoint = aiConfig.endpoints.find((e) => e.id === endpointId);
+          if (endpoint) {
+            config.provider = {
+              ...config.provider,
+              apiKey: endpoint.apiKey,
+              baseUrl: endpoint.baseUrl,
+              useExactRequestUrl: endpoint.useExactRequestUrl,
+              model: config.provider.model || aiConfig.activeModel,
+            };
+          }
         }
       }
 
@@ -188,6 +207,7 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
       getParagraphs,
       injectTranslations,
       removeTranslations,
+      requireModelSelection,
     ],
   );
 
