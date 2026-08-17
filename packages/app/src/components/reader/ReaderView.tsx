@@ -266,10 +266,6 @@ function useAutoHideControls(
           fraction = Number(data.clientX ?? 0) / viewWidth;
         }
 
-        // Double-page: left 33% = prev, right 33% = next, middle 34% = toggle
-        // Single-page: left/right 40% = nav, middle 20% = toggle
-        const leftNavEnd = isDoublePage ? 0.33 : 0.4;
-        const rightNavStart = isDoublePage ? 0.67 : 0.6;
         const source = data.type === "iframe-single-click" ? "iframe" : "shell";
 
         const toggleControls = () => {
@@ -280,8 +276,6 @@ function useAutoHideControls(
             fraction,
             isDoublePage,
             isScrollMode,
-            leftNavEnd,
-            rightNavStart,
           });
           setIsVisible((prev) => {
             if (prev) {
@@ -304,8 +298,6 @@ function useAutoHideControls(
           isDoublePage,
           isScrollMode,
           isFixedLayout,
-          leftNavEnd,
-          rightNavStart,
         });
 
         if (isFixedLayout && !isVisible) {
@@ -320,43 +312,9 @@ function useAutoHideControls(
           return;
         }
 
-        if (isScrollMode) {
-          toggleControls();
-          return;
-        }
-
-        if (fraction > leftNavEnd && fraction < rightNavStart) {
-          // Middle zone: toggle toolbar
-          toggleControls();
-          return;
-        }
-
-        clearTimer();
-        setIsVisible(false);
-
-        if (fraction <= leftNavEnd) {
-          console.log("[ReaderTap][reader:action]", {
-            bookKey,
-            source,
-            action: "prev",
-            fraction,
-            isDoublePage,
-            leftNavEnd,
-            rightNavStart,
-          });
-          onPrev?.();
-        } else {
-          console.log("[ReaderTap][reader:action]", {
-            bookKey,
-            source,
-            action: "next",
-            fraction,
-            isDoublePage,
-            leftNavEnd,
-            rightNavStart,
-          });
-          onNext?.();
-        }
+        // Single click anywhere toggles the toolbar; left/right click-to-page
+        // zones are intentionally disabled (long-press is the lookup gesture).
+        toggleControls();
       })();
     };
 
@@ -793,6 +751,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [showTranslation, setShowTranslation] = useState(false);
   const [translationText, setTranslationText] = useState("");
   const [translationPos, setTranslationPos] = useState({ x: 0, y: 0 });
+  const [translationMode, setTranslationMode] = useState<"normal" | "dictionary">("normal");
   const [searchResults, setSearchResults] = useState<number>(0);
   const [searchIndex, setSearchIndex] = useState<number>(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -1802,10 +1761,19 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     if (selection?.text) {
       setTranslationText(selection.text);
       setTranslationPos(selectionPos);
+      setTranslationMode("normal");
       setShowTranslation(true);
     }
     setSelection(null);
   }, [selection, selectionPos]);
+
+  // Long-press word lookup: opens the same translation popover in dictionary mode
+  const handleWordLookup = useCallback((word: string, pos: { x: number; y: number }) => {
+    setTranslationText(word);
+    setTranslationPos(pos);
+    setTranslationMode("dictionary");
+    setShowTranslation(true);
+  }, []);
 
   const handleAskAI = useCallback(() => {
     if (selection?.text) {
@@ -2950,6 +2918,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 onSectionLoad={handleSectionLoad}
                 onError={handleError}
                 onSelection={handleSelection}
+                onWordLookup={handleWordLookup}
                 onShowAnnotation={handleShowAnnotation}
                 onToggleSearch={handleToggleSearch}
                 onToggleToc={handleToggleToc}
@@ -3047,6 +3016,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               <TranslationPopover
                 text={translationText}
                 position={translationPos}
+                dictionary={translationMode === "dictionary"}
                 onClose={() => {
                   setShowTranslation(false);
                   setTranslationText("");

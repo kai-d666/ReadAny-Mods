@@ -39,6 +39,8 @@ export type TranslationTargetLang =
 export interface TranslationConfig {
   provider: TranslationProvider;
   targetLang: TranslationTargetLang;
+  /** 词典查词（长按单词）提示词模板；留空/未设置时使用内置 DEFAULT_DICTIONARY_PROMPT */
+  dictionaryPrompt?: string;
 }
 
 export const TRANSLATOR_PROVIDERS: Array<{ id: TranslatorName; labelKey: string }> = [

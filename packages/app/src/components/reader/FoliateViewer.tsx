@@ -218,6 +218,64 @@ function getSelectionEndRect(range: Range | null): DOMRect | null {
   return rects[rects.length - 1] || range.getBoundingClientRect();
 }
 
+/** Caret from screen point: caretPositionFromPoint with caretRangeFromPoint fallback */
+function getCaretFromPoint(
+  doc: Document,
+  x: number,
+  y: number,
+): { offsetNode: Node; offset: number } | null {
+  try {
+    const docAny = doc as unknown as {
+      caretPositionFromPoint?: (
+        x: number,
+        y: number,
+      ) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+    const pos = docAny.caretPositionFromPoint?.(x, y);
+    if (pos) return { offsetNode: pos.offsetNode, offset: pos.offset };
+    const range = docAny.caretRangeFromPoint?.(x, y);
+    if (range?.startContainer) {
+      return { offsetNode: range.startContainer, offset: range.startOffset };
+    }
+  } catch {
+    // Detached doc or other exception: silently give up
+  }
+  return null;
+}
+
+/** CJK runs: Japanese kana, CJK ideographs (incl. extension A), Hangul */
+const CJK_RUN_RE = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
+
+/**
+ * Expand the word under a caret: a contiguous Latin run (letters + ' or -) or a
+ * contiguous CJK run. Returns null on whitespace/punctuation or non-text nodes.
+ */
+function getWordRangeFromCaret(doc: Document, caret: { offsetNode: Node; offset: number }): Range | null {
+  if (!caret.offsetNode || caret.offsetNode.nodeType !== Node.TEXT_NODE) return null;
+  const node = caret.offsetNode as Text;
+  const text = node.data;
+  const offset = Math.min(caret.offset, text.length);
+  const ch = text[offset];
+  if (!ch) return null;
+  const isCJK = CJK_RUN_RE.test(ch);
+  // Whitespace / punctuation / other scripts: give up
+  if (!isCJK && !/[A-Za-zÀ-ɏ]/.test(ch)) return null;
+  const inWord = (c: string | undefined) =>
+    isCJK
+      ? !!c && CJK_RUN_RE.test(c)
+      : !!c && /[A-Za-zÀ-ɏ'’-]/.test(c);
+  let start = offset;
+  let end = offset;
+  while (start > 0 && inWord(text[start - 1])) start--;
+  while (end < text.length && inWord(text[end])) end++;
+  if (start >= end) return null;
+  const range = doc.createRange();
+  range.setStart(node, start);
+  range.setEnd(node, end);
+  return range;
+}
+
 type SelectionDragPoint = {
   x: number;
   y: number;
@@ -752,6 +810,8 @@ interface FoliateViewerProps {
   onSectionLoad?: (index: number) => void;
   onError?: (error: Error) => void;
   onSelection?: (selection: BookSelection | null) => void;
+  /** Long-press on a word: fired with the word text and its position in main-window coordinates */
+  onWordLookup?: (word: string, pos: { x: number; y: number }) => void;
   onShowAnnotation?: (cfi: string, range: Range, index: number) => void;
   onToggleSearch?: () => void;
   onToggleToc?: () => void;
@@ -788,6 +848,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       onSectionLoad,
       onError,
       onSelection,
+      onWordLookup,
       onShowAnnotation,
       onToggleSearch,
       onToggleToc,
@@ -2311,6 +2372,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
     // even if the React prop has been updated since the listener was attached.
     const onSelectionRef = useRef(onSelection);
     onSelectionRef.current = onSelection;
+    const onWordLookupRef = useRef(onWordLookup);
+    onWordLookupRef.current = onWordLookup;
 
     // Track current selection range (for re-selecting when clicking inside selection)
     const currentSelectionRange = useRef<Range | null>(null);
@@ -2343,6 +2406,21 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           overscrollBehaviorX: string;
           overflowX: string;
         } | null = null;
+
+        // --- Long-press word lookup ---
+        const LONG_PRESS_DELAY = 450;
+        const LONG_PRESS_MOVE_TOLERANCE = 10;
+        let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+        let longPressTriggered = false;
+        let longPressStart = { x: 0, y: 0 };
+
+        const clearLongPressTimer = (source?: string) => {
+          if (longPressTimer) {
+            console.log("[LongPress] timer cleared by", source ?? "unknown");
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        };
 
         const getPaginatedContainer = () => {
           try {
@@ -2459,7 +2537,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           );
         };
 
-        const handlePointerDown = () => {
+        const handlePointerDown = (ev: PointerEvent) => {
           // Reset annotation click flag
           annotationClickedRef.current = false;
           // Record if there's a selection when pointer goes down
@@ -2469,9 +2547,101 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             !sel.isCollapsed &&
             sel.toString().trim().length > 0
           );
+          // Start long-press timer (left button only)
+          clearLongPressTimer("pointerdown-reset");
+          longPressTriggered = false;
+          if (ev.button !== 0) return;
+          longPressStart = { x: ev.clientX, y: ev.clientY };
+          console.log("[LongPress] pointerdown", longPressStart);
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            console.log("[LongPress] timer fired");
+            fireLongPress(doc);
+          }, LONG_PRESS_DELAY);
+        };
+
+        const fireLongPress = (targetDoc: Document) => {
+          try {
+            // Doc may have been unloaded while holding
+            if (!targetDoc.isConnected || !targetDoc.defaultView) {
+              console.log("[LongPress] doc detached");
+              return;
+            }
+            const caret = getCaretFromPoint(targetDoc, longPressStart.x, longPressStart.y);
+            if (!caret) {
+              console.log("[LongPress] no caret at", longPressStart);
+              return;
+            }
+            console.log(
+              "[LongPress] caret nodeType:",
+              caret.offsetNode.nodeType,
+              "offset:",
+              caret.offset,
+            );
+
+            // Never trigger on links (same semantics as the pointerup link check)
+            let el: Element | null =
+              caret.offsetNode.nodeType === Node.TEXT_NODE
+                ? (caret.offsetNode as Text).parentElement
+                : (caret.offsetNode as Element);
+            for (let n = el; n; n = n.parentElement) {
+              if (n.tagName === "A" && n.hasAttribute("href")) {
+                console.log("[LongPress] on link, abort");
+                return;
+              }
+            }
+
+            // Expand caret to a word
+            const range = getWordRangeFromCaret(targetDoc, caret);
+            if (!range || range.collapsed) {
+              console.log("[LongPress] no word range");
+              return;
+            }
+            const word = getRangeTextWithoutRuby(range, range.toString());
+            if (!word) {
+              console.log("[LongPress] empty word");
+              return;
+            }
+            console.log("[LongPress] word:", word);
+
+            // Convert iframe-local rect to main-window coordinates
+            // (same math as getSelectionFromView)
+            const rect = range.getBoundingClientRect();
+            const iframe = targetDoc.defaultView.frameElement as HTMLIFrameElement | null;
+            let pos: { x: number; y: number };
+            if (iframe) {
+              const r = iframe.getBoundingClientRect();
+              const scaleX = iframe.clientWidth > 0 ? r.width / iframe.clientWidth : 1;
+              const scaleY = iframe.clientHeight > 0 ? r.height / iframe.clientHeight : 1;
+              pos = {
+                x: r.left + (rect.left + rect.width / 2) * scaleX,
+                y: r.top + rect.top * scaleY,
+              };
+            } else {
+              pos = { x: rect.left + rect.width / 2, y: rect.top };
+            }
+
+            longPressTriggered = true;
+
+            // If a previous selection popover is open, close it first to avoid stacking
+            if (currentSelectionRange.current) {
+              currentSelectionRange.current = null;
+              onSelectionRef.current?.(null);
+            }
+            onWordLookupRef.current?.(word, pos);
+          } catch {
+            // Any failure silently aborts the long press
+          }
         };
 
         const handlePointerUp = (ev: PointerEvent) => {
+          clearLongPressTimer("pointerup");
+          // Long press was already handled at the 450ms mark: skip selection,
+          // popover dismissal and single-click page-turn entirely.
+          if (longPressTriggered) {
+            longPressTriggered = false;
+            return;
+          }
           // Clicks on links are handled by their own navigation (internal
           // links / footnotes); never treat them as page-turn taps. Use
           // composedPath() with a realm-independent nodeType check: ev.target
@@ -2570,6 +2740,10 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handleSelectStart = () => {
+          // Note: selectstart fires even on a plain hold (foliate's selection
+          // gesture), so it must NOT cancel the long press here — the
+          // pointermove tolerance check is the only cancellation path, so
+          // dragging to select still works while holding still still fires.
           if (!supportsCrossPageSelection()) return;
           const container = getPaginatedContainer();
           if (!container) return;
@@ -2665,6 +2839,14 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handlePointerMove = (ev: PointerEvent) => {
+          // Cancel long press once the pointer moves beyond tolerance
+          if (longPressTimer) {
+            const dx = ev.clientX - longPressStart.x;
+            const dy = ev.clientY - longPressStart.y;
+            if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_TOLERANCE) {
+              clearLongPressTimer("pointermove-tolerance");
+            }
+          }
           if (!supportsCrossPageSelection()) return;
           if (!getSelectionRange(doc.getSelection())) return;
           setSelectionDragPoint(ev.clientX, ev.clientY);

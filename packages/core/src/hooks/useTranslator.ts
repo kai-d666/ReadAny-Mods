@@ -17,6 +17,8 @@ export interface UseTranslatorOptions {
   targetLang?: TranslationTargetLang;
   aiConfig?: AIConfig;
   translationConfig?: TranslationConfig;
+  /** 自定义 AI 系统提示词（如词典模式）；仅 ai provider 生效，缺省走默认翻译提示词 */
+  systemPrompt?: string;
 }
 
 export function useTranslator(options: UseTranslatorOptions = {}) {
@@ -25,6 +27,7 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
     targetLang,
     aiConfig: aiConfigOverride,
     translationConfig: translationConfigOverride,
+    systemPrompt,
   } = options;
   const translationConfigFromStore = useSettingsStore((s) => s.translationConfig);
   const aiConfigFromStore = useSettingsStore((s) => s.aiConfig);
@@ -43,12 +46,14 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
 
       const targetLanguage = targetLang || translationConfig.targetLang;
       const providerId = translationConfig.provider.id;
+      // Isolate cache entries by prompt mode so dictionary results never collide with plain translations
+      const cacheMode = systemPrompt ? "dict" : "default";
 
       const cachedResults: string[] = [];
       const needsTranslation: { index: number; text: string }[] = [];
       await Promise.all(
         textsToTranslate.map(async (text, index) => {
-          const cached = await getFromCache(text, sourceLang, targetLanguage, providerId);
+          const cached = await getFromCache(text, sourceLang, targetLanguage, providerId, cacheMode);
           if (cached) {
             cachedResults[index] = cached;
           } else {
@@ -84,6 +89,7 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
             endpoint.baseUrl,
             model,
             endpoint.useExactRequestUrl || false,
+            systemPrompt,
           );
         } else if (providerId === "deepl") {
           const apiKey = translationConfig.provider.apiKey;
@@ -110,7 +116,14 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
         await Promise.all(
           needsTranslation.map(async ({ text }, i) => {
             if (translatedTexts[i]) {
-              await storeInCache(text, translatedTexts[i], sourceLang, targetLanguage, providerId);
+              await storeInCache(
+                text,
+                translatedTexts[i],
+                sourceLang,
+                targetLanguage,
+                providerId,
+                cacheMode,
+              );
             }
           }),
         );
@@ -132,7 +145,7 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
         throw err;
       }
     },
-    [sourceLang, targetLang, translationConfig, aiConfig],
+    [sourceLang, targetLang, translationConfig, aiConfig, systemPrompt],
   );
 
   return {

@@ -4,6 +4,7 @@ import { useTranslator } from "@/hooks/useTranslator";
  * Robust positioning: always stays within viewport
  */
 import { useSettingsStore } from "@/stores/settings-store";
+import { buildDictionaryPrompt } from "@readany/core/translation/providers";
 import {
   TRANSLATOR_LANGS,
   TRANSLATOR_PROVIDERS,
@@ -11,13 +12,15 @@ import {
   type TranslatorName,
 } from "@readany/core/types/translation";
 import { Check, ChevronDown, Copy, Languages, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface TranslationPopoverProps {
   text: string;
   position: { x: number; y: number };
   onClose: () => void;
+  /** Dictionary mode: uses the customizable dictionary prompt instead of the default translation prompt */
+  dictionary?: boolean;
 }
 
 const POPOVER_WIDTH = 288; // w-72 = 18rem = 288px
@@ -26,7 +29,12 @@ const POPOVER_MAX_HEIGHT = 200; // max total height
 const PADDING = 16;
 const GAP = 8;
 
-export function TranslationPopover({ text, position, onClose }: TranslationPopoverProps) {
+export function TranslationPopover({
+  text,
+  position,
+  onClose,
+  dictionary = false,
+}: TranslationPopoverProps) {
   const { t } = useTranslation();
   const translationConfig = useSettingsStore((s) => s.translationConfig);
   const updateTranslationConfig = useSettingsStore((s) => s.updateTranslationConfig);
@@ -40,7 +48,14 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
   const [providerRevision, setProviderRevision] = useState(0);
   const translationRequestKey = `${targetLang}:${providerRevision}`;
 
-  const { translate, loading, error, provider } = useTranslator({ targetLang });
+  // Dictionary mode resolves its own prompt from settings (live targetLang, so
+  // switching the language in the popover re-renders the prompt too).
+  const systemPrompt = useMemo(() => {
+    if (!dictionary) return undefined;
+    return buildDictionaryPrompt(translationConfig.dictionaryPrompt, "AUTO", targetLang);
+  }, [dictionary, translationConfig.dictionaryPrompt, targetLang]);
+
+  const { translate, loading, error, provider } = useTranslator({ targetLang, systemPrompt });
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -160,7 +175,7 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
     return () => {
       cancelled = true;
     };
-  }, [text, translationRequestKey, translate]);
+  }, [text, translationRequestKey, translate, systemPrompt]);
 
   const handleLangChange = (lang: TranslationTargetLang) => {
     setTargetLang(lang);
@@ -311,7 +326,9 @@ export function TranslationPopover({ text, position, onClose }: TranslationPopov
 
           {!loading && !error && translation && (
             <>
-              <p className="max-h-32 overflow-y-auto text-sm leading-relaxed">{translation}</p>
+              <p className="max-h-32 overflow-y-auto whitespace-pre-line text-sm leading-relaxed">
+                {translation}
+              </p>
               <div className="flex items-center justify-end gap-2 pt-1">
                 <span className="max-w-28 truncate text-[10px] text-muted-foreground">
                   {providerName}

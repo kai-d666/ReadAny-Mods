@@ -10,15 +10,17 @@ import type { TranslatorName } from "./types";
 
 const CACHE_PREFIX = "readany_translation_cache_";
 
-/** Generate cache key */
+/** Generate cache key. mode isolates different prompt modes (e.g. "dict"); default mode keys are unchanged. */
 function getCacheKey(
   text: string,
   sourceLang: string,
   targetLang: string,
   provider: TranslatorName,
+  mode = "default",
 ): string {
   const hash = simpleHash(text);
-  return `${CACHE_PREFIX}${provider}_${sourceLang}_${targetLang}_${hash}`;
+  const modePart = mode === "default" ? "" : `_${mode}`;
+  return `${CACHE_PREFIX}${provider}_${sourceLang}_${targetLang}${modePart}_${hash}`;
 }
 
 /** Simple hash function for cache key */
@@ -38,10 +40,11 @@ export async function getFromCache(
   sourceLang: string,
   targetLang: string,
   provider: TranslatorName,
+  mode = "default",
 ): Promise<string | null> {
   try {
     const platform = getPlatformService();
-    const key = getCacheKey(text, sourceLang, targetLang, provider);
+    const key = getCacheKey(text, sourceLang, targetLang, provider, mode);
     const cached = await platform.kvGetItem(key);
     if (cached) {
       const { translation, timestamp } = JSON.parse(cached);
@@ -64,10 +67,11 @@ export async function storeInCache(
   sourceLang: string,
   targetLang: string,
   provider: TranslatorName,
+  mode = "default",
 ): Promise<void> {
   try {
     const platform = getPlatformService();
-    const key = getCacheKey(text, sourceLang, targetLang, provider);
+    const key = getCacheKey(text, sourceLang, targetLang, provider, mode);
     await platform.kvSetItem(
       key,
       JSON.stringify({

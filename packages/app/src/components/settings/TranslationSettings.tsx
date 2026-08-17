@@ -5,6 +5,7 @@ import { PasswordInput } from "@/components/ui/password-input";
  * AI translation uses existing AI config from AI settings
  * Target language is selected in the translation popup
  */
+import { Textarea } from "@/components/ui/textarea";
 import { useSettingsStore } from "@/stores/settings-store";
 import { TRANSLATOR_PROVIDERS } from "@readany/core/types/translation";
 import { Check, ChevronDown } from "lucide-react";
@@ -234,6 +235,27 @@ export function TranslationSettings() {
               </div>
             </div>
           )}
+
+          {/* 词典查词提示词（长按单词时使用的 AI 提示词） */}
+          <div className="space-y-2">
+            <span className="text-sm text-foreground">{t("settings.dictionaryPromptTitle")}</span>
+            <Textarea
+              rows={6}
+              value={translationConfig.dictionaryPrompt ?? ""}
+              placeholder={t("settings.dictionaryPromptPlaceholder")}
+              onChange={(e) => updateTranslationConfig({ dictionaryPrompt: e.target.value })}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">{t("settings.dictionaryPromptDesc")}</p>
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                onClick={() => updateTranslationConfig({ dictionaryPrompt: "" })}
+              >
+                {t("settings.dictionaryPromptReset")}
+              </button>
+            </div>
+          </div>
         </div>
       </section>
     </div>
