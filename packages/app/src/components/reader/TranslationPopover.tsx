@@ -52,8 +52,10 @@ export function TranslationPopover({
   // switching the language in the popover re-renders the prompt too).
   const systemPrompt = useMemo(() => {
     if (!dictionary) return undefined;
-    return buildDictionaryPrompt(translationConfig.dictionaryPrompt, "AUTO", targetLang);
-  }, [dictionary, translationConfig.dictionaryPrompt, targetLang]);
+    const p = buildDictionaryPrompt(translationConfig.dictionaryPrompt, "AUTO", targetLang, text);
+    console.log("[DictPrompt] word:", text, "prompt:", p.slice(0, 120));
+    return p;
+  }, [dictionary, translationConfig.dictionaryPrompt, targetLang, text]);
 
   const { translate, loading, error, provider } = useTranslator({ targetLang, systemPrompt });
 

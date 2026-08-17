@@ -69,10 +69,12 @@ export function buildDictionaryPrompt(
   template: string | undefined | null,
   sourceLang: string,
   targetLang: string,
+  word?: string,
 ): string {
   const tpl = (template?.trim() || DEFAULT_DICTIONARY_PROMPT)
     .replace(/\{targetLang\}/g, getLanguageName(targetLang))
-    .replace(/\{sourceLang\}/g, sourceLang === "AUTO" ? "原文" : getLanguageName(sourceLang));
+    .replace(/\{sourceLang\}/g, sourceLang === "AUTO" ? "原文" : getLanguageName(sourceLang))
+    .replace(/\{word\}/g, word ?? "");
   return tpl;
 }
 
@@ -102,6 +104,7 @@ export async function aiTranslate(
 
   // Custom system prompt (e.g. dictionary mode) replaces the default translation prompt
   const prompt = systemPrompt ?? buildAITranslationPrompt(sourceLang, targetLang);
+  console.log("[aiTranslate] systemPrompt provided:", !!systemPrompt, "prompt:", prompt.slice(0, 80));
 
   // For single text, use simple translation
   if (texts.length === 1) {
@@ -113,7 +116,7 @@ export async function aiTranslate(
         messages: [
           {
             role: "system",
-            content: buildAITranslationPrompt(sourceLang, targetLang),
+            content: prompt,
           },
           { role: "user", content: texts[0] },
         ],
@@ -128,7 +131,9 @@ export async function aiTranslate(
     }
 
     const data = await response.json();
-    return [data.choices[0]?.message?.content?.trim() || texts[0]];
+    const result = data.choices[0]?.message?.content?.trim() || texts[0];
+    console.log("[aiTranslate] result:", result.slice(0, 200));
+    return [result];
   }
 
   // For multiple texts, translate individually

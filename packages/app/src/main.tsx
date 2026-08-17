@@ -142,6 +142,13 @@ i18nReady.then(() => {
   import("foliate-js/view.js").catch(() => {});
   import("foliate-js/paginator.js").catch(() => {});
 
+  // Forward webview console output to the Rust logger (terminal) for easy debugging
+  import("@tauri-apps/plugin-log")
+    .then(({ attachConsole }) => attachConsole())
+    .catch(() => {
+      /* browser-only dev page: no Tauri log plugin */
+    });
+
   const rootElement = document.getElementById("root");
   if (!rootElement) {
     throw new Error("Root element not found");

@@ -6,7 +6,7 @@
 
 import { useCallback, useState } from "react";
 import { useSettingsStore } from "../stores/settings-store";
-import { getFromCache, storeInCache } from "../translation/cache";
+import { getFromCache, simpleHash, storeInCache } from "../translation/cache";
 import { aiTranslate, deeplTranslate, microsoftTranslate } from "../translation/providers";
 import type { AIConfig } from "../types";
 import type { TranslationConfig, TranslationTargetLang } from "../types/translation";
@@ -46,8 +46,10 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
 
       const targetLanguage = targetLang || translationConfig.targetLang;
       const providerId = translationConfig.provider.id;
-      // Isolate cache entries by prompt mode so dictionary results never collide with plain translations
-      const cacheMode = systemPrompt ? "dict" : "default";
+      // Isolate cache entries by prompt mode so dictionary results never collide
+      // with plain translations; the prompt fingerprint makes edited prompts
+      // bypass stale cached results immediately.
+      const cacheMode = systemPrompt ? `dict_${simpleHash(systemPrompt)}` : "default";
 
       const cachedResults: string[] = [];
       const needsTranslation: { index: number; text: string }[] = [];

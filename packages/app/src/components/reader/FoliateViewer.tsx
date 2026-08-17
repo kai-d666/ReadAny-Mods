@@ -2063,8 +2063,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         // Register iframe event handlers for this section
         registerIframeEventHandlers(bookKey, detail.doc);
 
-        // Attach selection listener
-        attachSelectionListener(detail.doc);
+        // Attach selection listener (via ref so hot-updated code takes effect
+        // on newly loaded docs without restarting the app)
+        attachSelectionListenerRef.current(detail.doc);
 
         setLoading(false);
         onLoaded?.();
@@ -2861,6 +2862,11 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       },
       [bookKey],
     );
+
+    // Keep the latest attachSelectionListener in a ref so doc loads after a
+    // hot update always register the newest handlers (no dev restart needed).
+    const attachSelectionListenerRef = useRef(attachSelectionListener);
+    attachSelectionListenerRef.current = attachSelectionListener;
 
     const getSelectionFromView = useCallback(
       (targetDoc?: Document | null): BookSelection | null => {
