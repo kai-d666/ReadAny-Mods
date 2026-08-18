@@ -60,8 +60,11 @@ export interface TranslationConfig {
   dictionarySpeak?: boolean;
   /** 欧路查词无效（图片词/网络失败）时用 AI 查词兜底；默认开启 */
   eudicFallback?: boolean;
-  /** 翻译弹窗拉伸后的尺寸（记忆，下次打开沿用） */
-  popoverSize?: { width: number; height: number };
+  /** 翻译弹窗拉伸后的尺寸（按模式独立记忆，下次打开沿用） */
+  popoverSize?: {
+    selection?: { width: number; height: number };
+    dictionary?: { width: number; height: number };
+  };
 }
 
 export const TRANSLATOR_PROVIDERS: Array<{ id: TranslatorName; labelKey: string }> = [

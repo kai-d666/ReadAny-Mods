@@ -1765,7 +1765,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const handleTranslate = useCallback(() => {
     if (selection?.text) {
       // Anchor on the selection's actual edges (main-window coords) so the
-      // popover never covers the highlighted text.
+      // popover never covers the highlighted text. x is the selection's true
+      // horizontal center (selectionPos.x is the SelectionPopover's corner,
+      // not the selection center — using it caused a visible offset).
       let pos: {
         x: number;
         y: number;
@@ -1780,7 +1782,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         const bottom = Math.max(...rects.map((r) => r.bottom));
         const left = Math.min(...rects.map((r) => r.left));
         const right = Math.max(...rects.map((r) => r.right));
-        pos = { ...selectionPos, top, bottom, left, right };
+        pos = { x: (left + right) / 2, y: selectionPos.y, top, bottom, left, right };
       }
       setTranslationText(selection.text);
       setTranslationPos(pos);

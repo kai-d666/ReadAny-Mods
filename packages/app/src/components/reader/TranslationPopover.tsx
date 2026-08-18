@@ -90,7 +90,10 @@ export function TranslationPopover({
   // box — position stays put (no jumping). Pointer capture is released on
   // pointerup AND pointercancel so the popover never gets "dragged along".
   const [size, setSize] = useState<{ width: number; height: number | null }>(
-    translationConfig.popoverSize ?? { width: POPOVER_WIDTH, height: null },
+    translationConfig.popoverSize?.[dictionary ? "dictionary" : "selection"] ?? {
+      width: POPOVER_WIDTH,
+      height: null,
+    },
   );
   const sizeRef = useRef(size);
   sizeRef.current = size;
@@ -99,41 +102,6 @@ export function TranslationPopover({
   // pointer events + setPointerCapture + userSelect lock).
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartRef = useRef({ x: 0, y: 0, w: POPOVER_WIDTH, h: POPOVER_MIN_HEIGHT });
-
-  const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    resizeStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      w: sizeRef.current.width,
-      h: sizeRef.current.height ?? containerRef.current?.offsetHeight ?? POPOVER_MIN_HEIGHT,
-    };
-    setIsResizing(true);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
-
-  const handleResizePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!isResizing) return;
-      const { x, y, w, h } = resizeStartRef.current;
-      const next = {
-        width: Math.max(POPOVER_MIN_WIDTH, Math.min(w + (e.clientX - x), window.innerWidth - PADDING * 2)),
-        height: Math.max(POPOVER_MIN_HEIGHT, Math.min(h + (e.clientY - y), window.innerHeight - PADDING * 2)),
-      };
-      sizeRef.current = next;
-      setSize(next);
-      // TEMP probe: which layer follows the size?
-      console.log(
-        "[ResizeProbe]",
-        "size:", JSON.stringify(next),
-        "outer:", containerRef.current?.offsetHeight,
-        "inner:", containerRef.current?.firstElementChild?.offsetHeight,
-        "content:", containerRef.current?.querySelector(".h-full")?.offsetHeight,
-      );
-    },
-    [isResizing],
-  );
 
   // Prevent text selection while dragging (ResizeHandle pattern)
   useEffect(() => {
@@ -202,6 +170,15 @@ export function TranslationPopover({
         x = anchorLeft - GAP - popoverWidth;
         y = anchorCenterY;
       }
+    } else if (!dictionary && spaceRight >= popoverWidth) {
+      // Selection translation prefers left/right placement
+      mode = "right";
+      x = anchorRight + GAP;
+      y = anchorCenterY;
+    } else if (!dictionary && spaceLeft >= popoverWidth) {
+      mode = "left";
+      x = anchorLeft - GAP - popoverWidth;
+      y = anchorCenterY;
     } else if (spaceAbove >= popoverHeight) {
       mode = "above";
       x = position.x;
@@ -257,21 +234,56 @@ export function TranslationPopover({
     }
 
     return { x, y, mode };
-  }, [position]);
+  }, [position, dictionary]);
 
-  // Defined after calculatePosition (its deps reference it — avoid TDZ crash)
+  // Resize handlers are defined after calculatePosition — their deps reference
+  // it and would hit TDZ otherwise (this caused a white-screen crash before).
+  const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      w: sizeRef.current.width,
+      h: sizeRef.current.height ?? containerRef.current?.offsetHeight ?? POPOVER_MIN_HEIGHT,
+    };
+    setIsResizing(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleResizePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isResizing) return;
+      const { x, y, w, h } = resizeStartRef.current;
+      const next = {
+        width: Math.max(POPOVER_MIN_WIDTH, Math.min(w + (e.clientX - x), window.innerWidth - PADDING * 2)),
+        height: Math.max(POPOVER_MIN_HEIGHT, Math.min(h + (e.clientY - y), window.innerHeight - PADDING * 2)),
+      };
+      sizeRef.current = next;
+      setSize(next);
+      // Real-time position update during the drag (keep direction, clamp to viewport)
+      setPos(calculatePosition(posRef.current.mode));
+    },
+    [isResizing, calculatePosition],
+  );
+
   const handleResizePointerUp = useCallback(
     (e: React.PointerEvent) => {
       if (!isResizing) return;
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
       setIsResizing(false);
-      // Remember the dragged size for next time
-      updateTranslationConfig({ popoverSize: sizeRef.current });
+      // Remember the dragged size for this mode (selection / dictionary)
+      updateTranslationConfig({
+        popoverSize: {
+          ...translationConfig.popoverSize,
+          [dictionary ? "dictionary" : "selection"]: sizeRef.current,
+        },
+      });
       // Re-anchor with the final size, keeping the current direction so the
       // box never escapes the viewport (and never jumps direction).
       setPos(calculatePosition(posRef.current.mode));
     },
-    [isResizing, updateTranslationConfig, calculatePosition],
+    [isResizing, updateTranslationConfig, calculatePosition, translationConfig, dictionary],
   );
 
   const [pos, setPos] = useState(() => calculatePosition());
