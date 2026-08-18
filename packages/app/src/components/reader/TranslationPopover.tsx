@@ -14,7 +14,6 @@ import {
 } from "@readany/core/types/translation";
 import { BookOpen, Check, ChevronDown, Copy, Languages, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 interface TranslationPopoverProps {
@@ -35,7 +34,6 @@ interface TranslationPopoverProps {
 const POPOVER_WIDTH = 288; // w-72 = 18rem = 288px
 const POPOVER_MIN_HEIGHT = 100; // header + content min height
 const POPOVER_MAX_HEIGHT = 200; // max total height
-const POPOVER_MIN_WIDTH = 220;
 const PADDING = 16;
 const GAP = 8;
 
@@ -86,188 +84,58 @@ export function TranslationPopover({
   const langRef = useRef<HTMLDivElement>(null);
   const providerRef = useRef<HTMLDivElement>(null);
 
-  // Resizable size (height null = auto until user drags the resize handle).
-  // Restores the last dragged size from settings (persisted).
-  const [size, setSize] = useState<{ width: number; height: number | null }>(
-    translationConfig.popoverSize ?? { width: POPOVER_WIDTH, height: null },
-  );
-  const sizeRef = useRef(size);
-  sizeRef.current = size;
-
-  // Clamp the current mode's position to the viewport with the latest size,
-  // without switching modes — used while the resize handle is being dragged so
-  // the popover stays put (no jumping) but never covers the anchor.
-  const clampCurrentMode = useCallback(() => {
-    const popoverHeight =
-      sizeRef.current.height ?? containerRef.current?.offsetHeight ?? POPOVER_MIN_HEIGHT;
-    const popoverWidth = sizeRef.current.width;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const anchorTop = position.top ?? position.y;
-    const anchorBottom = position.bottom ?? position.y;
-    const anchorLeft = position.left ?? position.x;
-    const anchorRight = position.right ?? position.x;
-    const anchorCenterY = (anchorTop + anchorBottom) / 2;
-
-    const mode = posRef.current.mode;
-    let x: number;
-    let y: number;
-    if (mode === "above") {
-      x = Math.max(
-        popoverWidth / 2 + PADDING,
-        Math.min(position.x, vw - popoverWidth / 2 - PADDING),
-      );
-      y = anchorTop - GAP;
-    } else if (mode === "below") {
-      x = Math.max(
-        popoverWidth / 2 + PADDING,
-        Math.min(position.x, vw - popoverWidth / 2 - PADDING),
-      );
-      y = anchorBottom + GAP;
-    } else if (mode === "right") {
-      x = anchorRight + GAP;
-      y = Math.max(
-        PADDING + popoverHeight / 2,
-        Math.min(anchorCenterY, vh - popoverHeight / 2 - PADDING),
-      );
-    } else {
-      x = anchorLeft - GAP - popoverWidth;
-      y = Math.max(
-        PADDING + popoverHeight / 2,
-        Math.min(anchorCenterY, vh - popoverHeight / 2 - PADDING),
-      );
-    }
-    return { x, y, mode };
-  }, [position]);
-
-  // Drag-to-resize: bottom-right handle; final size is persisted to settings
-  const startResize = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startW = sizeRef.current.width;
-      const startH =
-        sizeRef.current.height ?? containerRef.current?.offsetHeight ?? POPOVER_MIN_HEIGHT;
-      const onMove = (ev: PointerEvent) => {
-        const w = Math.max(POPOVER_MIN_WIDTH, startW + (ev.clientX - startX));
-        const h = Math.max(POPOVER_MIN_HEIGHT, startH + (ev.clientY - startY));
-        setSize({
-          width: Math.min(w, window.innerWidth - PADDING * 2),
-          height: Math.min(h, window.innerHeight - PADDING * 2),
-        });
-        // Keep the popover anchored while resizing (no mode switching mid-drag)
-        setPos(clampCurrentMode());
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        // Remember the dragged size for next time
-        updateTranslationConfig({
-          popoverSize: {
-            width: sizeRef.current.width,
-            height: sizeRef.current.height ?? POPOVER_MIN_HEIGHT,
-          },
-        });
-        // Re-anchor with the final size (kept stable during the drag)
-        setPos(calculatePosition());
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [updateTranslationConfig, clampCurrentMode],
-  );
-
-  // Position modes: above/below the anchor vertically, right/left when there
-  // is no vertical room — never covering the highlighted content. Reads size
-  // from the ref so dragging the resize handle doesn't re-position the popover
-  // mid-drag (it re-anchors once on pointer up).
+  // Position: fixed size, above the anchor when there is room, else below.
+  // Anchored on the word/selection's top/bottom edges so it never covers it.
   const calculatePosition = useCallback(() => {
-    const popoverHeight = sizeRef.current.height ?? Math.min(
+    const popoverHeight = Math.min(
       containerRef.current?.offsetHeight || POPOVER_MIN_HEIGHT,
       POPOVER_MAX_HEIGHT,
     );
-    const popoverWidth = sizeRef.current.width;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
     const anchorTop = position.top ?? position.y;
     const anchorBottom = position.bottom ?? position.y;
-    const anchorLeft = position.left ?? position.x;
-    const anchorRight = position.right ?? position.x;
-    const anchorCenterY = (anchorTop + anchorBottom) / 2;
 
+    // Calculate X: center on the anchor, clamp to viewport (using the actual
+    // rendered width so a narrowed popover still centers correctly)
+    let x = position.x;
+    const halfWidth = (containerRef.current?.offsetWidth || POPOVER_WIDTH) / 2;
+    if (x - halfWidth < PADDING) {
+      x = halfWidth + PADDING;
+    }
+    if (x + halfWidth > viewportWidth - PADDING) {
+      x = viewportWidth - halfWidth - PADDING;
+    }
+
+    // Calculate Y: prefer above, fallback to below
     const spaceAbove = anchorTop - GAP;
     const spaceBelow = viewportHeight - anchorBottom - GAP;
-    const spaceLeft = anchorLeft - GAP;
-    const spaceRight = viewportWidth - anchorRight - GAP;
 
-    let x: number;
     let y: number;
-    let mode: "above" | "below" | "right" | "left";
+    let showAbove: boolean;
 
     if (spaceAbove >= popoverHeight) {
-      mode = "above";
-      x = position.x;
       y = anchorTop - GAP;
+      showAbove = true;
     } else if (spaceBelow >= popoverHeight) {
-      mode = "below";
-      x = position.x;
       y = anchorBottom + GAP;
-    } else if (spaceRight >= popoverWidth) {
-      // No vertical room → place to the right of the anchor
-      mode = "right";
-      x = anchorRight + GAP;
-      y = anchorCenterY;
-    } else if (spaceLeft >= popoverWidth) {
-      // No vertical room and no right room → place to the left
-      mode = "left";
-      x = anchorLeft - GAP - popoverWidth;
-      y = anchorCenterY;
+      showAbove = false;
     } else {
-      // Nothing fits — use the side with the most room, clamped
-      const rooms = [
-        { mode: "above" as const, room: spaceAbove },
-        { mode: "below" as const, room: spaceBelow },
-        { mode: "right" as const, room: spaceRight },
-        { mode: "left" as const, room: spaceLeft },
-      ].sort((a, b) => b.room - a.room)[0];
-      mode = rooms.mode;
-      if (mode === "above") {
-        x = position.x;
+      if (spaceAbove > spaceBelow) {
         y = PADDING + popoverHeight;
-      } else if (mode === "below") {
-        x = position.x;
+        showAbove = true;
+      } else {
         y = anchorBottom + GAP;
         y = Math.min(y, viewportHeight - popoverHeight - PADDING);
-      } else if (mode === "right") {
-        x = anchorRight + GAP;
-        y = anchorCenterY;
-      } else {
-        x = anchorLeft - GAP - popoverWidth;
-        y = anchorCenterY;
+        showAbove = false;
       }
     }
 
-    // Horizontal clamp (vertical modes center on position.x)
-    if (mode === "above" || mode === "below") {
-      const halfWidth = popoverWidth / 2;
-      x = Math.max(halfWidth + PADDING, Math.min(x, viewportWidth - halfWidth - PADDING));
-    } else {
-      // Vertical clamp (right/left modes center vertically on the anchor)
-      y = Math.max(
-        PADDING + popoverHeight / 2,
-        Math.min(y, viewportHeight - popoverHeight / 2 - PADDING),
-      );
-    }
-
-    return { x, y, mode };
+    return { x, y, showAbove };
   }, [position]);
 
   const [pos, setPos] = useState(() => calculatePosition());
-  const posRef = useRef(pos);
-  posRef.current = pos;
 
   // Update position when content changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: content height changes after loading/translation updates.
@@ -454,33 +322,30 @@ export function TranslationPopover({
         ? t(providerLabel.labelKey)
         : translationConfig.provider.name;
 
-  return createPortal(
+  return (
     <div
       ref={containerRef}
-      className="fixed z-[9999]"
+      className="fixed z-50"
       style={{
-        width: size.width,
+        width: POPOVER_WIDTH,
+        // Never wider than the viewport (narrow windows)
+        maxWidth: "calc(100vw - 32px)",
         left: pos.x,
         top: pos.y,
-        transform:
-          pos.mode === "above"
-            ? "translate(-50%, -100%)"
-            : pos.mode === "below"
-              ? "translate(-50%, 0)"
-              : "translate(0, -50%)",
+        transform: pos.showAbove ? "translate(-50%, -100%)" : "translate(-50%, 0)",
       }}
     >
       <div
-        className="relative rounded-lg border border-border bg-background shadow-lg"
-        style={{ height: size.height ?? undefined }}
+        className="relative overflow-hidden rounded-lg border border-border shadow-lg"
+        style={{
+          // Clamp against the viewport so content never escapes the window
+          maxHeight: "calc(100vh - 32px)",
+          // Explicit theme colors: never let the popover end up with a
+          // transparent background (would bleed text onto the page below)
+          backgroundColor: "var(--background)",
+          color: "var(--foreground)",
+        }}
       >
-        {/* Resize handle (bottom-right) */}
-        <div
-          className="absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize"
-          onPointerDown={startResize}
-        >
-          <div className="absolute bottom-0.5 right-0.5 h-1.5 w-1.5 border-b-2 border-r-2 border-muted-foreground/40" />
-        </div>
         {/* Header: Language selector + Close */}
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
           <div className="flex min-w-0 items-center gap-2">
@@ -688,7 +553,6 @@ export function TranslationPopover({
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
