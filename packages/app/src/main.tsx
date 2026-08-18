@@ -133,6 +133,26 @@ i18nReady.then(() => {
   // Suppress the WebView2 native context menu (desktop app convention)
   document.addEventListener("contextmenu", (e) => e.preventDefault());
 
+  // Runtime probe: verify theme CSS variables actually resolve and no ancestor
+  // of the reader container breaks fixed positioning (transform/contain).
+  setTimeout(() => {
+    const cs = getComputedStyle(document.body);
+    console.log("[Probe] body bg:", cs.backgroundColor, "| --background:", cs.getPropertyValue("--background").trim(), "| --color-background:", cs.getPropertyValue("--color-background").trim());
+    // Walk ancestors of the app root to find transform/contain traps
+    const root = document.getElementById("root");
+    let n: Element | null = root;
+    let depth = 0;
+    while (n && depth < 12) {
+      const s = getComputedStyle(n);
+      if (s.transform !== "none" || s.contain !== "none" || s.filter !== "none" || s.backdropFilter !== "none") {
+        console.log(`[Probe] trap at depth ${depth}: <${n.tagName.toLowerCase()}> transform=${s.transform} contain=${s.contain} filter=${s.filter}`);
+      }
+      n = n.parentElement;
+      depth++;
+    }
+    console.log("[Probe] ancestor scan done");
+  }, 3000);
+
   // Initialize database and load books
   desktopDataRootReady.then(() => {
     useLibraryStore.getState().loadBooks();
@@ -157,13 +177,15 @@ i18nReady.then(() => {
               .map((a) =>
                 typeof a === "string"
                   ? a
-                  : (() => {
-                      try {
-                        return JSON.stringify(a);
-                      } catch {
-                        return String(a);
-                      }
-                    })(),
+                  : a instanceof Error
+                    ? (a.stack ?? String(a))
+                    : (() => {
+                        try {
+                          return JSON.stringify(a);
+                        } catch {
+                          return String(a);
+                        }
+                      })(),
               )
               .join(" ");
             invoke("web_log", { level: method, message }).catch(() => {});

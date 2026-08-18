@@ -3,6 +3,7 @@
  * Supports AI (using existing AI config) and DeepL
  */
 
+import { getStreamingFetch } from "../ai/llm-provider";
 import { buildOpenAICompatibleUrl } from "../utils/api";
 import type { TranslationProvider, TranslatorName } from "./types";
 
@@ -131,7 +132,9 @@ export async function aiTranslate(
 
   // For single text, use simple translation
   if (texts.length === 1) {
-    const response = await fetch(requestUrl, {
+    const response = await (getStreamingFetch())(requestUrl, {
+      // 30s timeout — never hang forever on a stalled request
+      signal: AbortSignal.timeout(30000),
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -167,7 +170,9 @@ export async function aiTranslate(
   return Promise.all(
     texts.map(async (text) => {
       try {
-        const response = await fetch(requestUrl, {
+        const response = await (getStreamingFetch())(requestUrl, {
+      // 30s timeout — never hang forever on a stalled request
+      signal: AbortSignal.timeout(30000),
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -246,7 +251,9 @@ export async function aiTranslateBatch(
   const numberedInput = texts.map((t, i) => `${i + 1}. ${t}`).join("\n");
 
   try {
-    const response = await fetch(requestUrl, {
+    const response = await (getStreamingFetch())(requestUrl, {
+      // 30s timeout — never hang forever on a stalled request
+      signal: AbortSignal.timeout(30000),
       method: "POST",
       headers,
       body: JSON.stringify({

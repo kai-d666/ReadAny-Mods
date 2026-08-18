@@ -34,6 +34,7 @@ interface TranslationPopoverProps {
 const POPOVER_WIDTH = 288; // w-72 = 18rem = 288px
 const POPOVER_MIN_HEIGHT = 100; // header + content min height
 const POPOVER_MAX_HEIGHT = 200; // max total height
+const POPOVER_MIN_WIDTH = 220;
 const PADDING = 16;
 const GAP = 8;
 
@@ -84,58 +85,198 @@ export function TranslationPopover({
   const langRef = useRef<HTMLDivElement>(null);
   const providerRef = useRef<HTMLDivElement>(null);
 
-  // Position: fixed size, above the anchor when there is room, else below.
-  // Anchored on the word/selection's top/bottom edges so it never covers it.
-  const calculatePosition = useCallback(() => {
-    const popoverHeight = Math.min(
-      containerRef.current?.offsetHeight || POPOVER_MIN_HEIGHT,
-      POPOVER_MAX_HEIGHT,
-    );
+  // Resizable size (height null = auto until the user drags the handle).
+  // Restores the last dragged size from settings. Resizing only changes the
+  // box — position stays put (no jumping). Pointer capture is released on
+  // pointerup AND pointercancel so the popover never gets "dragged along".
+  const [size, setSize] = useState<{ width: number; height: number | null }>(
+    translationConfig.popoverSize ?? { width: POPOVER_WIDTH, height: null },
+  );
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+
+  // Resize drag state (follows the project's ResizeHandle pattern: element-level
+  // pointer events + setPointerCapture + userSelect lock).
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef({ x: 0, y: 0, w: POPOVER_WIDTH, h: POPOVER_MIN_HEIGHT });
+
+  const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      w: sizeRef.current.width,
+      h: sizeRef.current.height ?? containerRef.current?.offsetHeight ?? POPOVER_MIN_HEIGHT,
+    };
+    setIsResizing(true);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleResizePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isResizing) return;
+      const { x, y, w, h } = resizeStartRef.current;
+      const next = {
+        width: Math.max(POPOVER_MIN_WIDTH, Math.min(w + (e.clientX - x), window.innerWidth - PADDING * 2)),
+        height: Math.max(POPOVER_MIN_HEIGHT, Math.min(h + (e.clientY - y), window.innerHeight - PADDING * 2)),
+      };
+      sizeRef.current = next;
+      setSize(next);
+      // TEMP probe: which layer follows the size?
+      console.log(
+        "[ResizeProbe]",
+        "size:", JSON.stringify(next),
+        "outer:", containerRef.current?.offsetHeight,
+        "inner:", containerRef.current?.firstElementChild?.offsetHeight,
+        "content:", containerRef.current?.querySelector(".h-full")?.offsetHeight,
+      );
+    },
+    [isResizing],
+  );
+
+  // Prevent text selection while dragging (ResizeHandle pattern)
+  useEffect(() => {
+    if (isResizing) {
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "se-resize";
+    }
+    return () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizing]);
+
+  // Cleanup on unmount (popover might close while dragging)
+  useEffect(() => {
+    return () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, []);
+
+  // Position: above the anchor when there is room, else below; when there is
+  // no vertical room at all, flip to the anchor's right (then left). Anchored
+  // on the word/selection's edges so it never covers it.
+  // preferMode: keep the current direction (used after a resize) — the box is
+  // re-clamped to the viewport without switching direction.
+  const calculatePosition = useCallback(
+    (preferMode?: "above" | "below" | "right" | "left") => {
+    const popoverHeight =
+      sizeRef.current.height ??
+      Math.min(
+        containerRef.current?.offsetHeight || POPOVER_MIN_HEIGHT,
+        POPOVER_MAX_HEIGHT,
+      );
+    const popoverWidth = containerRef.current?.offsetWidth || POPOVER_WIDTH;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
     const anchorTop = position.top ?? position.y;
     const anchorBottom = position.bottom ?? position.y;
+    const anchorLeft = position.left ?? position.x;
+    const anchorRight = position.right ?? position.x;
+    const anchorCenterY = (anchorTop + anchorBottom) / 2;
 
-    // Calculate X: center on the anchor, clamp to viewport (using the actual
-    // rendered width so a narrowed popover still centers correctly)
-    let x = position.x;
-    const halfWidth = (containerRef.current?.offsetWidth || POPOVER_WIDTH) / 2;
-    if (x - halfWidth < PADDING) {
-      x = halfWidth + PADDING;
-    }
-    if (x + halfWidth > viewportWidth - PADDING) {
-      x = viewportWidth - halfWidth - PADDING;
-    }
-
-    // Calculate Y: prefer above, fallback to below
     const spaceAbove = anchorTop - GAP;
     const spaceBelow = viewportHeight - anchorBottom - GAP;
+    const spaceLeft = anchorLeft - GAP;
+    const spaceRight = viewportWidth - anchorRight - GAP;
 
+    let x: number;
     let y: number;
-    let showAbove: boolean;
+    let mode: "above" | "below" | "right" | "left";
 
-    if (spaceAbove >= popoverHeight) {
-      y = anchorTop - GAP;
-      showAbove = true;
-    } else if (spaceBelow >= popoverHeight) {
-      y = anchorBottom + GAP;
-      showAbove = false;
-    } else {
-      if (spaceAbove > spaceBelow) {
-        y = PADDING + popoverHeight;
-        showAbove = true;
+    if (preferMode) {
+      mode = preferMode;
+      if (mode === "above") {
+        x = position.x;
+        y = anchorTop - GAP;
+      } else if (mode === "below") {
+        x = position.x;
+        y = anchorBottom + GAP;
+      } else if (mode === "right") {
+        x = anchorRight + GAP;
+        y = anchorCenterY;
       } else {
+        x = anchorLeft - GAP - popoverWidth;
+        y = anchorCenterY;
+      }
+    } else if (spaceAbove >= popoverHeight) {
+      mode = "above";
+      x = position.x;
+      y = anchorTop - GAP;
+    } else if (spaceBelow >= popoverHeight) {
+      mode = "below";
+      x = position.x;
+      y = anchorBottom + GAP;
+    } else if (spaceRight >= popoverWidth) {
+      // No vertical room — place to the right of the anchor
+      mode = "right";
+      x = anchorRight + GAP;
+      y = anchorCenterY;
+    } else if (spaceLeft >= popoverWidth) {
+      // No vertical room and no right room — place to the left
+      mode = "left";
+      x = anchorLeft - GAP - popoverWidth;
+      y = anchorCenterY;
+    } else {
+      // Nothing fits — use the side with the most room, clamped
+      const rooms = [
+        { mode: "above" as const, room: spaceAbove },
+        { mode: "below" as const, room: spaceBelow },
+        { mode: "right" as const, room: spaceRight },
+        { mode: "left" as const, room: spaceLeft },
+      ].sort((a, b) => b.room - a.room)[0];
+      mode = rooms.mode;
+      if (mode === "above") {
+        x = position.x;
+        y = PADDING + popoverHeight;
+      } else if (mode === "below") {
+        x = position.x;
         y = anchorBottom + GAP;
         y = Math.min(y, viewportHeight - popoverHeight - PADDING);
-        showAbove = false;
+      } else if (mode === "right") {
+        x = anchorRight + GAP;
+        y = anchorCenterY;
+      } else {
+        x = anchorLeft - GAP - popoverWidth;
+        y = anchorCenterY;
       }
     }
 
-    return { x, y, showAbove };
+    // Clamp to viewport
+    if (mode === "above" || mode === "below") {
+      const halfWidth = popoverWidth / 2;
+      x = Math.max(halfWidth + PADDING, Math.min(x, viewportWidth - halfWidth - PADDING));
+    } else {
+      y = Math.max(
+        PADDING + popoverHeight / 2,
+        Math.min(y, viewportHeight - popoverHeight / 2 - PADDING),
+      );
+    }
+
+    return { x, y, mode };
   }, [position]);
 
+  // Defined after calculatePosition (its deps reference it — avoid TDZ crash)
+  const handleResizePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isResizing) return;
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      setIsResizing(false);
+      // Remember the dragged size for next time
+      updateTranslationConfig({ popoverSize: sizeRef.current });
+      // Re-anchor with the final size, keeping the current direction so the
+      // box never escapes the viewport (and never jumps direction).
+      setPos(calculatePosition(posRef.current.mode));
+    },
+    [isResizing, updateTranslationConfig, calculatePosition],
+  );
+
   const [pos, setPos] = useState(() => calculatePosition());
+  const posRef = useRef(pos);
+  posRef.current = pos;
 
   // Update position when content changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: content height changes after loading/translation updates.
@@ -327,17 +468,23 @@ export function TranslationPopover({
       ref={containerRef}
       className="fixed z-50"
       style={{
-        width: POPOVER_WIDTH,
+        width: size.width,
         // Never wider than the viewport (narrow windows)
         maxWidth: "calc(100vw - 32px)",
         left: pos.x,
         top: pos.y,
-        transform: pos.showAbove ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+        transform:
+          pos.mode === "above"
+            ? "translate(-50%, -100%)"
+            : pos.mode === "below"
+              ? "translate(-50%, 0)"
+              : "translate(0, -50%)",
       }}
     >
       <div
         className="relative overflow-hidden rounded-lg border border-border shadow-lg"
         style={{
+          height: size.height ?? undefined,
           // Clamp against the viewport so content never escapes the window
           maxHeight: "calc(100vh - 32px)",
           // Explicit theme colors: never let the popover end up with a
@@ -346,6 +493,16 @@ export function TranslationPopover({
           color: "var(--foreground)",
         }}
       >
+        {/* Resize handle (bottom-right) — ResizeHandle pattern */}
+        <div
+          className="absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize"
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={handleResizePointerUp}
+          onPointerCancel={handleResizePointerUp}
+        >
+          <div className="absolute bottom-0.5 right-0.5 h-1.5 w-1.5 border-b-2 border-r-2 border-muted-foreground/40" />
+        </div>
         {/* Header: Language selector + Close */}
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
           <div className="flex min-w-0 items-center gap-2">
@@ -436,7 +593,8 @@ export function TranslationPopover({
         </div>
 
         {/* Translation content */}
-        <div className="max-h-full overflow-y-auto p-3">
+        <div className="flex h-full flex-col p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto">
           {isEudic ? (
             <>
               {eudicState.loading && (
@@ -447,7 +605,7 @@ export function TranslationPopover({
               )}
 
               {eudicState.entry && !eudicState.loading && (
-                <div className="max-h-40 space-y-1.5 overflow-y-auto">
+                <div className="space-y-1.5">
                   {eudicState.entry.phonetic && (
                     <div className="text-xs text-muted-foreground">
                       {eudicState.entry.phonetic}
@@ -483,7 +641,7 @@ export function TranslationPopover({
                       <div className="py-1 text-sm text-destructive">{error}</div>
                     )}
                     {!loading && !error && translation && (
-                      <p className="max-h-32 overflow-y-auto whitespace-pre-line text-sm leading-relaxed">
+                      <p className="whitespace-pre-line text-sm leading-relaxed">
                         {translation}
                       </p>
                     )}
@@ -521,35 +679,35 @@ export function TranslationPopover({
               {error && !loading && <div className="py-1 text-sm text-destructive">{error}</div>}
 
               {!loading && !error && translation && (
-                <>
-                  <p className="max-h-32 overflow-y-auto whitespace-pre-line text-sm leading-relaxed">
-                    {translation}
-                  </p>
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <span className="max-w-28 truncate text-[10px] text-muted-foreground">
-                      {providerName}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          <span>{t("common.copied")}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3" />
-                          <span>{t("common.copy")}</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </>
+                <p className="whitespace-pre-line text-sm leading-relaxed">{translation}</p>
               )}
             </>
+          )}
+          </div>
+          {/* Bottom row — pinned to the popover bottom, outside the scroll area */}
+          {!isEudic && !loading && !error && translation && (
+            <div className="flex shrink-0 items-center justify-end gap-2 pt-1">
+              <span className="max-w-28 truncate text-[10px] text-muted-foreground">
+                {providerName}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3 w-3" />
+                    <span>{t("common.copied")}</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    <span>{t("common.copy")}</span>
+                  </>
+                )}
+              </button>
+            </div>
           )}
         </div>
       </div>

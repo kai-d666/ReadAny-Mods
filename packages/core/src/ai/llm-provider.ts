@@ -14,6 +14,11 @@ export function setStreamingFetch(fetchImpl: typeof globalThis.fetch) {
   _streamingFetch = fetchImpl;
 }
 
+/** Cross-platform fetch (Tauri http plugin on desktop, globalThis.fetch elsewhere) */
+export function getStreamingFetch(): typeof globalThis.fetch {
+  return _streamingFetch ?? globalThis.fetch;
+}
+
 function isRequestLike(input: RequestInfo | URL): input is Request {
   return typeof Request !== "undefined" && input instanceof Request;
 }
