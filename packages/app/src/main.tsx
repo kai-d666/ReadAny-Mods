@@ -136,9 +136,9 @@ i18nReady.then(() => {
   // Runtime probe: measure tauri http fetch latency to the translation API
   setTimeout(() => {
     void (async () => {
+      const t0 = Date.now();
       try {
         const { fetch: tfetch } = await import("@tauri-apps/plugin-http");
-        const t0 = Date.now();
         const res = await tfetch("https://api.siliconflow.cn/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: "Bearer invalid-key" },

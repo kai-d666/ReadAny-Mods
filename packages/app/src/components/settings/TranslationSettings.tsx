@@ -187,29 +187,34 @@ export function TranslationSettings() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ai">{t("settings.dictionaryMethodAI")}</SelectItem>
+                      <SelectItem value="ecdict">{t("settings.dictionaryMethodECDICT")}</SelectItem>
                       <SelectItem value="eudic">{t("settings.dictionaryMethodEudic")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {translationConfig.dictionaryMethod === "eudic" ? (
+                {translationConfig.dictionaryMethod !== "ai" ? (
                   <>
                     <p className="text-xs text-muted-foreground">
-                      {t("settings.dictionaryMethodEudicHint")}
+                      {translationConfig.dictionaryMethod === "ecdict"
+                        ? t("settings.dictionaryMethodECDICTHint")
+                        : t("settings.dictionaryMethodEudicHint")}
                     </p>
-                    {/* 欧路无效时 AI 兜底开关 */}
+                    {/* 非 AI 方案查不到时 AI 兜底开关 */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="space-y-0.5">
                         <span className="text-sm text-foreground">
-                          {t("settings.eudicFallback")}
+                          {t("settings.dictionaryFallback")}
                         </span>
                         <p className="text-xs text-muted-foreground">
-                          {t("settings.eudicFallbackDesc")}
+                          {t("settings.dictionaryFallbackDesc")}
                         </p>
                       </div>
                       <Switch
-                        checked={translationConfig.eudicFallback !== false}
-                        onCheckedChange={(v) => updateTranslationConfig({ eudicFallback: v })}
+                        checked={translationConfig.dictionaryFallback !== false}
+                        onCheckedChange={(v) =>
+                          updateTranslationConfig({ dictionaryFallback: v })
+                        }
                       />
                     </div>
                   </>

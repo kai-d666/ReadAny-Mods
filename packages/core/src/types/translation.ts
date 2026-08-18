@@ -42,8 +42,8 @@ export interface AIModelSelection {
   model?: string;
 }
 
-/** 长按翻译的查词方案：AI 词典弹窗 / 唤起本地欧路词典 */
-export type DictionaryMethod = "ai" | "eudic";
+/** 长按翻译的查词方案：AI 查词 / 本地 ECDICT 词典 / 欧路词典 */
+export type DictionaryMethod = "ai" | "ecdict" | "eudic";
 
 export interface TranslationConfig {
   provider: TranslationProvider;
@@ -58,7 +58,9 @@ export interface TranslationConfig {
   dictionaryMethod?: DictionaryMethod;
   /** 长按查词时自动朗读单词发音（TTS） */
   dictionarySpeak?: boolean;
-  /** 欧路查词无效（图片词/网络失败）时用 AI 查词兜底；默认开启 */
+  /** 非 AI 查词方案（ECDICT/欧路）无效时用 AI 查词兜底；默认开启 */
+  dictionaryFallback?: boolean;
+  /** @deprecated 旧字段，读取时兼容回退 */
   eudicFallback?: boolean;
   /** 翻译弹窗拉伸后的尺寸（按模式独立记忆，下次打开沿用） */
   popoverSize?: {

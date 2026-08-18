@@ -14,6 +14,34 @@ fn web_log(level: String, message: String) {
     println!("[WEB:{level}] {message}");
 }
 
+/// Look up a word in the local ECDICT SQLite dictionary (stardict.db).
+/// Returns the entry (word/phonetic/translation/pos/exchange) or null.
+#[tauri::command]
+fn ecdict_lookup(word: String) -> Result<Option<serde_json::Value>, String> {
+    const DB_PATH: &str = r"D:\MCU\7-Claude code\Project\ReadAny\dictionary\stardict.db";
+    let conn = rusqlite::Connection::open(DB_PATH).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT word, phonetic, translation, pos, exchange FROM stardict WHERE word = ? LIMIT 1",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt
+        .query_map([&word], |r| {
+            Ok(serde_json::json!({
+                "word": r.get::<_, String>(0).unwrap_or_default(),
+                "phonetic": r.get::<_, String>(1).unwrap_or_default(),
+                "translation": r.get::<_, String>(2).unwrap_or_default(),
+                "pos": r.get::<_, String>(3).unwrap_or_default(),
+                "exchange": r.get::<_, String>(4).unwrap_or_default(),
+            }))
+        })
+        .map_err(|e| e.to_string())?;
+    match rows.next() {
+        Some(Ok(entry)) => Ok(Some(entry)),
+        _ => Ok(None),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -53,6 +81,7 @@ pub fn run() {
             vector::vector_shutdown,
             readany_cli::readany_cli_run,
             web_log,
+            ecdict_lookup,
         ])
         .setup(|app| {
             let app_handle = app.handle().clone();
