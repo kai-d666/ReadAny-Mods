@@ -20,6 +20,7 @@ import {
 import { SyncButton } from "@/components/ui/SyncButton";
 import { useReaderBridge } from "@/hooks/use-reader-bridge";
 import type { RelocateEvent, SelectionEvent, VisibleTTSSegment } from "@/hooks/use-reader-bridge";
+import { EudicNotInstalledError, launchEudic } from "@/lib/eudic-launcher";
 import { startFileServer, stopFileServer } from "@/lib/reader/local-file-server";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -1650,8 +1651,24 @@ export function ReaderScreen({ route, navigation }: Props) {
             });
           }}
           onTranslate={(text) => {
-            setShowTranslation(true);
-            setTranslationText(text);
+            // 翻译走欧路小窗(欧路有整句翻译引擎)
+            setSelection(null);
+            launchEudic(text).catch((err) => {
+              Alert.alert(
+                err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
+                err instanceof Error ? err.message : String(err),
+              );
+            });
+          }}
+          onDictionary={(text) => {
+            // 词典查词 → 欧路划词小窗
+            setSelection(null);
+            launchEudic(text).catch((err) => {
+              Alert.alert(
+                err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
+                err instanceof Error ? err.message : String(err),
+              );
+            });
           }}
           existingHighlight={
             existingSelectionHighlight

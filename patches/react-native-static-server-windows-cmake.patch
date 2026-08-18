@@ -1,0 +1,49 @@
+--- a/lighttpd1.4/src/CMakeLists.txt	2026-08-19 07:05:21.960786400 +0800
++++ b/lighttpd1.4/src/CMakeLists.txt	2026-08-19 07:05:52.113159300 +0800
+@@ -331,9 +331,9 @@
+ 		else()
+ 			execute_process(COMMAND ${XCONFIG_EXECUTABLE} --libs OUTPUT_VARIABLE __link_FLAGS)
+ 		endif()
+-		string(REPLACE "\n" "" ${_link_FLAGS} ${__link_FLAGS})
++		string(REPLACE "\n" "" "${_link_FLAGS}" "${__link_FLAGS}")
+ 		execute_process(COMMAND ${XCONFIG_EXECUTABLE} --cflags OUTPUT_VARIABLE __cflags)
+-		string(REPLACE "\n" "" ${_cflags} ${__cflags})
++		string(REPLACE "\n" "" "${_cflags}" "${__cflags}")
+ 	else()
+ 		message(STATUS "found ${_package}: no")
+ 	endif()
+@@ -567,6 +567,17 @@
+ 		## if we have pcre2-config, use it
+ 		xconfig(pcre2-config PCRE_LDFLAGS PCRE_CFLAGS)
+ 	endif()
++	if(CMAKE_HOST_WIN32)
++		## pcre2-config is a POSIX sh script, unexecutable on Windows hosts;
++		## point directly at the PCRE2 prebuilt into the module's sysroot.
++		## (Quoted so spaces in CMAKE_BINARY_DIR survive ninja's splitting.)
++		if(NOT PCRE_LDFLAGS)
++			set(PCRE_LDFLAGS "-L\"${CMAKE_BINARY_DIR}/sysroot/lib\" -lpcre2-8")
++		endif()
++		if(NOT PCRE_CFLAGS)
++			set(PCRE_CFLAGS "-I\"${CMAKE_BINARY_DIR}/sysroot/include\"")
++		endif()
++	endif()
+ 	if(PCRE_LDFLAGS OR PCRE_CFLAGS)
+ 		message(STATUS "found pcre2 at: LDFLAGS: ${PCRE_LDFLAGS} CFLAGS: ${PCRE_CFLAGS}")
+ 
+@@ -578,7 +589,7 @@
+ 		set(HAVE_PCRE2_H 1)
+ 		set(HAVE_PCRE 1)
+ 	else()
+-		if(NOT WIN32)
++		if(NOT WIN32 AND NOT ANDROID)
+ 			check_include_files(pcre2.h HAVE_PCRE2_H)
+ 			check_library_exists(pcre2-8 pcre2_match_8 "" HAVE_PCRE)
+ 			set(PCRE_LDFLAGS -lpcre2-8)
+@@ -598,6 +609,7 @@
+ 				set(CMAKE_REQUIRED_INCLUDES)
+ 				set(CMAKE_REQUIRED_LIBRARIES)
+ 				include_directories(${PCRE_INCLUDE_DIR})
++				set(PCRE_LDFLAGS ${PCRE_LIBRARY})
+ 			endif()
+ 		endif()
+ 	endif()

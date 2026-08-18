@@ -1,4 +1,5 @@
 import {
+  BookOpenIcon,
   CopyIcon,
   HighlighterIcon,
   LanguagesIcon,
@@ -56,6 +57,8 @@ interface Props {
   onSpeak?: (text: string, cfi: string) => void;
   onNote?: (text: string, cfi: string) => void;
   onTranslate?: (text: string) => void;
+  /** 唤起外部词典(欧路小窗)查词 */
+  onDictionary?: (text: string) => void;
   onRemoveHighlight?: () => void;
   existingHighlight?: { id: string; color: HighlightColor; note?: string } | null;
   defaultColor?: HighlightColor;
@@ -70,6 +73,7 @@ export function SelectionPopover({
   onSpeak,
   onNote,
   onTranslate,
+  onDictionary,
   onRemoveHighlight,
   existingHighlight,
   defaultColor = "yellow",
@@ -102,6 +106,7 @@ export function SelectionPopover({
     4 +
     (onNote ? 1 : 0) +
     (onTranslate ? 1 : 0) +
+    (onDictionary ? 1 : 0) +
     (onSpeak ? 1 : 0);
   const colorRowItemCount = HIGHLIGHT_COLORS.length + (canRemoveHighlight ? 2 : 0);
   const colorRowWidth = showColors
@@ -183,6 +188,13 @@ export function SelectionPopover({
     onDismiss();
   }, [selection.text, onTranslate, onDismiss]);
 
+  const handleDictionary = useCallback(() => {
+    if (onDictionary) {
+      onDictionary(selection.text);
+    }
+    onDismiss();
+  }, [selection.text, onDictionary, onDismiss]);
+
   const handleRemove = useCallback(() => {
     if (onRemoveHighlight) {
       onRemoveHighlight();
@@ -258,6 +270,17 @@ export function SelectionPopover({
           {onTranslate && (
             <TouchableOpacity style={s.iconBtn} onPress={handleTranslate}>
               <LanguagesIcon size={18} color={colors.foreground} />
+            </TouchableOpacity>
+          )}
+
+          {onDictionary && (
+            <TouchableOpacity
+              style={s.iconBtn}
+              onPress={handleDictionary}
+              accessibilityRole="button"
+              accessibilityLabel="词典查词"
+            >
+              <BookOpenIcon size={18} color={colors.foreground} />
             </TouchableOpacity>
           )}
 

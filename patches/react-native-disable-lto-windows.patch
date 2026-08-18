@@ -1,0 +1,17 @@
+--- a/ReactAndroid/cmake-utils/ReactNative-application.cmake	2026-08-19 07:05:21.943598300 +0800
++++ b/ReactAndroid/cmake-utils/ReactNative-application.cmake	2026-08-19 07:05:31.530417000 +0800
+@@ -32,9 +32,13 @@
+ endif(CCACHE_FOUND)
+ 
+ # If the user toolchain supports IPO, we enable it for the app build
++# NOTE (Windows): thin LTO + lld cannot resolve VTT/vtable symbols across
++# shared libraries on Windows (RN 0.81 known issue) - disabled.
++# (CMAKE_HOST_WIN32, not WIN32: WIN32 reflects the *target*, which is
++# Android here.)
+ include(CheckIPOSupported)
+ check_ipo_supported(RESULT IPO_SUPPORT)
+-if (IPO_SUPPORT)
++if (IPO_SUPPORT AND NOT CMAKE_HOST_WIN32)
+   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+ endif()
+ 

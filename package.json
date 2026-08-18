@@ -37,7 +37,9 @@
     },
     "patchedDependencies": {
       "@langchain/core": "patches/@langchain__core.patch",
-      "react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch"
+      "react-native-track-player@4.1.2": "patches/react-native-track-player@4.1.2.patch",
+      "@dr.pogodin/react-native-static-server": "patches/react-native-static-server-windows-cmake.patch",
+      "react-native@0.81.5": "patches/react-native-disable-lto-windows.patch"
     }
   },
   "packageManager": "pnpm@9.15.0"

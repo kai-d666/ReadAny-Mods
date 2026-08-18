@@ -46,3 +46,4 @@ readese/*
 # Local WebDAV test server
 webdav-server/
 theme-studio/.claude/settings.local.json
+node_modules.bak-*/
