@@ -188,7 +188,6 @@ export function TranslationSettings() {
                     <SelectContent>
                       <SelectItem value="ai">{t("settings.dictionaryMethodAI")}</SelectItem>
                       <SelectItem value="ecdict">{t("settings.dictionaryMethodECDICT")}</SelectItem>
-                      <SelectItem value="eudic">{t("settings.dictionaryMethodEudic")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -196,9 +195,7 @@ export function TranslationSettings() {
                 {translationConfig.dictionaryMethod !== "ai" ? (
                   <>
                     <p className="text-xs text-muted-foreground">
-                      {translationConfig.dictionaryMethod === "ecdict"
-                        ? t("settings.dictionaryMethodECDICTHint")
-                        : t("settings.dictionaryMethodEudicHint")}
+                      {t("settings.dictionaryMethodECDICTHint")}
                     </p>
                     {/* 非 AI 方案查不到时 AI 兜底开关 */}
                     <div className="flex items-center justify-between gap-2">

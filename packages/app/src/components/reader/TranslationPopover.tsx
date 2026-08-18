@@ -4,7 +4,6 @@ import { useTranslator } from "@/hooks/useTranslator";
  * Robust positioning: always stays within viewport
  */
 import { lookupLocalDictionary, type ECDICTEntry } from "@/lib/ecdict-lookup";
-import { fetchEudicEntry, parseEudicEntry, type EudicEntry } from "@/lib/eudic-lookup";
 import { useSettingsStore } from "@/stores/settings-store";
 import { buildDictionaryPrompt } from "@readany/core/translation/providers";
 import {
@@ -49,44 +48,54 @@ export function TranslationPopover({
   const updateTranslationConfig = useSettingsStore((s) => s.updateTranslationConfig);
 
   // Local state
-  const [targetLang, setTargetLang] = useState<TranslationTargetLang>(translationConfig.targetLang);
+  const [targetLang] = useState<TranslationTargetLang>(translationConfig.targetLang);
   const [translation, setTranslation] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [providerRevision, setProviderRevision] = useState(0);
   const translationRequestKey = `${targetLang}:${providerRevision}`;
 
-  // Eudic web lookup mode: dictionary method set to "eudic"
-  const isEudic = dictionary && translationConfig.dictionaryMethod === "eudic";
   // Bump to force a fresh request after clearing the cache
   const [refreshKey, setRefreshKey] = useState(0);
   // Local ECDICT hit (offline, fastest) — checked first for any dictionary lookup
   const [ecdictEntry, setEcdictEntry] = useState<ECDICTEntry | null>(null);
-  // Non-AI methods (ECDICT/Eudic) fall back to AI only when enabled.
+  // Gate: AI must wait until the local lookup settles, otherwise a local hit
+  // would race with an already-fired AI request and overwrite the result.
+  // Uses a ref for the *instant* gate (state would not be visible to effects
+  // running in the same commit) + state to re-render when the gate opens.
+  const [ecdictChecking, setEcdictChecking] = useState(false);
+  const ecdictCheckingRef = useRef(false);
+  // Bumped after the local lookup settles — forces the AI effect to re-evaluate
+  // (setState for the gate can be batched away, leaving deps unchanged).
+  const [ecdictDoneTick, setEcdictDoneTick] = useState(0);
+  // Non-AI method (ECDICT) falls back to AI only when enabled.
   // Declared early — effects below reference it (avoid TDZ).
   const useDictionaryFallback =
-    (translationConfig.dictionaryFallback ?? translationConfig.eudicFallback ?? true) === true;
+    translationConfig.dictionaryFallback !== false;
 
-  // Local dictionary lookup first; hits skip Eudic/AI entirely
+  // Local dictionary lookup — only in ECDICT mode (the chosen method decides
+  // the primary engine; AI mode goes straight to AI). Hits skip AI fallback.
   useEffect(() => {
-    if (!dictionary) return;
+    if (!dictionary || translationConfig.dictionaryMethod !== "ecdict") return;
     let cancelled = false;
     setEcdictEntry(null);
-    lookupLocalDictionary(text).then((entry) => {
-      if (cancelled) return;
-      console.log("[ECDICT] word:", text, "hit:", !!entry);
-      setEcdictEntry(entry);
-    });
+    ecdictCheckingRef.current = true;
+    setEcdictChecking(true);
+    lookupLocalDictionary(text)
+      .then((entry) => {
+        if (cancelled) return;
+        console.log("[ECDICT] word:", text, "hit:", !!entry);
+        setEcdictEntry(entry);
+      })
+      .finally(() => {
+        ecdictCheckingRef.current = false;
+        setEcdictDoneTick((t) => t + 1);
+        if (!cancelled) setEcdictChecking(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [dictionary, text, refreshKey]);
-  const [eudicState, setEudicState] = useState<{
-    loading: boolean;
-    entry: EudicEntry | null;
-    error: string | null;
-  }>({ loading: false, entry: null, error: null });
-
+  }, [dictionary, translationConfig.dictionaryMethod, text, refreshKey]);
   // Dictionary mode resolves its own prompt from settings (live targetLang, so
   // switching the language in the popover re-renders the prompt too).
   const systemPrompt = useMemo(() => {
@@ -377,10 +386,12 @@ export function TranslationPopover({
     };
   }, [dictionary, translationConfig.dictionarySpeak, text]);
 
-  // Fetch translation (AI path; skipped in Eudic mode or local dictionary hit.
-  // For non-AI dictionary methods, AI only runs as fallback when enabled.)
+  // Fetch translation (AI path; skipped on a local dictionary hit or while
+  // the local lookup is still settling. For non-AI dictionary methods, AI
+  // only runs as fallback when enabled.)
   useEffect(() => {
-    if (isEudic || ecdictEntry) return;
+    // Instant gate via ref (state wouldn't be visible in the same commit)
+    if (ecdictCheckingRef.current || ecdictEntry) return;
     if (dictionary && translationConfig.dictionaryMethod !== "ai" && !useDictionaryFallback)
       return;
     void translationRequestKey;
@@ -410,75 +421,13 @@ export function TranslationPopover({
     targetLang,
     translate,
     systemPrompt,
-    isEudic,
     refreshKey,
     ecdictEntry,
+    ecdictChecking,
+    ecdictDoneTick,
     useDictionaryFallback,
     translationConfig.dictionaryMethod,
   ]);
-
-  // Eudic web lookup first; when the entry is unusable (empty/partial senses —
-  // Eudic serves many definitions as anti-scrape images — or network failure),
-  // fall back to AI translation in the same popover (unless disabled).
-  useEffect(() => {
-    if (!isEudic || ecdictEntry) return;
-    let cancelled = false;
-    setEudicState({ loading: true, entry: null, error: null });
-
-    const run = async () => {
-      let usable = false;
-      try {
-        const html = await fetchEudicEntry(text);
-        if (cancelled) return;
-        const entry = parseEudicEntry(html);
-        console.log(
-          "[EudicLookup] word:",
-          text,
-          "htmlLen:",
-          html.length,
-          "phonetic:",
-          entry.phonetic,
-          "senses:",
-          JSON.stringify(entry.senses.slice(0, 5)),
-        );
-        usable =
-          entry.senses.length > 0 && entry.senses.join("").replace(/\s/g, "").length >= 12;
-        if (cancelled) return;
-        setEudicState({ loading: false, entry: usable ? entry : null, error: null });
-      } catch (err) {
-        console.log("[EudicLookup] error:", err instanceof Error ? err.message : String(err));
-        if (!cancelled) {
-          setEudicState({ loading: false, entry: null, error: null });
-        }
-      }
-      // Fall back to AI translation when the Eudic entry is unusable
-      if (!usable && useDictionaryFallback && !cancelled) {
-        console.log("[EudicLookup] falling back to AI for:", text);
-        try {
-          const input = text.split("\n").join(" ").trim();
-          const requestKey = `${input}:${targetLang}`;
-          let request = inflightTranslationsRef.current.get(requestKey);
-          if (!request) {
-            request = translate([input]).finally(() => {
-              inflightTranslationsRef.current.delete(requestKey);
-            });
-            inflightTranslationsRef.current.set(requestKey, request);
-          }
-          const results = await request;
-          if (!cancelled && results[0]) {
-            setTranslation(results[0]);
-          }
-        } catch (err) {
-          console.error("Translation error:", err);
-        }
-      }
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isEudic, text, translate, useDictionaryFallback, refreshKey, ecdictEntry]);
 
   const handleProviderChange = (providerId: TranslatorName, providerName: string) => {
     updateTranslationConfig({
@@ -567,14 +516,10 @@ export function TranslationPopover({
                 <span>
                   {translationConfig.dictionaryMethod === "ecdict"
                     ? t("settings.dictionaryMethodECDICT")
-                    : translationConfig.dictionaryMethod === "eudic"
-                      ? t("settings.dictionaryMethodEudic")
-                      : t("settings.dictionaryMethodAI")}
+                    : t("settings.dictionaryMethodAI")}
                 </span>
               </span>
             )}
-            {!isEudic && (
-            <>
             <div className="relative min-w-0" ref={providerRef}>
               <button
                 type="button"
@@ -611,8 +556,6 @@ export function TranslationPopover({
                 </div>
               )}
             </div>
-            </>
-            )}
           </div>
 
           {/* Refresh: clear this word's cache and re-request (top-right corner).
@@ -637,9 +580,6 @@ export function TranslationPopover({
           <div className="min-h-0 flex-1 overflow-y-auto">
           {dictionary && ecdictEntry ? (
             <div className="space-y-1.5">
-              {ecdictEntry.phonetic && (
-                <div className="text-xs text-muted-foreground">{ecdictEntry.phonetic}</div>
-              )}
               {ecdictEntry.translation.split("\n").map((line, i) => (
                 <div key={i} className="text-sm leading-relaxed">
                   {line}
@@ -649,78 +589,6 @@ export function TranslationPopover({
                 <div className="text-xs text-muted-foreground">{ecdictEntry.exchange}</div>
               )}
             </div>
-          ) : isEudic ? (
-            <>
-              {eudicState.loading && (
-                <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{t("translation.eudicLoading")}</span>
-                </div>
-              )}
-
-              {eudicState.entry && !eudicState.loading && (
-                <div className="space-y-1.5">
-                  {eudicState.entry.phonetic && (
-                    <div className="text-xs text-muted-foreground">
-                      {eudicState.entry.phonetic}
-                    </div>
-                  )}
-                  {eudicState.entry.senses.map((sense, i) => (
-                    <div key={i} className="text-sm leading-relaxed">
-                      {sense}
-                    </div>
-                  ))}
-                  {eudicState.entry.examples.map((ex, i) => (
-                    <div key={`ex-${i}`} className="text-xs leading-relaxed text-muted-foreground">
-                      {ex}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Eudic unusable (image senses / network failure) */}
-              {!eudicState.loading && !eudicState.entry && (
-                useDictionaryFallback ? (
-                  <>
-                    <div className="pb-1 text-[10px] text-muted-foreground">
-                      {t("translation.eudicFallbackHint")}
-                    </div>
-                    {loading && (
-                      <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>{t("translation.translating")}</span>
-                      </div>
-                    )}
-                    {error && !loading && (
-                      <div className="py-1 text-sm text-destructive">{error}</div>
-                    )}
-                    {!loading && !error && translation && (
-                      <p className="whitespace-pre-line text-sm leading-relaxed">
-                        {translation}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <div className="space-y-2 py-1">
-                    <div className="text-sm text-muted-foreground">
-                      {t("translation.eudicNotFound")}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.open(
-                          `https://dict.eudic.net/dicts/en/${encodeURIComponent(text)}`,
-                          "_blank",
-                        )
-                      }
-                      className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                    >
-                      {t("translation.eudicOpenInBrowser")}
-                    </button>
-                  </div>
-                )
-              )}
-            </>
           ) : (
             <>
               {loading && (
@@ -733,13 +601,20 @@ export function TranslationPopover({
               {error && !loading && <div className="py-1 text-sm text-destructive">{error}</div>}
 
               {!loading && !error && translation && (
-                <p className="whitespace-pre-line text-sm leading-relaxed">{translation}</p>
+                <>
+                  {dictionary && translationConfig.dictionaryMethod === "ecdict" && (
+                    <div className="pb-1 text-[10px] text-muted-foreground">
+                      {t("settings.dictionaryFallbackHint")}
+                    </div>
+                  )}
+                  <p className="whitespace-pre-line text-sm leading-relaxed">{translation}</p>
+                </>
               )}
             </>
           )}
           </div>
           {/* Bottom row — pinned to the popover bottom, outside the scroll area */}
-          {!isEudic && !loading && !error && translation && (
+          {!loading && !error && translation && (
             <div className="flex shrink-0 items-center justify-end gap-2 pt-1">
               <span className="max-w-28 truncate text-[10px] text-muted-foreground">
                 {providerName}
