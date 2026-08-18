@@ -1764,14 +1764,23 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   const handleTranslate = useCallback(() => {
     if (selection?.text) {
-      // Anchor on the selection's actual top/bottom edges (main-window
-      // coords) so the popover never covers the highlighted text.
-      let pos: { x: number; y: number; top?: number; bottom?: number } = selectionPos;
+      // Anchor on the selection's actual edges (main-window coords) so the
+      // popover never covers the highlighted text.
+      let pos: {
+        x: number;
+        y: number;
+        top?: number;
+        bottom?: number;
+        left?: number;
+        right?: number;
+      } = selectionPos;
       const rects = selection.rects;
       if (rects && rects.length > 0) {
         const top = Math.min(...rects.map((r) => r.top));
         const bottom = Math.max(...rects.map((r) => r.bottom));
-        pos = { ...selectionPos, top, bottom };
+        const left = Math.min(...rects.map((r) => r.left));
+        const right = Math.max(...rects.map((r) => r.right));
+        pos = { ...selectionPos, top, bottom, left, right };
       }
       setTranslationText(selection.text);
       setTranslationPos(pos);
@@ -1781,9 +1790,20 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     setSelection(null);
   }, [selection, selectionPos]);
 
-  // Long-press word lookup: opens the same translation popover in dictionary mode
+  // Long-press word lookup: always opens the translation popover in dictionary
+  // mode; the popover itself decides AI vs Eudic web lookup from settings.
   const handleWordLookup = useCallback(
-    (word: string, pos: { x: number; y: number; top?: number; bottom?: number }) => {
+    (
+      word: string,
+      pos: {
+        x: number;
+        y: number;
+        top?: number;
+        bottom?: number;
+        left?: number;
+        right?: number;
+      },
+    ) => {
       setTranslationText(word);
       setTranslationPos(pos);
       setTranslationMode("dictionary");

@@ -42,6 +42,9 @@ export interface AIModelSelection {
   model?: string;
 }
 
+/** 长按翻译的查词方案：AI 词典弹窗 / 唤起本地欧路词典 */
+export type DictionaryMethod = "ai" | "eudic";
+
 export interface TranslationConfig {
   provider: TranslationProvider;
   targetLang: TranslationTargetLang;
@@ -51,6 +54,14 @@ export interface TranslationConfig {
   selectionModel?: AIModelSelection;
   /** 长按翻译（词典查词）使用的 AI 模型。未设置时使用对应功能直接报错。 */
   dictionaryModel?: AIModelSelection;
+  /** 长按翻译的查词方案；默认 AI 查词 */
+  dictionaryMethod?: DictionaryMethod;
+  /** 长按查词时自动朗读单词发音（TTS） */
+  dictionarySpeak?: boolean;
+  /** 欧路查词无效（图片词/网络失败）时用 AI 查词兜底；默认开启 */
+  eudicFallback?: boolean;
+  /** 翻译弹窗拉伸后的尺寸（记忆，下次打开沿用） */
+  popoverSize?: { width: number; height: number };
 }
 
 export const TRANSLATOR_PROVIDERS: Array<{ id: TranslatorName; labelKey: string }> = [

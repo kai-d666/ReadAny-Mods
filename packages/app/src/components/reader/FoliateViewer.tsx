@@ -812,8 +812,18 @@ interface FoliateViewerProps {
   onSectionLoad?: (index: number) => void;
   onError?: (error: Error) => void;
   onSelection?: (selection: BookSelection | null) => void;
-  /** Long-press on a word: fired with the word text and its position (incl. top/bottom edges) in main-window coordinates */
-  onWordLookup?: (word: string, pos: { x: number; y: number; top?: number; bottom?: number }) => void;
+  /** Long-press on a word: fired with the word text and its position (incl. edges) in main-window coordinates */
+  onWordLookup?: (
+    word: string,
+    pos: {
+      x: number;
+      y: number;
+      top?: number;
+      bottom?: number;
+      left?: number;
+      right?: number;
+    },
+  ) => void;
   onShowAnnotation?: (cfi: string, range: Range, index: number) => void;
   onToggleSearch?: () => void;
   onToggleToc?: () => void;
@@ -2422,7 +2432,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         } | null = null;
 
         // --- Long-press word lookup ---
-        const LONG_PRESS_DELAY = 450;
+        const LONG_PRESS_DELAY = 300;
         const LONG_PRESS_MOVE_TOLERANCE = 10;
         let longPressTimer: ReturnType<typeof setTimeout> | null = null;
         let longPressTriggered = false;
@@ -2627,18 +2637,29 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             // bottom edges so the popover can avoid covering the highlighted word.
             const rect = range.getBoundingClientRect();
             const iframe = targetDoc.defaultView.frameElement as HTMLIFrameElement | null;
-            let pos: { x: number; y: number; top?: number; bottom?: number };
+            let pos: {
+              x: number;
+              y: number;
+              top?: number;
+              bottom?: number;
+              left?: number;
+              right?: number;
+            };
             if (iframe) {
               const r = iframe.getBoundingClientRect();
               const scaleX = iframe.clientWidth > 0 ? r.width / iframe.clientWidth : 1;
               const scaleY = iframe.clientHeight > 0 ? r.height / iframe.clientHeight : 1;
               const top = r.top + rect.top * scaleY;
               const bottom = r.top + (rect.top + rect.height) * scaleY;
+              const left = r.left + rect.left * scaleX;
+              const right = r.left + (rect.left + rect.width) * scaleX;
               pos = {
                 x: r.left + (rect.left + rect.width / 2) * scaleX,
                 y: top,
                 top,
                 bottom,
+                left,
+                right,
               };
             } else {
               pos = {
@@ -2646,6 +2667,8 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
                 y: rect.top,
                 top: rect.top,
                 bottom: rect.top + rect.height,
+                left: rect.left,
+                right: rect.right,
               };
             }
 
@@ -2896,6 +2919,9 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         doc.addEventListener("pointermove", handlePointerMove, { passive: true });
         doc.addEventListener("selectstart", handleSelectStart);
         doc.addEventListener("selectionchange", handleSelectionChange);
+        // Content lives in an iframe whose events don't bubble to the main
+        // document — suppress the native context menu here as well.
+        doc.addEventListener("contextmenu", (e) => e.preventDefault());
       },
       [bookKey],
     );
@@ -3628,6 +3654,13 @@ pre, code, kbd, samp {
 /* Line height for text blocks */
 p, div, blockquote, dd, li, span {
   line-height: ${settings.lineHeight} !important;
+}
+
+/* Never hyphenate words at line breaks (book CSS may enable it) */
+p, div, span, li, blockquote, dd, h1, h2, h3, h4, h5, h6 {
+  hyphens: none !important;
+  -webkit-hyphens: none !important;
+  -ms-hyphens: none !important;
 }
 
 /* Paragraph spacing */

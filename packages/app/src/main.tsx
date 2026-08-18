@@ -130,6 +130,9 @@ i18nReady.then(() => {
     flushAllWrites();
   });
 
+  // Suppress the WebView2 native context menu (desktop app convention)
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+
   // Initialize database and load books
   desktopDataRootReady.then(() => {
     useLibraryStore.getState().loadBooks();

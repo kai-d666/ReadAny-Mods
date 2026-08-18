@@ -8,9 +8,20 @@ import { PasswordInput } from "@/components/ui/password-input";
  *   - 长按翻译 (long-press dictionary lookup, with its own prompt)
  * Each requires its own model — no global fallback.
  */
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettingsStore } from "@/stores/settings-store";
-import { TRANSLATOR_PROVIDERS } from "@readany/core/types/translation";
+import {
+  TRANSLATOR_PROVIDERS,
+  type DictionaryMethod,
+} from "@readany/core/types/translation";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -143,38 +154,103 @@ export function TranslationSettings() {
                 <p className="text-xs text-muted-foreground">
                   {t("settings.translationDictionaryDesc")}
                 </p>
-                <TranslationModelSelector
-                  value={translationConfig.dictionaryModel}
-                  onChange={(s) => updateTranslationConfig({ dictionaryModel: s })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.translationModelUnsetHint")}
-                </p>
 
-                {/* 词典查词提示词（仅长按生效） */}
-                <div className="space-y-2 pt-1">
-                  <span className="text-sm text-foreground">
-                    {t("settings.dictionaryPromptTitle")}
-                  </span>
-                  <Textarea
-                    rows={6}
-                    value={translationConfig.dictionaryPrompt ?? ""}
-                    placeholder={t("settings.dictionaryPromptPlaceholder")}
-                    onChange={(e) => updateTranslationConfig({ dictionaryPrompt: e.target.value })}
-                  />
-                  <div className="flex items-center justify-between gap-2">
+                {/* 自动发音开关（全局，对两种查词方案都生效） */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <span className="text-sm text-foreground">
+                      {t("settings.dictionarySpeak")}
+                    </span>
                     <p className="text-xs text-muted-foreground">
-                      {t("settings.dictionaryPromptDesc")}
+                      {t("settings.dictionarySpeakDesc")}
                     </p>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                      onClick={() => updateTranslationConfig({ dictionaryPrompt: "" })}
-                    >
-                      {t("settings.dictionaryPromptReset")}
-                    </button>
                   </div>
+                  <Switch
+                    checked={translationConfig.dictionarySpeak ?? false}
+                    onCheckedChange={(v) => updateTranslationConfig({ dictionarySpeak: v })}
+                  />
                 </div>
+
+                {/* 查词方案：AI 查词 / 欧路查词 */}
+                <div className="space-y-1.5">
+                  <span className="text-xs text-muted-foreground">
+                    {t("settings.dictionaryMethod")}
+                  </span>
+                  <Select
+                    value={translationConfig.dictionaryMethod ?? "ai"}
+                    onValueChange={(v) =>
+                      updateTranslationConfig({ dictionaryMethod: v as DictionaryMethod })
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-full text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ai">{t("settings.dictionaryMethodAI")}</SelectItem>
+                      <SelectItem value="eudic">{t("settings.dictionaryMethodEudic")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {translationConfig.dictionaryMethod === "eudic" ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.dictionaryMethodEudicHint")}
+                    </p>
+                    {/* 欧路无效时 AI 兜底开关 */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <span className="text-sm text-foreground">
+                          {t("settings.eudicFallback")}
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          {t("settings.eudicFallbackDesc")}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={translationConfig.eudicFallback !== false}
+                        onCheckedChange={(v) => updateTranslationConfig({ eudicFallback: v })}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <TranslationModelSelector
+                      value={translationConfig.dictionaryModel}
+                      onChange={(s) => updateTranslationConfig({ dictionaryModel: s })}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings.translationModelUnsetHint")}
+                    </p>
+
+                    {/* 词典查词提示词（仅长按生效） */}
+                    <div className="space-y-2 pt-1">
+                      <span className="text-sm text-foreground">
+                        {t("settings.dictionaryPromptTitle")}
+                      </span>
+                      <Textarea
+                        rows={6}
+                        value={translationConfig.dictionaryPrompt ?? ""}
+                        placeholder={t("settings.dictionaryPromptPlaceholder")}
+                        onChange={(e) =>
+                          updateTranslationConfig({ dictionaryPrompt: e.target.value })
+                        }
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          {t("settings.dictionaryPromptDesc")}
+                        </p>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                          onClick={() => updateTranslationConfig({ dictionaryPrompt: "" })}
+                        >
+                          {t("settings.dictionaryPromptReset")}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </>
           )}
