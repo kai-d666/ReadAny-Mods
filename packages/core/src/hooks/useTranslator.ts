@@ -6,7 +6,7 @@
 
 import { useCallback, useState } from "react";
 import { useSettingsStore } from "../stores/settings-store";
-import { getFromCache, simpleHash, storeInCache } from "../translation/cache";
+import { clearTranslationCacheFor, getFromCache, simpleHash, storeInCache } from "../translation/cache";
 import {
   resolveTranslationModel,
   type TranslationModelMode,
@@ -191,8 +191,26 @@ export function useTranslator(options: UseTranslatorOptions = {}) {
     [sourceLang, targetLang, translationConfig, aiConfig, systemPrompt, mode],
   );
 
+  // Clear the cache entry for one text (same mode/key space as translate)
+  const clearCache = useCallback(
+    (t: string) => {
+      const input = t.trim();
+      if (!input) return Promise.resolve();
+      const cacheMode = systemPrompt ? `dict_${simpleHash(systemPrompt)}` : "default";
+      return clearTranslationCacheFor(
+        input,
+        sourceLang,
+        targetLang || translationConfig.targetLang,
+        translationConfig.provider.id,
+        cacheMode,
+      );
+    },
+    [systemPrompt, sourceLang, targetLang, translationConfig],
+  );
+
   return {
     translate,
+    clearCache,
     loading,
     error,
     provider: translationConfig.provider.id,

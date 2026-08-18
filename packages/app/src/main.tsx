@@ -133,6 +133,24 @@ i18nReady.then(() => {
   // Suppress the WebView2 native context menu (desktop app convention)
   document.addEventListener("contextmenu", (e) => e.preventDefault());
 
+  // Runtime probe: measure tauri http fetch latency to the translation API
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const { fetch: tfetch } = await import("@tauri-apps/plugin-http");
+        const t0 = Date.now();
+        const res = await tfetch("https://api.siliconflow.cn/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer invalid-key" },
+          body: JSON.stringify({ model: "tencent/Hunyuan-MT-7B", messages: [{ role: "user", content: "hi" }], max_tokens: 5 }),
+        });
+        console.log(`[TauriFetchProbe] status=${res.status} in ${Date.now() - t0}ms`);
+      } catch (err) {
+        console.log(`[TauriFetchProbe] error after ${Date.now() - t0}ms:`, err);
+      }
+    })();
+  }, 5000);
+
   // Runtime probe: verify theme CSS variables actually resolve and no ancestor
   // of the reader container breaks fixed positioning (transform/contain).
   setTimeout(() => {

@@ -133,8 +133,7 @@ export async function aiTranslate(
   // For single text, use simple translation
   if (texts.length === 1) {
     const response = await (getStreamingFetch())(requestUrl, {
-      // 30s timeout — never hang forever on a stalled request
-      signal: AbortSignal.timeout(30000),
+      // NOTE: no AbortSignal.timeout — tauri http fetch hangs with it
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -252,8 +251,7 @@ export async function aiTranslateBatch(
 
   try {
     const response = await (getStreamingFetch())(requestUrl, {
-      // 30s timeout — never hang forever on a stalled request
-      signal: AbortSignal.timeout(30000),
+      // NOTE: no AbortSignal.timeout — tauri http fetch hangs with it
       method: "POST",
       headers,
       body: JSON.stringify({

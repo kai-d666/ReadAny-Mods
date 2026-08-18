@@ -12,7 +12,7 @@ import {
   type TranslationTargetLang,
   type TranslatorName,
 } from "@readany/core/types/translation";
-import { BookOpen, Check, ChevronDown, Copy, Languages, Loader2 } from "lucide-react";
+import { BookOpen, Check, ChevronDown, Copy, Languages, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -74,11 +74,13 @@ export function TranslationPopover({
     return p;
   }, [dictionary, translationConfig.dictionaryPrompt, targetLang, text]);
 
-  const { translate, loading, error, provider } = useTranslator({
+  const { translate, clearCache, loading, error, provider } = useTranslator({
     targetLang,
     systemPrompt,
     mode: dictionary ? "dictionary" : "selection",
   });
+  // Bump to force a fresh request after clearing the cache
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,6 +99,12 @@ export function TranslationPopover({
   );
   const sizeRef = useRef(size);
   sizeRef.current = size;
+
+  // Deduplicate in-flight translation requests: React StrictMode runs effects
+  // twice in dev, which would fire two identical API calls per lookup — a
+  // fast path to provider rate limits (SiliconFlow hangs silently when
+  // rate-limited). The second effect reuses the first request instead.
+  const inflightTranslationsRef = useRef<Map<string, Promise<string[]>>>(new Map());
 
   // Resize drag state (follows the project's ResizeHandle pattern: element-level
   // pointer events + setPointerCapture + userSelect lock).
@@ -357,23 +365,25 @@ export function TranslationPopover({
     let cancelled = false;
     setTranslation(null);
 
-    const fetch = async () => {
-      try {
-        const input = text.split("\n").join(" ").trim();
-        const results = await translate([input]);
-        if (!cancelled && results[0]) {
-          setTranslation(results[0]);
-        }
-      } catch (err) {
-        console.error("Translation error:", err);
-      }
-    };
+    const input = text.split("\n").join(" ").trim();
+    const requestKey = `${input}:${targetLang}`;
+    let request = inflightTranslationsRef.current.get(requestKey);
+    if (!request) {
+      request = translate([input]).finally(() => {
+        inflightTranslationsRef.current.delete(requestKey);
+      });
+      inflightTranslationsRef.current.set(requestKey, request);
+    }
+    request
+      .then((results) => {
+        if (!cancelled && results[0]) setTranslation(results[0]);
+      })
+      .catch((err) => console.error("Translation error:", err));
 
-    fetch();
     return () => {
       cancelled = true;
     };
-  }, [text, translationRequestKey, translate, systemPrompt, isEudic]);
+  }, [text, targetLang, translate, systemPrompt, isEudic, refreshKey]);
 
   // Eudic web lookup first; when the entry is unusable (empty/partial senses —
   // Eudic serves many definitions as anti-scrape images — or network failure),
@@ -415,7 +425,15 @@ export function TranslationPopover({
         console.log("[EudicLookup] falling back to AI for:", text);
         try {
           const input = text.split("\n").join(" ").trim();
-          const results = await translate([input]);
+          const requestKey = `${input}:${targetLang}`;
+          let request = inflightTranslationsRef.current.get(requestKey);
+          if (!request) {
+            request = translate([input]).finally(() => {
+              inflightTranslationsRef.current.delete(requestKey);
+            });
+            inflightTranslationsRef.current.set(requestKey, request);
+          }
+          const results = await request;
           if (!cancelled && results[0]) {
             setTranslation(results[0]);
           }
@@ -429,7 +447,7 @@ export function TranslationPopover({
     return () => {
       cancelled = true;
     };
-  }, [isEudic, text, translate, useEudicFallback]);
+  }, [isEudic, text, translate, useEudicFallback, refreshKey]);
 
   const handleLangChange = (lang: TranslationTargetLang) => {
     setTargetLang(lang);
@@ -602,6 +620,21 @@ export function TranslationPopover({
             )}
           </div>
 
+          {/* Refresh: clear this word's cache and re-request (top-right corner).
+              Shown while loading too — a stuck request is exactly when you
+              want to retry. */}
+          {(loading || (!error && translation)) && (
+            <button
+              type="button"
+              title="清除缓存并重新翻译"
+              className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => {
+                void clearCache(text).then(() => setRefreshKey((k) => k + 1));
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Translation content */}

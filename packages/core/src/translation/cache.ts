@@ -84,6 +84,22 @@ export async function storeInCache(
   }
 }
 
+/** Clear the cached translation for a single text (same key space as getFromCache/storeInCache) */
+export async function clearTranslationCacheFor(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  provider: TranslatorName,
+  mode = "default",
+): Promise<void> {
+  try {
+    const platform = getPlatformService();
+    await platform.kvRemoveItem(getCacheKey(text, sourceLang, targetLang, provider, mode));
+  } catch (err) {
+    console.warn("[Translation] Cache clear error:", err);
+  }
+}
+
 /** Clear all translation cache */
 export async function clearTranslationCache(): Promise<void> {
   try {
