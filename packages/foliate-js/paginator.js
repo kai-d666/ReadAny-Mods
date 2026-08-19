@@ -1,5 +1,8 @@
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+// 选区锚定位置:漂移守卫拉回的目标(选区建立时的整页位置;主动翻页后更新)
+let selectionAnchorPosition = 0
+
 const debounce = (f, wait, immediate) => {
     let timeout
     return (...args) => {
@@ -1168,7 +1171,18 @@ export class Paginator extends HTMLElement {
               this.#afterScroll('container-scroll')
             }
         }, 250)
+        // 整页漂移守卫(anx-reader 方案适配 closed shadow):
+        // 选区句柄拖到边缘时,系统自动滚动会把容器推离页边界。
+        // 守卫在选区活跃且非主动翻页时,把偏离的 scrollLeft 立即拉回最近整页。
         this.#container.addEventListener('scroll', () => {
+            if (selectionGuardActive && !this.#isAnimating && !this.#touchScrolled && this.size > 0) {
+                // 拉回【锚定页】(选区建立时的整页),不是"最近整页":
+                // 系统自动滚动距离大时,round() 会跳到相邻页造成跳页
+                const anchorPage = Math.round(selectionAnchorPosition / this.size)
+                if (Math.abs(this.containerPosition - anchorPage * this.size) > 0.5) {
+                    this.#scrollToPage(anchorPage, 'selection-guard', false)
+                }
+            }
             if (!this.#isAnimating) this.dispatchEvent(new Event('scroll'))
             // Keep the per-view backgrounds glued to the content while a swipe
             // drag scrolls the container (no animation runs then). During the
@@ -1266,6 +1280,14 @@ export class Paginator extends HTMLElement {
         const SELECTION_EDGE_HOLD_MS = 1000
         const SELECTION_EDGE_MIN_X = 0.75
         const SELECTION_EDGE_MIN_Y = 0.8
+        // 整页漂移守卫状态:选区活跃时容器 scrollLeft 被系统自动滚动推离页边界,
+        // scroll 监听器将其拉回最近整页(见上)。选区结束即解除。
+        let selectionGuardActive = false
+        // 最近一次 selectionchange 时间(句柄拖动的活跃判定)
+        let lastSelectionChangeAt = 0
+        // 边缘翻页冷却与选区自动清理
+        let lastEdgeFireAt = 0
+        let edgeFireClearTimer = null
         const isPointInSelectionEdgeZone = (direction, x, y, width, height) => {
             if (!width || !height) return false
             const horizontalEdge = direction === 'backward'
@@ -1349,7 +1371,9 @@ export class Paginator extends HTMLElement {
                 edgeInset,
                 atSelectionEdge,
                 physicalEdge,
-                inEdgeZone: isDragging && bottomEdge && (physicalEdge || mappedEdge || atSelectionEdge),
+                // 句柄拖动时 JS 收不到 touchmove(isDragging 不可靠),改用
+                // "selectionchange 新鲜度"判定活跃(arm 时检查 lastSelectionChangeAt)
+                inEdgeZone: bottomEdge && (physicalEdge || mappedEdge || atSelectionEdge),
                 age: performance.now() - lastSelectionPoint.time,
                 type: lastSelectionPoint.type,
                 isDragging,
@@ -1395,8 +1419,19 @@ export class Paginator extends HTMLElement {
             })
         }
         const armSelectionEdgeHold = (direction, edge, textLength, range) => {
+            // 已废弃:边缘停留自动翻页不稳定(系统句柄事件不可达),改用音量键翻页。
+            // 漂移守卫(scroll 监听器)保留,选区跨页由音量键翻页完成。
+            return
             if (!selectionGestureActive || selectionGestureDoc !== range.commonAncestorContainer?.ownerDocument)
                 return
+            // 翻页后冷却:防翻页-重选-再翻页的连环自动翻页
+            if (performance.now() - lastEdgeFireAt < 2000) {
+                debugSelectionPaging('skip', holdDetail({
+                    direction,
+                    textLength,
+                }, performance.now(), { reason: 'edge-fire-cooldown' }))
+                return
+            }
             if (selectionPagingGate
                 && selectionPagingGate.direction === direction
                 && selectionPagingGate.pointTime === lastSelectionPoint?.time) {
@@ -1446,6 +1481,12 @@ export class Paginator extends HTMLElement {
                     if (current?.token === token) cancelSelectionEdgeHold('gesture-inactive')
                     return
                 }
+                // 系统句柄松手时 JS 收不到 touchend(hold 无法取消);
+                // 松手后 selectionchange 停止,此时不 fire(不翻页)
+                if (performance.now() - lastSelectionChangeAt > 600) {
+                    cancelSelectionEdgeHold('selection-stale')
+                    return
+                }
                 selectionEdgeHold = null
                 selectionPagingGate = { direction, pointTime: hold.pointTime }
                 debugSelectionPaging('edge-hold-fire', holdDetail(hold, performance.now(), {
@@ -1460,6 +1501,16 @@ export class Paginator extends HTMLElement {
                     }))
                 } finally {
                     setSelectionNavigationLock(false)
+                    lastEdgeFireAt = performance.now()
+                    // 翻页后若用户未继续拖动(selectionchange 停止),自动清除选区:
+                    // 选区存在时滑动翻页会被 paginator 拒收,不清则手动翻页失效
+                    clearTimeout(edgeFireClearTimer)
+                    edgeFireClearTimer = setTimeout(() => {
+                        if (performance.now() - lastSelectionChangeAt > 600) {
+                            const d = range.commonAncestorContainer?.ownerDocument
+                            d?.getSelection?.()?.removeAllRanges?.()
+                        }
+                    }, 600)
                 }
             }, SELECTION_EDGE_HOLD_MS)
         }
@@ -1474,14 +1525,42 @@ export class Paginator extends HTMLElement {
                 debugSelectionPaging('skip', { reason: 'no-range' })
                 return
             }
-            const backward = selectionIsBackward(sel)
-            const direction = backward ? 'backward' : 'forward'
+            // 句柄拖动活跃判定:最近 selectionchange 是否新鲜(<400ms)。
+            // 系统句柄拖动时 JS 收不到 touchmove,但 selectionchange 每步触发。
+            const selectionFresh = performance.now() - lastSelectionChangeAt < 400
+            if (!selectionFresh && !(lastSelectionPoint.type === 'touchmove' || lastSelectionPoint.type === 'pointermove')) {
+                debugSelectionPaging('skip', { reason: 'selection-stale' })
+                return
+            }
+            // 长按查词手势期(400-800ms 窗口)不 arm,防查词弹窗与翻页打架
+            if (doc.__readany_wordlookup_active) {
+                debugSelectionPaging('skip', { reason: 'wordlookup-active' })
+                return
+            }
             const textLength = getSelectionTextLength(sel)
-            const edge = getSelectionEdgeInfo(range, selRange, backward)
+            // 两端检测:末尾端点贴右/下 → 向后;起点端点贴左/上 → 向前。
+            // (系统句柄拖动时不知道用户在拖哪个端点,方向由手指位置决定,
+            //  静读天下 select_move_down 语义)
+            const eFwd = getSelectionEdgeInfo(range, selRange, false)
+            const eBwd = getSelectionEdgeInfo(range, selRange, true)
+            const edge = (eFwd?.atSelectionEdge && eFwd) || (eBwd?.atSelectionEdge && eBwd) || eFwd || eBwd
             if (!edge) {
                 debugSelectionPaging('skip', { reason: 'no-pointer' })
                 return
             }
+            const atAnyEdge = !!(eFwd?.atSelectionEdge || eBwd?.atSelectionEdge)
+            const px = lastSelectionPoint.clientX
+            const py = lastSelectionPoint.clientY
+            // 方向判定用【视口】尺寸(edge.width 是容器展开宽=多页总宽,不可用)
+            const vw = globalThis.innerWidth || 800
+            const vh = globalThis.innerHeight || 1200
+            const direction = py < vh * 0.15
+                ? 'backward'
+                : py > vh * 0.85
+                    ? 'forward'
+                    : px < vw * 0.15
+                        ? 'backward'
+                        : 'forward'
             debugSelectionPaging('edge-check', {
                 direction,
                 x: Math.round(edge.x),
@@ -1491,17 +1570,13 @@ export class Paginator extends HTMLElement {
                 age: Math.round(edge.age),
                 textLength,
                 type: edge.type,
-                inEdgeZone: edge.inEdgeZone,
-                atSelectionEdge: edge.atSelectionEdge,
-                physicalEdge: edge.physicalEdge,
-                mappedEdge: edge.mappedEdge,
-                mappedPoint: Math.round(edge.mappedPoint),
-                mappedLeft: edge.mapped ? Math.round(edge.mapped.left) : null,
-                mappedRight: edge.mapped ? Math.round(edge.mapped.right) : null,
+                atSelectionEdge: atAnyEdge,
+                eFwdEdge: !!eFwd?.atSelectionEdge,
+                eBwdEdge: !!eBwd?.atSelectionEdge,
             })
-            if (!canSelectWithTouchHandles || !edge.inEdgeZone || !edge.atSelectionEdge) {
+            if (!canSelectWithTouchHandles || !atAnyEdge) {
                 cancelSelectionEdgeHold(
-                    !edge.inEdgeZone ? 'outside-zone' : !edge.atSelectionEdge ? 'selection-not-at-edge' : 'not-touch-handles',
+                    !atAnyEdge ? 'selection-not-at-edge' : 'not-touch-handles',
                 )
                 return
             }
@@ -1544,6 +1619,7 @@ export class Paginator extends HTMLElement {
                 if (selectionGestureDoc === doc) {
                     selectionGestureActive = false
                     selectionGestureDoc = null
+                    selectionGuardActive = false
                     releaseSelectionEdgeHold('touchend', doc.getSelection?.())
                 }
             }, { passive: true })
@@ -1551,13 +1627,19 @@ export class Paginator extends HTMLElement {
                 if (selectionGestureDoc === doc) {
                     selectionGestureActive = false
                     selectionGestureDoc = null
+                    selectionGuardActive = false
                     releaseSelectionEdgeHold('touchcancel', doc.getSelection?.())
                 }
             }, { passive: true })
             let isKeyboardSelecting = false
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
+            doc.addEventListener('selectstart', () => {
+                selectionGuardActive = true
+                selectionAnchorPosition = this.containerPosition
+            })
             doc.addEventListener('selectionchange', () => {
+                lastSelectionChangeAt = performance.now()
                 if (this.scrolled) {
                     debugSelectionPaging('selectionchange-skip', { reason: 'scrolled' })
                     return
@@ -1569,9 +1651,19 @@ export class Paginator extends HTMLElement {
                 }
                 const sel = doc.getSelection()
                 if (!sel.rangeCount) {
+                    selectionGuardActive = false
                     cancelSelectionEdgeHold('selection-cleared')
                     debugSelectionPaging('selectionchange-skip', { reason: 'no-range-count', type: sel.type })
                     return
+                }
+                if (sel.type === 'Range' && sel.toString().trim()) {
+                    selectionGuardActive = true
+                    // 系统句柄拖动无 JS touchstart(触摸被系统消费),由 selectionchange
+                    // 维持手势活跃,否则 checkPointerSelection 永远 gesture-inactive
+                    selectionGestureActive = true
+                    selectionGestureDoc = doc
+                } else {
+                    selectionGuardActive = false
                 }
                 if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
@@ -2541,6 +2633,10 @@ export class Paginator extends HTMLElement {
         }
     }
     #afterScroll(reason) {
+        // 主动导航(翻页/锚定)后更新选区锚定:守卫拉回目标随导航移动
+        if (reason === 'snap' || reason === 'page' || reason === 'navigation') {
+            selectionAnchorPosition = this.containerPosition
+        }
         // In multi-view, detect which section is primary
         if (this.#views.size > 1 && reason !== 'anchor' && reason !== 'navigation') {
             this.#detectPrimaryView()

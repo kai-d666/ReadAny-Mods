@@ -917,7 +917,6 @@ export function ReaderScreen({ route, navigation }: Props) {
       !showTranslation &&
       !showChapterTranslation &&
       chapterTranslation.state.status === "idle" &&
-      !selection &&
       !noteViewHighlight &&
       !noteTooltip &&
       ttsPlayState === "stopped" &&

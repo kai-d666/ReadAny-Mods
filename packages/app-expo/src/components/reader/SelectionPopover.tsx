@@ -104,36 +104,35 @@ export function SelectionPopover({
     onDismiss();
   }, [selection.text, onDictionary, onDismiss]);
 
+  // 无全屏遮罩:弹窗本体外触摸直达 WebView(可继续拖选/点空白关弹窗)。
+  // 关弹窗闭环:点空白 → webview tap → 清自绘选区 → selectionCleared → RN setSelection(null)
   return (
-    <View style={[s.overlay]} pointerEvents="box-none">
-      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onDismiss} />
-      <View style={[s.popover, { left: position.x, top: position.y }]}>
-        <View style={s.actionRow}>
-          <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
-            <CopyIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+    <View style={[s.popover, { left: position.x, top: position.y }]} pointerEvents="box-none">
+      <View style={s.actionRow}>
+        <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
+          <CopyIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
+          <SparklesIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+        </TouchableOpacity>
+
+        {onDictionary && (
+          <TouchableOpacity
+            style={s.iconBtn}
+            onPress={handleDictionary}
+            accessibilityRole="button"
+            accessibilityLabel="词典查词"
+          >
+            <BookOpenIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
           </TouchableOpacity>
+        )}
 
-          <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
-            <SparklesIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+        {onSpeak && (
+          <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
+            <Volume2Icon size={BUTTON_ICON_SIZE} color={colors.foreground} />
           </TouchableOpacity>
-
-          {onDictionary && (
-            <TouchableOpacity
-              style={s.iconBtn}
-              onPress={handleDictionary}
-              accessibilityRole="button"
-              accessibilityLabel="词典查词"
-            >
-              <BookOpenIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
-            </TouchableOpacity>
-          )}
-
-          {onSpeak && (
-            <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
-              <Volume2Icon size={BUTTON_ICON_SIZE} color={colors.foreground} />
-            </TouchableOpacity>
-          )}
-        </View>
+        )}
       </View>
     </View>
   );
@@ -141,10 +140,6 @@ export function SelectionPopover({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    overlay: {
-      ...StyleSheet.absoluteFillObject,
-      zIndex: 100,
-    },
     popover: {
       position: "absolute",
       backgroundColor: colors.card,
