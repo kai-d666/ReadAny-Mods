@@ -1559,6 +1559,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           : highlights.find((h) => h.bookId === bookId && h.cfi === selection.cfi);
 
         if (existingHighlight) {
+          // Clicking the same color again toggles the highlight off
+          if (existingHighlight.color === color) {
+            useAnnotationStore.getState().removeHighlight(existingHighlight.id);
+            foliateRef.current?.deleteAnnotation({ value: existingHighlight.cfi });
+            renderedHighlightsRef.current.delete(existingHighlight.id);
+            setSelection(null);
+            return;
+          }
           useAnnotationStore.getState().updateHighlight(existingHighlight.id, {
             color,
             updatedAt: Date.now(),
