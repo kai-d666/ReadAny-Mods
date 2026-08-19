@@ -51,11 +51,37 @@ export async function requestRemoteEmbeddingBatch(
   }
 
   const fetchImpl = options.fetchImpl ?? getRemoteEmbeddingFetch();
-  const response = await fetchImpl(model.url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(requestBody),
-  });
+  const body = JSON.stringify(requestBody);
+
+  // 网络层错误(status 0 / 连接被重置)重试:免费 embedding API 对连续请求
+  // 有限流,服务端直接断连(而不是返回 4xx),瞬时重试即可通过;4xx 由
+  // 调用方做逐 chunk 降级,这里只兜网络层
+  const MAX_NETWORK_RETRIES = 3;
+  let response: Response;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      response = await fetchImpl(model.url, {
+        method: "POST",
+        headers,
+        body,
+      });
+      if (attempt > 0) {
+        console.log(
+          `[RemoteEmbedding] recovered after ${attempt + 1} attempt(s)`,
+        );
+      }
+      break;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // warn 而非 error:限流是瞬时的,重试可恢复,不该触发 LogBox 弹窗
+      console.warn(
+        `[RemoteEmbedding] fetch failed (attempt ${attempt + 1}/${MAX_NETWORK_RETRIES}): ${message}`,
+      );
+      if (attempt >= MAX_NETWORK_RETRIES) throw err;
+      const delay = 800 * (attempt + 1); // 800ms / 1600ms / 2400ms
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
