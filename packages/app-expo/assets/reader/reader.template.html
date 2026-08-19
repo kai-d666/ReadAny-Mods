@@ -256,7 +256,7 @@
       if (tapNavigationResetTimer) clearTimeout(tapNavigationResetTimer);
       tapNavigationResetTimer = setTimeout(() => {
         clearTapNavigationLock();
-      }, 220);
+      }, 400);
     }
 
     function refreshUserAnnotations(delay) {
@@ -1396,6 +1396,7 @@
         // 触觉反馈:已武装,用户可以开始拖动了
         postToRN('wordLookupArmed', {});
 
+
         // 【不创建 DOM Selection】——原生 ~500ms 长按会自己 word-snap 并接管选区
         // (句柄/拖动扩展/滚页)。若我们预先建立选区,原生会把整块选区当可拖对象,
         // 拖动时整个词跟着手指跑。只记录 400ms 词,作为 800ms 弹词的兜底
@@ -1484,14 +1485,15 @@
           if (st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
           return;
         }
-        if (!st.selectTimer) return;
         const touch = e.touches[0];
-        if (Math.abs(touch.clientX - st.startX) > MOVE_TOLERANCE ||
-            Math.abs(touch.clientY - st.startY) > MOVE_TOLERANCE) {
-          clearTimeout(st.selectTimer);
-          st.selectTimer = null;
+        if (st.selectTimer) {
+          if (Math.abs(touch.clientX - st.startX) > MOVE_TOLERANCE ||
+              Math.abs(touch.clientY - st.startY) > MOVE_TOLERANCE) {
+            clearTimeout(st.selectTimer);
+            st.selectTimer = null;
+          }
+          return;
         }
-        // 400ms 之后:不干预,原生选区接管拖动;lookupTimer 不受影响
       }, { passive: true, capture: true });
 
       doc.addEventListener('touchend', () => {
@@ -1800,7 +1802,7 @@
             applyPdfPageThemeFilter(doc, index);
           }
           attachTapListener(doc);
-          attachPullBookmarkListener(doc);
+          // attachPullBookmarkListener(doc); // 已按用户要求隐藏下拉书签功能
           attachSelectionListener(doc);
           attachNoteLongPress(doc);
           attachWordLookupListener(doc);
@@ -1981,6 +1983,8 @@
         const renderer = el.renderer;
         if (renderer && !el.isFixedLayout) {
           applyMobileReflowRendererSizing(renderer);
+          // 平滑翻页动画(foliate 内置,animated 门控)
+          renderer.setAttribute('animated', '');
           // Default gap/margin
           const margin = msg.pageMargin || 16;
           const gapPercent = Math.max(1, Math.round((margin / 393) * 100));

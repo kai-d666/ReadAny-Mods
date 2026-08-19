@@ -40,10 +40,9 @@ import { readingContextService } from "@readany/core/ai/reading-context-service"
 import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { useChapterTranslation } from "@readany/core/hooks";
 import { useReadingSession } from "@readany/core/hooks/use-reading-session";
-import { createSelectionNoteMutation } from "@readany/core/reader";
 import { getPlatformService } from "@readany/core/services";
 import { getCSSFontFace, useFontStore } from "@readany/core/stores";
-import type { HighlightColor, ReadSettings, TOCItem } from "@readany/core/types";
+import type { ReadSettings, TOCItem } from "@readany/core/types";
 import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
 import { Asset } from "expo-asset";
@@ -376,9 +375,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     }, 5000),
   ).current;
   const {
-    addHighlight,
-    updateHighlight,
-    removeHighlight,
     loadAnnotations,
     highlights,
     removeBookmark,
@@ -1013,59 +1009,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     [bridge, updateReadSettings, computeEffectiveFontSize],
   );
 
-  // Selection popover handlers
-  const handleHighlight = useCallback(
-    (color: HighlightColor = readSettings.defaultHighlightColor ?? "yellow") => {
-      if (!selection) return;
-      updateReadSettings({ defaultHighlightColor: color });
-
-      const existingHighlight = highlights.find(
-        (h) => h.bookId === bookId && h.cfi === selection.cfi,
-      );
-
-      if (existingHighlight) {
-        updateHighlight(existingHighlight.id, {
-          color,
-          updatedAt: Date.now(),
-        });
-        bridge.removeAnnotation({ value: existingHighlight.cfi });
-        bridge.addAnnotation({
-          value: existingHighlight.cfi,
-          type: "highlight",
-          color,
-          note: existingHighlight.note,
-        });
-        setSelection(null);
-        return;
-      }
-
-      const highlight = {
-        id: `hl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        bookId,
-        cfi: selection.cfi,
-        text: selection.text,
-        color,
-        chapterTitle: currentChapter,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      addHighlight(highlight);
-      bridge.addAnnotation({ value: selection.cfi, type: "highlight", color });
-      setSelection(null);
-    },
-    [
-      selection,
-      readSettings.defaultHighlightColor,
-      updateReadSettings,
-      highlights,
-      bookId,
-      currentChapter,
-      addHighlight,
-      updateHighlight,
-      bridge,
-    ],
-  );
-
   const handleDismissSelection = useCallback(() => {
     setSelection(null);
   }, []);
@@ -1446,11 +1389,6 @@ export function ReaderScreen({ route, navigation }: Props) {
   });
 
   const isPanelOpen = showTOC || showSettings || showSearch || showNotebook || showTranslation;
-  const existingSelectionHighlight = selection
-    ? (highlights.find(
-        (highlight) => highlight.bookId === bookId && highlight.cfi === selection.cfi,
-      ) ?? null)
-    : null;
   const readerTopMargin = !showSearch
     ? showTopTitleProgress
       ? layoutTopInset + 30
@@ -1618,11 +1556,10 @@ export function ReaderScreen({ route, navigation }: Props) {
         </Animated.View>
       )}
 
-      {/* Selection Popover */}
+      {/* Selection Popover(精简:复制/AI/发音/词典) */}
       {selectionPopoverSelection && (
         <SelectionPopover
           selection={selectionPopoverSelection}
-          onHighlight={handleHighlight}
           onDismiss={handleDismissSelection}
           onCopy={() => {
             setSelection(null);
@@ -1641,48 +1578,8 @@ export function ReaderScreen({ route, navigation }: Props) {
               chapterTitle: chapter,
             });
           }}
-          onNote={(text, cfi) => {
-            const mutation = createSelectionNoteMutation({
-              bookId,
-              cfi,
-              text: selectionPopoverSelection.text,
-              note: text,
-              chapterTitle: currentChapter,
-              existingHighlight: existingSelectionHighlight,
-              defaultColor: readSettings.defaultHighlightColor ?? "yellow",
-            });
-
-            if (mutation.kind === "create") {
-              addHighlight(mutation.highlight);
-              bridge.addAnnotation({
-                value: cfi,
-                type: "highlight",
-                color: mutation.highlight.color,
-                note: mutation.highlight.note,
-              });
-              return;
-            }
-
-            updateHighlight(mutation.id, mutation.updates);
-            bridge.addAnnotation({
-              value: cfi,
-              type: "highlight",
-              color: existingSelectionHighlight?.color || "yellow",
-              note: mutation.updates.note,
-            });
-          }}
-          onTranslate={(text) => {
-            // 翻译走欧路小窗(欧路有整句翻译引擎)
-            setSelection(null);
-            launchEudic(text).catch((err) => {
-              Alert.alert(
-                err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
-                err instanceof Error ? err.message : String(err),
-              );
-            });
-          }}
           onDictionary={(text) => {
-            // 词典查词 → 欧路划词小窗
+            // 词典查词/整句翻译 → 欧路划词小窗(欧路自动判定词/句)
             setSelection(null);
             launchEudic(text).catch((err) => {
               Alert.alert(
@@ -1690,25 +1587,6 @@ export function ReaderScreen({ route, navigation }: Props) {
                 err instanceof Error ? err.message : String(err),
               );
             });
-          }}
-          existingHighlight={
-            existingSelectionHighlight
-              ? {
-                  id: existingSelectionHighlight.id,
-                  color: existingSelectionHighlight.color,
-                  note: existingSelectionHighlight.note,
-                }
-              : null
-          }
-          defaultColor={readSettings.defaultHighlightColor ?? "yellow"}
-          onRemoveHighlight={() => {
-            const existing = highlights.find(
-              (h) => h.bookId === bookId && h.cfi === selectionPopoverSelection.cfi,
-            );
-            if (existing) {
-              removeHighlight(existing.id);
-              bridge.removeAnnotation({ value: existing.cfi });
-            }
           }}
         />
       )}
