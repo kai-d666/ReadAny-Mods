@@ -110,7 +110,8 @@
     "text-encoding": "^0.7.0",
     "whatwg-fetch": "^3.6.20",
     "zustand": "^5.0.5",
-    "expo-intent-launcher": "~13.0.8"
+    "expo-intent-launcher": "~13.0.8",
+    "expo-navigation-bar": "~4.2.8"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

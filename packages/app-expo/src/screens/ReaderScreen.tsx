@@ -47,6 +47,7 @@ import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
 import { Asset } from "expo-asset";
 import * as DocumentPicker from "expo-document-picker";
+import * as NavigationBar from "expo-navigation-bar";
 /**
  * ReaderScreen — WebView-based reader with foliate-js engine.
  */
@@ -1199,6 +1200,25 @@ export function ReaderScreen({ route, navigation }: Props) {
       themeMode,
     });
   }, [themeMode, webViewReady]);
+
+  // 沉浸式全屏:进入阅读隐藏系统三键导航栏;控制栏/搜索显示时恢复
+  useEffect(() => {
+    if (!webViewReady) return;
+    if (showControls || showSearch) {
+      NavigationBar.setVisibilityAsync("visible").catch(() => {});
+    } else {
+      NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
+      NavigationBar.setVisibilityAsync("hidden").catch(() => {});
+    }
+  }, [showControls, showSearch, webViewReady]);
+
+  // 退出阅读器恢复导航栏
+  useEffect(() => {
+    return () => {
+      NavigationBar.setVisibilityAsync("visible").catch(() => {});
+      NavigationBar.setBehaviorAsync("inset-swipe").catch(() => {});
+    };
+  }, []);
 
   // Re-apply font settings when custom fonts or selected font changes
   useEffect(() => {
