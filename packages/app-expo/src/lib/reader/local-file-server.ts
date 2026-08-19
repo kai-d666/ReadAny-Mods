@@ -66,8 +66,14 @@ export async function startFileServer(docRoot: string): Promise<string> {
     try {
       await import("@dr.pogodin/react-native-static-server");
       _useNative = true;
-    } catch {
+      console.log("[FileServer] native static-server module detected");
+    } catch (e) {
       _useNative = false;
+      // TODO(debug) 临时诊断日志,确认后删除
+      console.warn(
+        "[FileServer] native module import failed:",
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
