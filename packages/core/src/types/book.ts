@@ -97,6 +97,8 @@ export interface ReadSettings extends ViewSettings {
   volumeButtonsPageTurn: boolean;
   /** 单击屏幕左右侧边翻页(默认开启;关闭后侧边单击不翻页) */
   sideTapPageTurn?: boolean;
+  /** 长按查词触发方式:auto=400ms武装后800ms自动弹词;release=松手时弹词 */
+  longPressLookupMode?: "auto" | "release";
   defaultHighlightColor?: HighlightColor;
   /**
    * Mobile-only opt-in: when true, the reader scales fontSize by the OS

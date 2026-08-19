@@ -601,6 +601,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         viewMode: settings.viewMode,
         paginatedLayout: settings.paginatedLayout,
         sideTapPageTurn: settings.sideTapPageTurn !== false,
+        longPressLookupMode: settings.longPressLookupMode ?? "auto",
         customFontFaceCSS: fontCSS,
         customFontFamily: fontFamily ?? "",
       });
@@ -812,12 +813,13 @@ export function ReaderScreen({ route, navigation }: Props) {
       // JS 侧 gesture 门控已保证手势期不推 'selection',此调用多为 no-op,保留作纵深防御。
       setSelection(null);
       suppressReaderTapUntilRef.current = Date.now() + 900;
-      launchEudic(detail.word).catch((err) => {
-        Alert.alert(
-          err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
-          err instanceof Error ? err.message : String(err),
-        );
-      });
+      launchEudic(detail.word)
+        .catch((err) => {
+          Alert.alert(
+            err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
+            err instanceof Error ? err.message : String(err),
+          );
+        });
     },
     onTap: () => {
       if (noteTooltipVisibleRef.current || Date.now() < suppressReaderTapUntilRef.current) {
@@ -1459,6 +1461,12 @@ export function ReaderScreen({ route, navigation }: Props) {
             showsVerticalScrollIndicator={false}
             originWhitelist={["*"]}
             mixedContentMode="always"
+            onTouchEnd={() => {
+              // 物理松手信号 → webview(RN 触摸层与选区句柄独立,松手必然可达)
+              bridge.webViewRef.current?.injectJavaScript(
+                "window.__readanyOnRelease && window.__readanyOnRelease(); true;",
+              );
+            }}
           />
         </View>
 

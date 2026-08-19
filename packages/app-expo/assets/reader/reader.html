@@ -197,6 +197,7 @@
     let lastRendererStyles = '';
     let currentViewMode = 'paginated';
     let currentSideTapPageTurn = true; // 单击侧边翻页开关(默认开)
+    let currentLongPressLookupMode = 'auto'; // 长按查词触发:auto=800ms自动 / release=松手
     let currentSectionUsesVerticalWriting = false;
     let currentPaginatedLayout = 'double';
     let currentFontSize = 16;
@@ -1392,10 +1393,10 @@
         // 先置手势标志:selectionchange 守卫据此不向 RN 上报选区
         doc.__readany_wordlookup_active = true;
         doc.__readany_wordlookup_gesture = true;
+        doc.__readany_wordlookup_releaseDone = false;
 
         // 触觉反馈:已武装,用户可以开始拖动了
         postToRN('wordLookupArmed', {});
-
 
         // 【不创建 DOM Selection】——原生 ~500ms 长按会自己 word-snap 并接管选区
         // (句柄/拖动扩展/滚页)。若我们预先建立选区,原生会把整块选区当可拖对象,
@@ -1403,20 +1404,25 @@
         // (原生未接管 / 用户在 400-500ms 间提前松手 的场景)。
         doc.__readany_wordlookup_word = { text: word, range };
 
-        // 弹词定时器一旦武装即不取消(松手/拖动/多指均不影响)
-        st.lookupTimer = setTimeout(fireLookup, LOOKUP_DELAY_MS);
-        st.safetyTimer = setTimeout(() => endWordLookupGesture(doc), GESTURE_SAFETY_MS);
+        // 弹词定时器一旦武装即不取消(松手/拖动/多指均不影响);
+        // release 模式:不启动定时器、不启动 safety——松手负责弹词与清手势,
+        // safety 的 1.5s 会误杀"长按停留后松手"的场景(active 被提前清掉)
+        if (currentLongPressLookupMode !== 'release') {
+          st.lookupTimer = setTimeout(fireLookup, LOOKUP_DELAY_MS);
+          st.safetyTimer = setTimeout(() => endWordLookupGesture(doc), GESTURE_SAFETY_MS);
+        }
       }
 
-      // 800ms:读【当前选区】文本 → 校验 → 弹欧路(选区保留,与欧路窗共存)
+      // 读【当前选区】文本 → 校验 → 弹欧路(选区保留,与欧路窗共存)。
+      // 返回 true=已弹词;false=未弹(短语/无选区/无效)。
       function fireLookup() {
         const st = __readany_wl;
-        if (!st) return;
+        if (!st) return false;
         endWordLookupGesture(st.doc);
         const doc = st.doc;
-        if (!doc || !doc.isConnected || doc.__readany_unloaded) return;
+        if (!doc || !doc.isConnected || doc.__readany_unloaded) return false;
         // doc 已不是当前渲染页(控制栏弹出/翻页触发重排)→ 不弹
-        if (!isCurrentRenderDoc(doc)) return;
+        if (!isCurrentRenderDoc(doc)) return false;
 
         // 首选:当前 DOM 选区(原生长按 word-snap / 拖动扩展后的文本)
         const sel = doc.getSelection();
@@ -1426,13 +1432,13 @@
 
         if (range && text) {
           // 有选区:单词 → 弹;短语 → 静默(用户正在拖动扩展选区,不弹词)
-          if (INNER_PHRASE_RE.test(text)) return;
+          if (INNER_PHRASE_RE.test(text)) return false;
         } else {
           // 无选区/塌缩(400-500ms 间提前松手 / 原生未接管)→ 400ms 记录词兜底
           const saved = doc.__readany_wordlookup_word;
-          if (!saved || !saved.text) return;
+          if (!saved || !saved.text) return false;
           text = stripEdgePunct(saved.text);
-          if (!text || INNER_PHRASE_RE.test(text)) return;
+          if (!text || INNER_PHRASE_RE.test(text)) return false;
           range = saved.range;
         }
         doc.__readany_wordlookup_word = null;
@@ -1452,6 +1458,9 @@
             selectionBottom: iframeRect.top + lastRect.bottom,
           },
         });
+        // 弹词后清选区:残留选区会拦截下次长按(touchstart 判定"触点在选区内=拖手柄")
+        try { doc.getSelection()?.removeAllRanges(); } catch (e) { /* ignore */ }
+        return true;
       }
 
       doc.addEventListener('touchstart', (e) => {
@@ -1499,6 +1508,43 @@
       doc.addEventListener('touchend', () => {
         const st = __readany_wl;
         if (st && st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
+        // 长按已武装且松手:
+        if (st && st.doc && st.doc.__readany_wordlookup_active) {
+          if (currentLongPressLookupMode === 'release') {
+            // 松手触发:先弹词判定(单词→欧路);未弹(短语/无选区)→ 上报选区弹 SelectionPopover。
+            // 若选区建立时已弹过(selectionchange 路径),这里跳过防重复
+            if (st.doc.__readany_wordlookup_releaseDone) {
+              endWordLookupGesture(st.doc);
+              return;
+            }
+            st.doc.__readany_wordlookup_releaseDone = true;
+            const lookedUp = fireLookup();
+            if (!lookedUp) {
+              const sel = st.doc.getSelection();
+              const range = getSelectionRange(sel);
+              if (range) {
+                const text = getRangeTextWithoutRuby(range, sel.toString()).trim();
+                if (text) {
+                  armSelectionTapGuardForDocument(st.doc);
+                  emitSelection(st.doc, sel, range);
+                }
+              }
+            }
+          } else {
+            // auto 模式:800ms 定时器负责弹词;松手只上报选区(弹 SelectionPopover)。
+            // 若 800ms 弹词先到,RN onWordLookup 会 setSelection(null) 关弹窗。
+            const sel = st.doc.getSelection();
+            const range = getSelectionRange(sel);
+            if (range) {
+              const text = getRangeTextWithoutRuby(range, sel.toString()).trim();
+              if (text) {
+                armSelectionTapGuardForDocument(st.doc);
+                emitSelection(st.doc, sel, range);
+              }
+            }
+            endWordLookupGesture(st.doc);
+          }
+        }
         // lookupTimer 不取消(松手不取消 985)
       }, { passive: true, capture: true });
 
@@ -1507,6 +1553,30 @@
         if (st && st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
         // lookupTimer 不取消;若系统清掉了选区,800ms 校验自然空跑
       }, { passive: true, capture: true });
+
+      // 物理松手桥梁(RN 层 onTouchEnd 驱动):RN 触摸系统在原生 View 层,
+      // 与 WebView 内部选区句柄独立——手指物理抬起必然触发。
+      // 不依赖 selectionchange/touchend(两者都被绑在高亮/选区生命周期上)。
+      window.__readanyOnRelease = () => {
+        if (currentLongPressLookupMode !== 'release') return;
+        const st = __readany_wl;
+        if (!st || !st.doc || !st.doc.__readany_wordlookup_active) return;
+        if (st.doc.__readany_wordlookup_releaseDone) return;
+        st.doc.__readany_wordlookup_releaseDone = true;
+        const lookedUp = fireLookup();
+        if (!lookedUp) {
+          // 短语(用户拖动选词中):上报选区弹 SelectionPopover
+          const sel = st.doc.getSelection();
+          const range = getSelectionRange(sel);
+          if (range) {
+            const text = getRangeTextWithoutRuby(range, sel.toString()).trim();
+            if (text) {
+              armSelectionTapGuardForDocument(st.doc);
+              emitSelection(st.doc, sel, range);
+            }
+          }
+        }
+      };
     }
 
     // ─── Message handler from React Native ───
@@ -2259,6 +2329,10 @@
 
       if (settings.sideTapPageTurn != null) {
         currentSideTapPageTurn = settings.sideTapPageTurn;
+      }
+
+      if (settings.longPressLookupMode === 'auto' || settings.longPressLookupMode === 'release') {
+        currentLongPressLookupMode = settings.longPressLookupMode;
       }
     }
 

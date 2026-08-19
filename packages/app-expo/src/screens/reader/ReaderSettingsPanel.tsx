@@ -41,6 +41,7 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
     viewMode: settingViewMode,
     volumeButtonsPageTurn,
     sideTapPageTurn,
+    longPressLookupMode,
     showTopTitleProgress,
     showBottomTimeBattery,
     followSystemFontScale,
@@ -243,6 +244,36 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
                 {sideTapPageTurn !== false ? t("settings.enabled") : t("settings.disabled")}
               </Text>
             </TouchableOpacity>
+          </View>
+          <View style={s.settingRow}>
+            <View style={s.settingLabelBlock}>
+              <Text style={s.settingLabel}>{t("settings.longPressLookupMode", "长按查词")}</Text>
+              <Text style={s.settingHint}>
+                {t("settings.longPressLookupModeDesc", "长按单词后:自动弹词,或松手时弹词")}
+              </Text>
+            </View>
+            <View style={s.viewModeRow}>
+              <TouchableOpacity
+                style={[s.viewModeBtn, longPressLookupMode !== "release" && s.viewModeBtnActive]}
+                onPress={() => onUpdateSetting("longPressLookupMode", "auto")}
+              >
+                <Text
+                  style={[s.viewModeBtnText, longPressLookupMode !== "release" && s.viewModeBtnTextActive]}
+                >
+                  {t("settings.longPressLookupModeAuto", "自动弹词")}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.viewModeBtn, longPressLookupMode === "release" && s.viewModeBtnActive]}
+                onPress={() => onUpdateSetting("longPressLookupMode", "release")}
+              >
+                <Text
+                  style={[s.viewModeBtnText, longPressLookupMode === "release" && s.viewModeBtnTextActive]}
+                >
+                  {t("settings.longPressLookupModeRelease", "松手弹词")}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
           {Platform.OS === "android" && (
             <View style={s.settingRow}>

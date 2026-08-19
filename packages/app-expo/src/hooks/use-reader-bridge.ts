@@ -279,6 +279,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       viewMode?: string;
       paginatedLayout?: "single" | "double";
       sideTapPageTurn?: boolean;
+      longPressLookupMode?: "auto" | "release";
       customFontFaceCSS?: string;
       customFontFamily?: string;
     }) => {
