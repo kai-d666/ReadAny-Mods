@@ -70,6 +70,7 @@ import {
   TouchableOpacity,
   View,
   useWindowDimensions,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
@@ -78,6 +79,10 @@ import { WebView } from "react-native-webview";
 import { ReaderNoteViewModal } from "./reader/ReaderNoteViewModal";
 
 const REFLOWABLE_CHARACTERS_PER_LOCATION = 1500;
+// 屏幕物理全尺寸(竖屏锁定,恒定)。vivo 上 useWindowDimensions 在沉浸模式切换后
+// 不更新(停在"全屏减系统栏"旧值),导致按窗口高算出的 WebView 底部留白;
+// screenH 恒为屏幕全高,阅读器 WebView 用它做高度基准
+const screenHeight = Dimensions.get("screen").height;
 const MAX_TRACKED_LOCATION_DELTA = 20;
 const MAX_TRACKED_PAGE_DELTA = 20;
 const MAX_TRACKED_FRACTION_DELTA = 0.08;
@@ -318,7 +323,7 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   // Track OS-level accessibility font scale; re-renders when the user
   // changes the system font size while the reader is open.
-  const { fontScale: systemFontScale } = useWindowDimensions();
+  const { fontScale: systemFontScale, height: windowHeight } = useWindowDimensions();
   // Apply the system scale only when the user has opted into
   // followSystemFontScale. The store keeps the user's raw fontSize, so
   // toggling the option (or changing OS font size) doesn't drift the
@@ -555,6 +560,10 @@ export function ReaderScreen({ route, navigation }: Props) {
     }).start();
 
     if (willShow) {
+      // 三键先行:单击瞬间同步弹三键(与控制栏动画并行),不等 React 渲染 + useEffect,
+      // 避免"控制栏先落位、三键后弹出"的错位窗口;下方 useEffect 幂等兜底
+      NavigationBar.setVisibilityAsync("visible").catch(() => {});
+      NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
       if (controlsTimer.current) clearTimeout(controlsTimer.current);
       controlsTimer.current = setTimeout(() => {
         setShowControls(false);
@@ -1415,8 +1424,13 @@ export function ReaderScreen({ route, navigation }: Props) {
       ? layoutTopInset + 30
       : layoutTopInset
     : 0;
-  const readerBottomInset =
-    !showSearch && showBottomTimeBattery ? Math.max(insets.bottom, 8) + 14 : 0;
+  // WebView 渲染高度固定 = 窗口高 - 顶部 margin,不随系统三键显隐变化:
+  // 尺寸恒定 → foliate 不重排 → 无抖动。文字延伸到底部,三键/信息条都是
+  // overlay 浮在内容上(edge-to-edge 常态),不留无文字空白区
+  // 基准高度用屏幕物理全尺寸(screenH),不用 useWindowDimensions:
+  // vivo 上沉浸模式切换后 window 尺寸不更新,winH 会停在"全屏减系统栏"的旧值,
+  // 导致底部留白;screenH 是屏幕物理高(竖屏锁定,恒定),始终覆盖到屏幕底
+  const readerWebViewHeight = Math.max(screenHeight - readerTopMargin, 200);
   const batteryLabel = batteryLevel == null ? "--%" : `${Math.round(batteryLevel * 100)}%`;
   const selectionPopoverSelection = selection
     ? {
@@ -1442,7 +1456,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     : null;
 
   return (
-    <View style={[s.container, { paddingBottom: insets.bottom }]}>
+    <View style={s.container}>
       <Animated.View
         style={[s.readerStage, { transform: [{ translateY: readerPullAnim }] }]}
         pointerEvents="box-none"
@@ -1455,8 +1469,9 @@ export function ReaderScreen({ route, navigation }: Props) {
             style={[
               s.webview,
               {
+                flex: 0,
+                height: readerWebViewHeight,
                 marginTop: readerTopMargin,
-                marginBottom: readerBottomInset,
               },
             ]}
             pointerEvents={isPanelOpen ? "none" : "auto"}
@@ -1684,7 +1699,9 @@ export function ReaderScreen({ route, navigation }: Props) {
             s.floatingTools,
             {
               right: insets.right + 16,
-              bottom: insets.bottom + 110,
+              // 预判三键位置(与控制栏玻璃底一致):浮动条只在控制栏显示时可见,
+              // 此时三键必然出现,固定 ≥48 的基准避免三键弹出动画把它顶起
+              bottom: Math.max(insets.bottom, 48) + 110,
               opacity: auxToolsOpacity,
               transform: [{ translateY: auxToolsTranslate }],
             },
@@ -1762,7 +1779,10 @@ export function ReaderScreen({ route, navigation }: Props) {
             style={[
               s.bottomToolbarGlass,
               {
-                paddingBottom: Math.max(insets.bottom, 8) + 6,
+                // 预判三键位置:控制栏显示时三键必然出现(showControls → NavigationBar visible),
+                // padding 固定为"三键显示时"的值(≥48+6),不随三键弹出动画的 insets 渐变跳动,
+                // 避免内容被系统三键"顶一下"
+                paddingBottom: Math.max(insets.bottom, 48) + 6,
                 paddingLeft: insets.left + 18,
                 paddingRight: insets.right + 18,
               },
