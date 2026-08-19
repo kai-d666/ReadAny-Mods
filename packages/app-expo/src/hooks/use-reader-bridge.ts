@@ -741,7 +741,6 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
             break;
           case "wordLookupArmed":
             // 长按已武装:短振提示用户可开始拖动选词
-            console.log("[WordLookup] armed -> vibrate");
             Vibration.vibrate(50);
             break;
           case "tap":

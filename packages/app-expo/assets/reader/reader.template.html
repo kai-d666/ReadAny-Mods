@@ -1371,7 +1371,6 @@
       function selectWord() {
         const st = __readany_wl;
         if (!st) return;
-        postToRN('debug', { message: '[WL] selectWord fired' });
         const doc = st.doc;
         if (!doc || !doc.isConnected || doc.__readany_unloaded) return;
         if (!isCurrentRenderDoc(doc)) return;
@@ -1412,7 +1411,6 @@
       function fireLookup() {
         const st = __readany_wl;
         if (!st) return;
-        postToRN('debug', { message: '[WL] fireLookup fired' });
         endWordLookupGesture(st.doc);
         const doc = st.doc;
         if (!doc || !doc.isConnected || doc.__readany_unloaded) return;
@@ -1444,7 +1442,6 @@
         const lastRect = rects[rects.length - 1] || rect;
         const iframe = doc.defaultView && doc.defaultView.frameElement;
         const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
-        postToRN('debug', { message: '[WL] LOOKUP word=' + text });
         postToRN('wordLookup', {
           word: text,
           position: {
@@ -1477,7 +1474,6 @@
           selectTimer: null, lookupTimer: null, safetyTimer: null,
         };
         __readany_wl.selectTimer = setTimeout(selectWord, LONG_PRESS_MS);
-        postToRN('debug', { message: '[WL] touchstart armed' });
       }, { passive: false, capture: true });
 
       doc.addEventListener('touchmove', (e) => {
@@ -1500,7 +1496,6 @@
 
       doc.addEventListener('touchend', () => {
         const st = __readany_wl;
-        postToRN('debug', { message: '[WL] touchend, selectTimer=' + !!(st && st.selectTimer) });
         if (st && st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
         // lookupTimer 不取消(松手不取消 985)
       }, { passive: true, capture: true });
@@ -1539,7 +1534,6 @@
           // 控制栏/面板弹出等 UI 状态变化时,RN 主动取消进行中的长按手势
           // (foliate 重排会吞掉触摸序列,导致 selectTimer 残留误触发)
           clearWordLookupGesture();
-          postToRN('debug', { message: '[WL] cleared by RN' });
           break;
         case 'openBook':
           await openBook(msg);
