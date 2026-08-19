@@ -1206,6 +1206,8 @@
 
         timer = setTimeout(() => {
           timer = null;
+          // 长按查词已抢先触发(纵深防御):跳过 note tooltip
+          if (doc.__readany_wordlookup_active) return;
           const hit = isPointInNoteRange(doc, startX, startY);
           if (!hit) return;
           armNoteTapGuard(doc, 900);
@@ -1244,6 +1246,219 @@
 
       doc.addEventListener('touchcancel', () => {
         if (timer) { clearTimeout(timer); timer = null; }
+      }, { passive: true });
+    }
+
+    // ─── Long-press word lookup (欧路小窗直接查词) ───
+    // Caret from screen point: caretPositionFromPoint with caretRangeFromPoint fallback
+    function getCaretFromPoint(doc, x, y) {
+      try {
+        const pos = doc.caretPositionFromPoint ? doc.caretPositionFromPoint(x, y) : null;
+        if (pos) return { offsetNode: pos.offsetNode, offset: pos.offset };
+        const range = doc.caretRangeFromPoint ? doc.caretRangeFromPoint(x, y) : null;
+        if (range && range.startContainer) {
+          return { offsetNode: range.startContainer, offset: range.startOffset };
+        }
+      } catch (e) {
+        // Detached doc or other exception: silently give up
+      }
+      return null;
+    }
+
+    // CJK runs: Japanese kana, CJK ideographs (incl. extension A), Hangul
+    const CJK_RUN_RE = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
+
+    // Expand the word under a caret: contiguous Latin run (letters + ' or -) or
+    // contiguous CJK run. Returns null on whitespace/punctuation/non-text nodes.
+    function getWordRangeFromCaret(doc, caret) {
+      if (!caret.offsetNode || caret.offsetNode.nodeType !== Node.TEXT_NODE) return null;
+      const node = caret.offsetNode;
+      const text = node.data;
+      const offset = Math.min(caret.offset, text.length);
+      const ch = text[offset];
+      if (!ch) return null;
+      const isCJK = CJK_RUN_RE.test(ch);
+      if (!isCJK && !/[A-Za-zÀ-ɏ]/.test(ch)) return null;
+      const inWord = (c) =>
+        isCJK ? !!c && CJK_RUN_RE.test(c) : !!c && /[A-Za-zÀ-ɏ'’-]/.test(c);
+      let start = offset;
+      let end = offset;
+      while (start > 0 && inWord(text[start - 1])) start--;
+      while (end < text.length && inWord(text[end])) end++;
+      if (start >= end) return null;
+      const range = doc.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      return range;
+    }
+
+    // ─── Long-press word lookup (欧路小窗直接查词) ───
+    // 机制移植自静读天下(Moon+ Reader ActivityTxt)双定时器模型:
+    //   400ms 定时器(对应其 501 消息)到点 → JS 选词(selectWord, 对应其 selectText)
+    //   → 再 400ms(对应其 985 消息) → 读【当前选区】文本弹词典(fireLookup,
+    //     对应其 checkIfLookupWordAutomatically + lookupWord)
+    // 全程不加锁、不清选区:WebView 原生 ~500ms 长按接管选区作为拖选引擎,
+    // 选区与欧路窗共存;松手/拖动不取消弹词定时器(985 语义)。
+    const INNER_PHRASE_RE = /[\s，。、；：！？．,.;:!?()\[\]{}<>《》〈〉…“”"]/;
+    const EDGE_PUNCT_RE = /^[\s"'‘’“”\-–—.…·,，。、;；:：!！?？()\[\]{}<>《》〈〉]+|[\s"'‘’“”\-–—.…·,，。、;；:：!！?？()\[\]{}<>《》〈〉]+$/g;
+
+    // 剥首尾标点/引号/连字符:容忍原生 word-snap 与 JS 词边界的差异
+    function stripEdgePunct(text) {
+      return text.replace(EDGE_PUNCT_RE, '');
+    }
+
+    // 触点是否落在既有选区上(是 = 用户在调整手柄,不武装查词)
+    function isPointInsideExistingSelection(doc, x, y) {
+      const range = getSelectionRange(doc.getSelection());
+      if (!range) return false;
+      const caret = getCaretFromPoint(doc, x, y);
+      if (!caret) return false;
+      try {
+        const r = doc.createRange();
+        r.setStart(caret.offsetNode, caret.offset);
+        r.collapse(true);
+        return r.compareBoundaryPoints(Range.START_TO_START, range) >= 0 &&
+               r.compareBoundaryPoints(Range.END_TO_END, range) <= 0;
+      } catch { return false; }
+    }
+
+    // 结束查词手势:清定时器与标志。selectionchange 守卫在选区塌缩时也会调用
+    function endWordLookupGesture(doc) {
+      if (doc.__readany_wordlookup_lookupTimer) {
+        clearTimeout(doc.__readany_wordlookup_lookupTimer);
+        doc.__readany_wordlookup_lookupTimer = null;
+      }
+      if (doc.__readany_wordlookup_safetyTimer) {
+        clearTimeout(doc.__readany_wordlookup_safetyTimer);
+        doc.__readany_wordlookup_safetyTimer = null;
+      }
+      doc.__readany_wordlookup_gesture = false;
+      doc.__readany_wordlookup_active = false;
+    }
+
+    function attachWordLookupListener(doc) {
+      if (doc.__readany_wordlookup) return;
+      doc.__readany_wordlookup = true;
+
+      const LONG_PRESS_MS = 400;   // 选词定时器(对应 Moon+ 501)
+      const LOOKUP_DELAY_MS = 400; // 弹词延迟=拖选调整窗口(对应 Moon+ 985)
+      const GESTURE_SAFETY_MS = 1500;
+      const MOVE_TOLERANCE = 10;
+      let selectTimer = null;
+      let startX = 0, startY = 0;
+
+      // 400ms:JS 选中按下点的词(原生长按的落点,与原生选区是同一个 DOM Selection)
+      function selectWord() {
+        if (!doc.isConnected || doc.__readany_unloaded) return;
+        const caret = getCaretFromPoint(doc, startX, startY);
+        if (!caret) return;
+
+        // 链接/脚注不查词
+        let node = caret.offsetNode;
+        while (node && node !== doc.body) {
+          if (node.nodeType === 1 && node.closest && node.closest('a[href]')) return;
+          node = node.parentNode;
+        }
+
+        const range = getWordRangeFromCaret(doc, caret);
+        if (!range) return;
+        const word = getRangeTextWithoutRuby(range, range.toString()).trim();
+        if (!word) return;
+
+        // 先置手势标志:selectionchange 守卫据此不向 RN 上报选区
+        doc.__readany_wordlookup_active = true;
+        doc.__readany_wordlookup_gesture = true;
+
+        // 【不创建 DOM Selection】——原生 ~500ms 长按会自己 word-snap 并接管选区
+        // (句柄/拖动扩展/滚页)。若我们预先建立选区,原生会把整块选区当可拖对象,
+        // 拖动时整个词跟着手指跑。只记录 400ms 词,作为 800ms 弹词的兜底
+        // (原生未接管 / 用户在 400-500ms 间提前松手 的场景)。
+        doc.__readany_wordlookup_word = { text: word, range };
+
+        // 弹词定时器一旦武装即不取消(松手/拖动/多指均不影响)
+        doc.__readany_wordlookup_lookupTimer = setTimeout(fireLookup, LOOKUP_DELAY_MS);
+        doc.__readany_wordlookup_safetyTimer = setTimeout(
+          () => endWordLookupGesture(doc), GESTURE_SAFETY_MS);
+      }
+
+      // 800ms:读【当前选区】文本 → 校验 → 弹欧路(选区保留,与欧路窗共存)
+      function fireLookup() {
+        endWordLookupGesture(doc);
+        if (!doc.isConnected || doc.__readany_unloaded) return;
+
+        // 首选:当前 DOM 选区(原生长按 word-snap / 拖动扩展后的文本)
+        const sel = doc.getSelection();
+        let range = getSelectionRange(sel);
+        let text = range ? getRangeTextWithoutRuby(range, sel.toString()).trim() : "";
+        if (text) text = stripEdgePunct(text);
+
+        if (range && text) {
+          // 有选区:单词 → 弹;短语 → 静默(用户正在拖动扩展选区,不弹词)
+          if (INNER_PHRASE_RE.test(text)) return;
+        } else {
+          // 无选区/塌缩(400-500ms 间提前松手 / 原生未接管)→ 400ms 记录词兜底
+          const saved = doc.__readany_wordlookup_word;
+          if (!saved || !saved.text) return;
+          text = stripEdgePunct(saved.text);
+          if (!text || INNER_PHRASE_RE.test(text)) return;
+          range = saved.range;
+        }
+        doc.__readany_wordlookup_word = null;
+
+        const rect = range.getBoundingClientRect();
+        const rects = Array.from(range.getClientRects()).filter(r => r.width > 0 && r.height > 0);
+        const firstRect = rects[0] || rect;
+        const lastRect = rects[rects.length - 1] || rect;
+        const iframe = doc.defaultView && doc.defaultView.frameElement;
+        const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
+        postToRN('wordLookup', {
+          word: text,
+          position: {
+            x: iframeRect.left + rect.left + rect.width / 2,
+            y: iframeRect.top + firstRect.top - 4,
+            selectionTop: iframeRect.top + firstRect.top,
+            selectionBottom: iframeRect.top + lastRect.bottom,
+          },
+        });
+      }
+
+      doc.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        // 注音/注释区让给 note tooltip
+        if (isPointInNoteRange(doc, touch.clientX, touch.clientY)) return;
+        if (isPointInAnnotationRange(doc, touch.clientX, touch.clientY)) return;
+        // 触点落在既有选区内 = 调整手柄,不武装
+        if (isPointInsideExistingSelection(doc, touch.clientX, touch.clientY)) return;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        selectTimer = setTimeout(selectWord, LONG_PRESS_MS);
+      }, { passive: false });
+
+      doc.addEventListener('touchmove', (e) => {
+        // 400ms 到点前:非单指或位移>10px → 取消选词(滚动/翻页意图)
+        if (e.touches.length !== 1) {
+          if (selectTimer) { clearTimeout(selectTimer); selectTimer = null; }
+          return;
+        }
+        if (!selectTimer) return;
+        const touch = e.touches[0];
+        if (Math.abs(touch.clientX - startX) > MOVE_TOLERANCE ||
+            Math.abs(touch.clientY - startY) > MOVE_TOLERANCE) {
+          clearTimeout(selectTimer);
+          selectTimer = null;
+        }
+        // 400ms 之后:不干预,原生选区接管拖动;lookupTimer 不受影响
+      }, { passive: true });
+
+      doc.addEventListener('touchend', () => {
+        if (selectTimer) { clearTimeout(selectTimer); selectTimer = null; }
+        // lookupTimer 不取消(松手不取消 985)
+      }, { passive: true });
+
+      doc.addEventListener('touchcancel', () => {
+        if (selectTimer) { clearTimeout(selectTimer); selectTimer = null; }
+        // lookupTimer 不取消;若系统清掉了选区,800ms 校验自然空跑
       }, { passive: true });
     }
 
@@ -1538,6 +1753,7 @@
           attachPullBookmarkListener(doc);
           attachSelectionListener(doc);
           attachNoteLongPress(doc);
+          attachWordLookupListener(doc);
           refreshUserAnnotations(100);
           // Auto-inject ruby annotations if enabled
           if (_rubyMode && (_rubyWordDict || _rubyCharDict)) {
@@ -2805,6 +3021,16 @@ a { color: ${primary} !important; }
       doc.addEventListener('selectionchange', () => {
         if (doc.__readany_isJiggling) return;
         if (iosHackPending) return;
+        // 查词手势期:不向 RN 上报选区(避免 SelectionPopover 与欧路窗叠层),但保留选区本身;
+        // 选区塌缩则结束手势并同步上报清空(不走 300ms 防抖)
+        if (doc.__readany_wordlookup_gesture) {
+          const sel = doc.getSelection();
+          if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+            endWordLookupGesture(doc);
+            postToRN('selectionCleared', {});
+          }
+          return;
+        }
         if (selTimer) clearTimeout(selTimer);
         selTimer = setTimeout(() => {
           const sel = doc.getSelection();

@@ -28,6 +28,12 @@ export interface SelectionEvent {
   };
 }
 
+/** 长按查词事件:webview 内 400ms 长按取词后发出 */
+export interface WordLookupEvent {
+  word: string;
+  position: SelectionEvent["position"];
+}
+
 export interface BookmarkPullEvent {
   offset: number;
   armed: boolean;
@@ -61,6 +67,7 @@ export interface ReaderBridgeCallbacks {
   onTocReady?: (items: TOCItem[]) => void;
   onSelection?: (detail: SelectionEvent) => void;
   onSelectionCleared?: () => void;
+  onWordLookup?: (detail: WordLookupEvent) => void;
   onTap?: () => void;
   onSearchResult?: (index: number, count: number) => void;
   onSearchComplete?: (count: number) => void;
@@ -721,6 +728,14 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
             break;
           case "selectionCleared":
             cb.onSelectionCleared?.();
+            break;
+          case "wordLookup":
+            if (msg.word && msg.position) {
+              cb.onWordLookup?.({
+                word: msg.word,
+                position: msg.position,
+              });
+            }
             break;
           case "tap":
             cb.onTap?.();

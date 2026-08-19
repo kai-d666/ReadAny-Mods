@@ -802,6 +802,18 @@ export function ReaderScreen({ route, navigation }: Props) {
       setSelection(null);
       readingContextService.clearSelection();
     },
+    onWordLookup: (detail) => {
+      // 静读天下双定时器机制:长按 400ms 选词 + 400ms 后(共 800ms)读当前选区弹词。
+      // JS 侧 gesture 门控已保证手势期不推 'selection',此调用多为 no-op,保留作纵深防御。
+      setSelection(null);
+      suppressReaderTapUntilRef.current = Date.now() + 900;
+      launchEudic(detail.word).catch((err) => {
+        Alert.alert(
+          err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    },
     onTap: () => {
       if (noteTooltipVisibleRef.current || Date.now() < suppressReaderTapUntilRef.current) {
         return;
