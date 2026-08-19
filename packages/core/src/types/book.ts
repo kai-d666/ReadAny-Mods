@@ -95,6 +95,8 @@ export interface ReadSettings extends ViewSettings {
   showTopTitleProgress: boolean;
   showBottomTimeBattery: boolean;
   volumeButtonsPageTurn: boolean;
+  /** 单击屏幕左右侧边翻页(默认开启;关闭后侧边单击不翻页) */
+  sideTapPageTurn?: boolean;
   defaultHighlightColor?: HighlightColor;
   /**
    * Mobile-only opt-in: when true, the reader scales fontSize by the OS

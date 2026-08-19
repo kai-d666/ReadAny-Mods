@@ -69,6 +69,8 @@
     "paragraphSpacing": "Paragraph Spacing",
     "showTopTitleProgress": "Top Title & Progress",
     "showBottomTimeBattery": "Bottom Time & Battery",
+    "sideTapPageTurn": "Side Tap Turn Page",
+    "sideTapPageTurnDesc": "Tap left/right edge of screen to turn pages",
     "volumeButtonsPageTurn": "Volume Buttons Turn Pages",
     "volumeButtonsPageTurnDesc": "While reading, volume keys turn pages",
     "followSystemFontScale": "Follow System Font Scale",

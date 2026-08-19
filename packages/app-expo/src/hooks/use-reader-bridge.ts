@@ -4,6 +4,7 @@ import type { TOCItem } from "@readany/core/types";
  * for the foliate-js reader engine.
  */
 import { useCallback, useMemo, useRef } from "react";
+import { Vibration } from "react-native";
 import type { WebView } from "react-native-webview";
 
 export interface RelocateEvent {
@@ -277,6 +278,7 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
       useBookFonts?: boolean;
       viewMode?: string;
       paginatedLayout?: "single" | "double";
+      sideTapPageTurn?: boolean;
       customFontFaceCSS?: string;
       customFontFamily?: string;
     }) => {
@@ -736,6 +738,11 @@ export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
                 position: msg.position,
               });
             }
+            break;
+          case "wordLookupArmed":
+            // 长按已武装:短振提示用户可开始拖动选词
+            console.log("[WordLookup] armed -> vibrate");
+            Vibration.vibrate(50);
             break;
           case "tap":
             cb.onTap?.();

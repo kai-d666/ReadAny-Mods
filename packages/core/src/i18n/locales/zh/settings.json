@@ -69,6 +69,8 @@
     "paragraphSpacing": "段落间距",
     "showTopTitleProgress": "顶部标题与进度",
     "showBottomTimeBattery": "底部时间与电量",
+    "sideTapPageTurn": "单击侧边翻页",
+    "sideTapPageTurnDesc": "开启后单击屏幕左右侧边翻页",
     "volumeButtonsPageTurn": "音量键翻页",
     "volumeButtonsPageTurnDesc": "开启后阅读时音量键用于上下翻页",
     "followSystemFontScale": "跟随系统字号",

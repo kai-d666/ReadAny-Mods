@@ -541,6 +541,14 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Controls toggle — declared before bridge so onTap can reference it without TS error
   const toggleControls = useCallback(() => {
     const willShow = !showControls;
+    // 控制栏显示/隐藏都会触发 foliate 重排(吞掉进行中的触摸序列,
+    // touchend/touchcancel 不派发 → selectTimer 残留 → 400ms 后误弹词)。
+    // 无条件主动取消长按手势。
+    try {
+      bridge.webViewRef.current?.injectJavaScript(
+        `handleCommand(${JSON.stringify({ type: "clearWordLookupGesture" })}); true;`,
+      );
+    } catch (e) { /* bridge 尚未就绪 */ }
     setShowControls(willShow);
     Animated.timing(toolbarAnim, {
       toValue: willShow ? 0 : TOOLBAR_HIDE_OFFSET,
@@ -596,6 +604,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         useBookFonts: settings.useBookFonts,
         viewMode: settings.viewMode,
         paginatedLayout: settings.paginatedLayout,
+        sideTapPageTurn: settings.sideTapPageTurn !== false,
         customFontFaceCSS: fontCSS,
         customFontFamily: fontFamily ?? "",
       });

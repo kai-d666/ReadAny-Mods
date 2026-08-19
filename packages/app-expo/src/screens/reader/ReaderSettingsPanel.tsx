@@ -40,6 +40,7 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
     pageMargin: settingPageMargin,
     viewMode: settingViewMode,
     volumeButtonsPageTurn,
+    sideTapPageTurn,
     showTopTitleProgress,
     showBottomTimeBattery,
     followSystemFontScale,
@@ -226,6 +227,22 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
+          <View style={s.settingRow}>
+            <View style={s.settingLabelBlock}>
+              <Text style={s.settingLabel}>{t("settings.sideTapPageTurn", "单击侧边翻页")}</Text>
+              <Text style={s.settingHint}>
+                {t("settings.sideTapPageTurnDesc", "开启后单击屏幕左右侧边翻页")}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[s.settingToggleBtn, sideTapPageTurn !== false && s.settingToggleBtnActive]}
+              onPress={() => onUpdateSetting("sideTapPageTurn", sideTapPageTurn === false)}
+            >
+              <Text style={[s.settingToggleText, sideTapPageTurn !== false && s.settingToggleTextActive]}>
+                {sideTapPageTurn !== false ? t("settings.enabled") : t("settings.disabled")}
+              </Text>
+            </TouchableOpacity>
           </View>
           {Platform.OS === "android" && (
             <View style={s.settingRow}>

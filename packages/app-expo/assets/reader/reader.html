@@ -196,6 +196,7 @@
     let currentBookIsPdf = false;
     let lastRendererStyles = '';
     let currentViewMode = 'paginated';
+    let currentSideTapPageTurn = true; // 单击侧边翻页开关(默认开)
     let currentSectionUsesVerticalWriting = false;
     let currentPaginatedLayout = 'double';
     let currentFontSize = 16;
@@ -1336,6 +1337,27 @@
       doc.__readany_wordlookup_active = false;
     }
 
+    // 全局手势状态(非 per-doc):doc 重排重建后旧 doc 的 touchend 会丢失,
+    // 若定时器挂在 doc 闭包里会残留 → 400ms 后误触发。全局状态 + doc 有效性
+    // 校验(仍是当前渲染 doc)双保险。
+    var __readany_wl = null; // { doc, startX, startY, selectTimer, lookupTimer, safetyTimer }
+
+    function clearWordLookupGesture() {
+      if (__readany_wl) {
+        if (__readany_wl.selectTimer) clearTimeout(__readany_wl.selectTimer);
+        if (__readany_wl.lookupTimer) clearTimeout(__readany_wl.lookupTimer);
+        if (__readany_wl.safetyTimer) clearTimeout(__readany_wl.safetyTimer);
+        __readany_wl = null;
+      }
+    }
+
+    function isCurrentRenderDoc(doc) {
+      try {
+        const contents = view && view.renderer ? view.renderer.getContents() : [];
+        return contents.some(c => c.doc === doc);
+      } catch (e) { return false; }
+    }
+
     function attachWordLookupListener(doc) {
       if (doc.__readany_wordlookup) return;
       doc.__readany_wordlookup = true;
@@ -1344,13 +1366,16 @@
       const LOOKUP_DELAY_MS = 400; // 弹词延迟=拖选调整窗口(对应 Moon+ 985)
       const GESTURE_SAFETY_MS = 1500;
       const MOVE_TOLERANCE = 10;
-      let selectTimer = null;
-      let startX = 0, startY = 0;
 
       // 400ms:JS 选中按下点的词(原生长按的落点,与原生选区是同一个 DOM Selection)
       function selectWord() {
-        if (!doc.isConnected || doc.__readany_unloaded) return;
-        const caret = getCaretFromPoint(doc, startX, startY);
+        const st = __readany_wl;
+        if (!st) return;
+        postToRN('debug', { message: '[WL] selectWord fired' });
+        const doc = st.doc;
+        if (!doc || !doc.isConnected || doc.__readany_unloaded) return;
+        if (!isCurrentRenderDoc(doc)) return;
+        const caret = getCaretFromPoint(doc, st.startX, st.startY);
         if (!caret) return;
 
         // 链接/脚注不查词
@@ -1369,6 +1394,9 @@
         doc.__readany_wordlookup_active = true;
         doc.__readany_wordlookup_gesture = true;
 
+        // 触觉反馈:已武装,用户可以开始拖动了
+        postToRN('wordLookupArmed', {});
+
         // 【不创建 DOM Selection】——原生 ~500ms 长按会自己 word-snap 并接管选区
         // (句柄/拖动扩展/滚页)。若我们预先建立选区,原生会把整块选区当可拖对象,
         // 拖动时整个词跟着手指跑。只记录 400ms 词,作为 800ms 弹词的兜底
@@ -1376,15 +1404,20 @@
         doc.__readany_wordlookup_word = { text: word, range };
 
         // 弹词定时器一旦武装即不取消(松手/拖动/多指均不影响)
-        doc.__readany_wordlookup_lookupTimer = setTimeout(fireLookup, LOOKUP_DELAY_MS);
-        doc.__readany_wordlookup_safetyTimer = setTimeout(
-          () => endWordLookupGesture(doc), GESTURE_SAFETY_MS);
+        st.lookupTimer = setTimeout(fireLookup, LOOKUP_DELAY_MS);
+        st.safetyTimer = setTimeout(() => endWordLookupGesture(doc), GESTURE_SAFETY_MS);
       }
 
       // 800ms:读【当前选区】文本 → 校验 → 弹欧路(选区保留,与欧路窗共存)
       function fireLookup() {
-        endWordLookupGesture(doc);
-        if (!doc.isConnected || doc.__readany_unloaded) return;
+        const st = __readany_wl;
+        if (!st) return;
+        postToRN('debug', { message: '[WL] fireLookup fired' });
+        endWordLookupGesture(st.doc);
+        const doc = st.doc;
+        if (!doc || !doc.isConnected || doc.__readany_unloaded) return;
+        // doc 已不是当前渲染页(控制栏弹出/翻页触发重排)→ 不弹
+        if (!isCurrentRenderDoc(doc)) return;
 
         // 首选:当前 DOM 选区(原生长按 word-snap / 拖动扩展后的文本)
         const sel = doc.getSelection();
@@ -1411,6 +1444,7 @@
         const lastRect = rects[rects.length - 1] || rect;
         const iframe = doc.defaultView && doc.defaultView.frameElement;
         const iframeRect = iframe ? iframe.getBoundingClientRect() : { left: 0, top: 0 };
+        postToRN('debug', { message: '[WL] LOOKUP word=' + text });
         postToRN('wordLookup', {
           word: text,
           position: {
@@ -1430,36 +1464,52 @@
         if (isPointInAnnotationRange(doc, touch.clientX, touch.clientY)) return;
         // 触点落在既有选区内 = 调整手柄,不武装
         if (isPointInsideExistingSelection(doc, touch.clientX, touch.clientY)) return;
-        startX = touch.clientX;
-        startY = touch.clientY;
-        selectTimer = setTimeout(selectWord, LONG_PRESS_MS);
-      }, { passive: false });
+        // 旧 doc(重排残留)上的触摸不武装
+        if (!isCurrentRenderDoc(doc)) return;
+        // 新触摸 = 新意图:清掉旧手势的全部定时器(防翻页/单击后旧手势弹词)
+        if (__readany_wl) {
+          if (__readany_wl.selectTimer) clearTimeout(__readany_wl.selectTimer);
+          if (__readany_wl.lookupTimer) clearTimeout(__readany_wl.lookupTimer);
+          if (__readany_wl.safetyTimer) clearTimeout(__readany_wl.safetyTimer);
+        }
+        __readany_wl = {
+          doc, startX: touch.clientX, startY: touch.clientY,
+          selectTimer: null, lookupTimer: null, safetyTimer: null,
+        };
+        __readany_wl.selectTimer = setTimeout(selectWord, LONG_PRESS_MS);
+        postToRN('debug', { message: '[WL] touchstart armed' });
+      }, { passive: false, capture: true });
 
       doc.addEventListener('touchmove', (e) => {
+        const st = __readany_wl;
+        if (!st) return;
         // 400ms 到点前:非单指或位移>10px → 取消选词(滚动/翻页意图)
         if (e.touches.length !== 1) {
-          if (selectTimer) { clearTimeout(selectTimer); selectTimer = null; }
+          if (st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
           return;
         }
-        if (!selectTimer) return;
+        if (!st.selectTimer) return;
         const touch = e.touches[0];
-        if (Math.abs(touch.clientX - startX) > MOVE_TOLERANCE ||
-            Math.abs(touch.clientY - startY) > MOVE_TOLERANCE) {
-          clearTimeout(selectTimer);
-          selectTimer = null;
+        if (Math.abs(touch.clientX - st.startX) > MOVE_TOLERANCE ||
+            Math.abs(touch.clientY - st.startY) > MOVE_TOLERANCE) {
+          clearTimeout(st.selectTimer);
+          st.selectTimer = null;
         }
         // 400ms 之后:不干预,原生选区接管拖动;lookupTimer 不受影响
-      }, { passive: true });
+      }, { passive: true, capture: true });
 
       doc.addEventListener('touchend', () => {
-        if (selectTimer) { clearTimeout(selectTimer); selectTimer = null; }
+        const st = __readany_wl;
+        postToRN('debug', { message: '[WL] touchend, selectTimer=' + !!(st && st.selectTimer) });
+        if (st && st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
         // lookupTimer 不取消(松手不取消 985)
-      }, { passive: true });
+      }, { passive: true, capture: true });
 
       doc.addEventListener('touchcancel', () => {
-        if (selectTimer) { clearTimeout(selectTimer); selectTimer = null; }
+        const st = __readany_wl;
+        if (st && st.selectTimer) { clearTimeout(st.selectTimer); st.selectTimer = null; }
         // lookupTimer 不取消;若系统清掉了选区,800ms 校验自然空跑
-      }, { passive: true });
+      }, { passive: true, capture: true });
     }
 
     // ─── Message handler from React Native ───
@@ -1485,6 +1535,12 @@
 
     async function handleCommand(msg) {
       switch (msg.type) {
+        case 'clearWordLookupGesture':
+          // 控制栏/面板弹出等 UI 状态变化时,RN 主动取消进行中的长按手势
+          // (foliate 重排会吞掉触摸序列,导致 selectTimer 残留误触发)
+          clearWordLookupGesture();
+          postToRN('debug', { message: '[WL] cleared by RN' });
+          break;
         case 'openBook':
           await openBook(msg);
           break;
@@ -2202,6 +2258,10 @@
         currentViewMode = settings.viewMode;
         applyRendererFlowMode(renderer);
       }
+
+      if (settings.sideTapPageTurn != null) {
+        currentSideTapPageTurn = settings.sideTapPageTurn;
+      }
     }
 
     function getScrollNavigationDistance() {
@@ -2805,6 +2865,9 @@ a { color: ${primary} !important; }
         e.preventDefault();
         e.stopPropagation();
 
+        // 判定为单击(非长按意图):清掉查词手势定时器
+        clearWordLookupGesture();
+
         const centerStart = viewW * 0.375;
         const centerEnd = viewW * 0.625;
 
@@ -2824,6 +2887,9 @@ a { color: ${primary} !important; }
         armTapNavigationLock();
         e.preventDefault();
         e.stopPropagation();
+
+        // 侧边单击翻页开关:关闭时侧边单击静默(中间区仍弹控制栏)
+        if (!currentSideTapPageTurn) return;
 
         if (normalizedX < centerStart) {
           if (view) goPrevByMode(undefined, 'tap:left');
