@@ -243,6 +243,10 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [toc, setToc] = useState<TOCItem[]>([]);
   const [bookTitle, setBookTitle] = useState("");
   const [webViewReady, setWebViewReady] = useState(false);
+  // 自愈:WebView 在转场动画期间创建时,Android 可能跳过 JS 初始化(ready 永不发,
+  // 表现为一直转圈)。挂载后 8s 未 ready 则重建 WebView(此时页面已稳定,必成功)。
+  const [webViewEpoch, setWebViewEpoch] = useState(0);
+  const webViewReadyRef = useRef(false);
   const [translationReady, setTranslationReady] = useState(false);
   const [readerHtmlUri, setReaderHtmlUri] = useState<string | null>(null);
   const [currentCfi, setCurrentCfi] = useState("");
@@ -581,6 +585,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const bridge = useReaderBridge({
     onReady: () => {
       setWebViewReady(true);
+      webViewReadyRef.current = true;
       bridge.webViewRef.current?.injectJavaScript(`
         (function() {
           if (!window.__view && document.querySelector('foliate-view')) {
@@ -951,6 +956,22 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   bridgeRef.current = bridge;
   chapterTranslationBridgeRef.current = bridge;
+
+  // 自愈:WebView 在转场动画期间创建时,Android 可能跳过 JS 初始化(ready 永不发,
+  // 一直转圈)。8s 未 ready 则重建 WebView(此时页面已稳定,加载必成功)。
+  // 重建最多 2 次,避免死循环。
+  useEffect(() => {
+    if (webViewReady || !readerHtmlUri) return;
+    const t = setTimeout(() => {
+      if (!webViewReadyRef.current && webViewEpoch < 2) {
+        console.warn("[ReaderScreen] WebView not ready, recreating...");
+        webViewReadyRef.current = false;
+        setWebViewReady(false);
+        setWebViewEpoch((e) => e + 1);
+      }
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [webViewReady, readerHtmlUri, webViewEpoch]);
 
   // ── useReaderTTS ──
   const tts = useReaderTTS({
@@ -1464,6 +1485,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         {/* WebView with foliate-js */}
         <View style={{ flex: 1 }}>
           <WebView
+            key={`reader-wv-${webViewEpoch}`}
             ref={bridge.webViewRef}
             source={{ uri: readerHtmlUri }}
             style={[
