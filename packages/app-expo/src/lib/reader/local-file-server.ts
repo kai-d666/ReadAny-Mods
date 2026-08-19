@@ -111,11 +111,15 @@ async function _startNativeServer(cleanRoot: string): Promise<string> {
     return origin;
   } catch (e) {
     // Native module unavailable at runtime (e.g. peer dep @dr.pogodin/react-native-fs
-    // not linked into the native binary). Drop down to the JS TCP fallback so reading
-    // still works without rebuilding the dev client.
+    // not linked into the native binary), or a leaked Lighttpd instance from a
+    // previous reload/Fast Refresh ("Another Server instance is active"). Drop down
+    // to the JS TCP fallback so reading still works without rebuilding the dev client.
     console.warn(
-      `[FileServer] Native Lighttpd unavailable (${e instanceof Error ? e.message : e}), falling back to TCP`,
+      `[FileServer] Native Lighttpd unavailable (${e instanceof Error ? e.message : e}), degraded to TCP for this session (冷启动 App 可恢复 Lighttpd)`,
     );
+    // 降级为会话级:Lighttpd 实例残留无法从 JS 层清除,反复重试只会每次打开书
+    // 都走一遍失败路径;直接锁定 TCP,冷启动 App 后 native 实例释放会自动恢复
+    _useNative = false;
     if (server) {
       try {
         await server.stop?.();
