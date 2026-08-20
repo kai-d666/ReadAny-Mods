@@ -43,7 +43,7 @@ export default function AISettingsScreen() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(true);
   const [endpointPickerVisible, setEndpointPickerVisible] = useState(false);
 
   const activeEndpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
@@ -120,52 +120,55 @@ export default function AISettingsScreen() {
         bounces={true}
       >
           <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
-            {/* Endpoints */}
-            <View style={styles.endpointList}>
-              {aiConfig.endpoints.map((ep) => {
-                const isActive = ep.id === aiConfig.activeEndpointId;
-                const isExpanded = expandedId === ep.id;
-                return (
-                  <View key={ep.id} style={[styles.endpointCard, isActive && styles.endpointCardActive]}>
-                    <TouchableOpacity
-                      style={styles.endpointHeader}
-                      onPress={() => setExpandedId(isExpanded ? null : ep.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.endpointInfo}>
-                        <View style={styles.endpointNameRow}>
-                          <Text style={styles.endpointName}>{ep.name || t("common.unnamed", "未命名")}</Text>
-                          {isActive && (
-                            <View style={styles.currentBadge}>
-                              <Text style={styles.currentBadgeText}>{t("common.current", "当前")}</Text>
-                            </View>
-                          )}
+            {/* Endpoints — 与 AI 助手同款卡片,标题+描述明确区块边界(对齐桌面) */}
+            <View style={styles.sectionCard}>
+              <Text style={styles.sectionTitle}>{t("settings.ai_endpoints", "端点列表")}</Text>
+              <Text style={styles.sectionDesc}>{t("settings.ai_desc")}</Text>
+              <View style={styles.endpointList}>
+                {aiConfig.endpoints.map((ep) => {
+                  const isActive = ep.id === aiConfig.activeEndpointId;
+                  const isExpanded = expandedId === ep.id;
+                  return (
+                    <View key={ep.id} style={[styles.endpointCard, isActive && styles.endpointCardActive]}>
+                      <TouchableOpacity
+                        style={styles.endpointHeader}
+                        onPress={() => setExpandedId(isExpanded ? null : ep.id)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.endpointInfo}>
+                          <View style={styles.endpointNameRow}>
+                            <Text style={styles.endpointName}>{ep.name || t("common.unnamed", "未命名")}</Text>
+                            {isActive && (
+                              <View style={styles.currentBadge}>
+                                <Text style={styles.currentBadgeText}>{t("common.current", "当前")}</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.endpointProvider}>{ep.provider}</Text>
                         </View>
-                        <Text style={styles.endpointProvider}>{ep.provider}</Text>
-                      </View>
-                      <Text style={styles.chevron}>{isExpanded ? "▲" : "▼"}</Text>
-                    </TouchableOpacity>
+                        <Text style={styles.chevron}>{isExpanded ? "▲" : "▼"}</Text>
+                      </TouchableOpacity>
 
-                    {isExpanded && (
-                      <EndpointEditor
-                        ep={ep}
-                        isActive={isActive}
-                        onUpdate={updateEndpoint}
-                        onDelete={removeEndpoint}
-                        onFetchModels={handleFetchModels}
-                        aiConfig={aiConfig}
-                        setActiveEndpoint={setActiveEndpoint}
-                        setActiveModel={setActiveModel}
-                        colors={colors}
-                        t={t}
-                      />
-                    )}
-                  </View>
-                );
-              })}
+                      {isExpanded && (
+                        <EndpointEditor
+                          ep={ep}
+                          isActive={isActive}
+                          onUpdate={updateEndpoint}
+                          onDelete={removeEndpoint}
+                          onFetchModels={handleFetchModels}
+                          aiConfig={aiConfig}
+                          setActiveEndpoint={setActiveEndpoint}
+                          setActiveModel={setActiveModel}
+                          colors={colors}
+                          t={t}
+                        />
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+              {fetchError ? <Text style={styles.errorText}>{fetchError}</Text> : null}
             </View>
-
-            {fetchError ? <Text style={styles.errorText}>{fetchError}</Text> : null}
 
             {/* AI 助手:端点选择 + 参数(折叠) */}
             <View style={styles.sectionCard}>
