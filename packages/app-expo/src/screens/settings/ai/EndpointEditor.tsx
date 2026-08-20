@@ -42,6 +42,11 @@ const PROVIDERS: { id: AIProviderType; label: string }[] = [
 export { PROVIDERS };
 
 /** Searchable model list — shows a search input + scrollable filtered list */
+// 模型多时(数百个)一次性 map 渲染会卡顿:默认只渲染前 COLLAPSED_LIMIT 个,
+// 底部"展开全部";搜索时渲染上限 SEARCH_LIMIT,防止每次击键重渲染卡顿。
+const COLLAPSED_LIMIT = 25;
+const SEARCH_LIMIT = 100;
+
 function ModelSearchableList({
   models,
   activeModel,
@@ -49,6 +54,7 @@ function ModelSearchableList({
   onRemove,
   colors,
   t,
+  open,
 }: {
   models: string[];
   activeModel?: string;
@@ -56,11 +62,26 @@ function ModelSearchableList({
   onRemove: (model: string) => void;
   colors: any;
   t: any;
+  /** 折叠态由调用方控制:false 时整个区块(搜索框+列表)不渲染 */
+  open: boolean;
 }) {
   const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  if (!open) return null;
   const filtered = search.trim()
     ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase()))
     : models;
+  const searching = search.trim() !== "";
+  const visible = searching
+    ? filtered.slice(0, SEARCH_LIMIT)
+    : expanded
+      ? filtered
+      : filtered.slice(0, COLLAPSED_LIMIT);
+  const hiddenCount = searching
+    ? Math.max(0, filtered.length - SEARCH_LIMIT)
+    : expanded
+      ? 0
+      : Math.max(0, filtered.length - COLLAPSED_LIMIT);
 
   return (
     <View style={{ gap: 6 }}>
@@ -84,7 +105,10 @@ function ModelSearchableList({
         placeholder={t("settings.ai_searchModelPlaceholder", "搜索模型...")}
         placeholderTextColor={colors.mutedForeground}
         value={search}
-        onChangeText={setSearch}
+        onChangeText={(v) => {
+          setSearch(v);
+          setExpanded(false);
+        }}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -98,7 +122,7 @@ function ModelSearchableList({
             {t("common.noResults", "无匹配结果")}
           </Text>
         ) : (
-          filtered.map((m) => {
+          visible.map((m) => {
             const isActive = m === activeModel;
             return (
               <TouchableOpacity
@@ -135,6 +159,22 @@ function ModelSearchableList({
               </TouchableOpacity>
             );
           })
+        )}
+        {hiddenCount > 0 && !searching && (
+          <TouchableOpacity
+            style={{ paddingVertical: 10, alignItems: "center" }}
+            onPress={() => setExpanded(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "500" }}>
+              {t("settings.ai_expandModels", "展开全部 {{count}} 个模型", { count: hiddenCount })}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {hiddenCount > 0 && searching && (
+          <Text style={{ padding: 10, fontSize: 11, color: colors.mutedForeground, textAlign: "center" }}>
+            {t("settings.ai_searchTooMany", "结果过多，请继续输入以缩小范围")}
+          </Text>
         )}
       </ScrollView>
       <Text style={{ fontSize: 10, color: colors.mutedForeground }}>
@@ -176,6 +216,8 @@ export function EndpointEditor({
   const [testModel, setTestModel] = useState("__auto__");
   const [testState, setTestState] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  // 模型列表折叠态:模型少(≤25)默认展开,多则默认收起,避免一次性渲染卡顿
+  const [modelsOpen, setModelsOpen] = useState(() => ep.models.length <= 25);
 
   const epRef = useRef(ep);
   epRef.current = ep;
@@ -385,22 +427,22 @@ export function EndpointEditor({
               <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "500" }}>{testModel}</Text>
             )}
           </View>
-          {ep.models.length > 0 && (
-            <ModelSearchableList
-              models={ep.models}
-              activeModel={testModel === "__auto__" ? undefined : testModel}
-              onSelect={(m) => setTestModel(m)}
-              onRemove={(m) => onUpdate(ep.id, { models: ep.models.filter((x) => x !== m) }).catch(console.error)}
-              colors={colors}
-              t={t}
-            />
-          )}
         </View>
       </View>
 
       <View style={styles.fieldGroup}>
         <View style={styles.modelsHeader}>
-          <Text style={styles.fieldLabel}>{t("settings.ai_modelsList", "模型列表")}</Text>
+          <TouchableOpacity
+            style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}
+            onPress={() => setModelsOpen(!modelsOpen)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.fieldLabel}>
+              {t("settings.ai_modelsList", "模型列表")}
+              <Text style={{ color: colors.mutedForeground }}> ({ep.models.length})</Text>
+            </Text>
+            <Text style={styles.chevron}>{modelsOpen ? "▲" : "▼"}</Text>
+          </TouchableOpacity>
           <View style={styles.modelsActions}>
             <TouchableOpacity
               style={styles.fetchBtn}
@@ -431,7 +473,12 @@ export function EndpointEditor({
           <ModelSearchableList
             models={ep.models}
             activeModel={isActive ? aiConfig.activeModel : undefined}
-            onSelect={(m) => { setActiveEndpoint(ep.id); setActiveModel(m); }}
+            open={modelsOpen}
+            onSelect={(m) => {
+              setActiveEndpoint(ep.id);
+              setActiveModel(m);
+              setTestModel(m); // 同步测试模型,合并重复的测试模型列表
+            }}
             onRemove={(m) => onUpdate(ep.id, { models: ep.models.filter((x) => x !== m) }).catch(console.error)}
             colors={colors}
             t={t}
