@@ -21,7 +21,7 @@ import { SyncButton } from "@/components/ui/SyncButton";
 import { useReaderBridge } from "@/hooks/use-reader-bridge";
 import type { RelocateEvent, SelectionEvent, VisibleTTSSegment } from "@/hooks/use-reader-bridge";
 import { EudicNotInstalledError, launchEudic } from "@/lib/eudic-launcher";
-import { startFileServer, stopFileServer } from "@/lib/reader/local-file-server";
+import { startFileServer } from "@/lib/reader/local-file-server";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import {
   useAnnotationStore,
@@ -45,7 +45,6 @@ import { getCSSFontFace, useFontStore } from "@readany/core/stores";
 import type { ReadSettings, TOCItem } from "@readany/core/types";
 import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
-import { Asset } from "expo-asset";
 import * as DocumentPicker from "expo-document-picker";
 import * as NavigationBar from "expo-navigation-bar";
 /**
@@ -168,7 +167,7 @@ import { useReaderSystemInfo } from "./reader/useReaderSystemInfo";
 import { useReaderTTS } from "./reader/useReaderTTS";
 import { useVolumeButtonPaging } from "./reader/useVolumeButtonPaging";
 
-const READER_HTML_ASSET = Asset.fromModule(require("../../assets/reader/reader.html"));
+import { getReaderHtmlUri, getReaderHtmlUriSync } from "@/lib/reader/reader-html-asset";
 const LOCAL_FONT_SERVER_DIR = "readany-fonts";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reader">;
@@ -213,7 +212,8 @@ function buildCustomFontFaceCSS(
 export function ReaderScreen({ route, navigation }: Props) {
   const colors = useColors();
   const { mode: themeMode } = useTheme();
-  const s = makeStyles(colors);
+  // makeStyles 每次调用新建几百个样式对象,必须缓存,否则每次渲染都在重建样式表
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const { bookId, cfi, highlight: shouldHighlight, openTTS } = route.params;
   const { t, i18n } = useTranslation();
   const isWideLayout = SCREEN_WIDTH >= 768;
@@ -248,7 +248,15 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [webViewEpoch, setWebViewEpoch] = useState(0);
   const webViewReadyRef = useRef(false);
   const [translationReady, setTranslationReady] = useState(false);
-  const [readerHtmlUri, setReaderHtmlUri] = useState<string | null>(null);
+  // 惰性初始化:asset 已预下载(冷启动后),WebView 首帧即可创建,不等 effect
+  const [readerHtmlUri, setReaderHtmlUri] = useState<string | null>(() => getReaderHtmlUriSync());
+  // 首渲染只保留 WebView + loading overlay:界面装饰(工具栏/信息条/浮动工具等)
+  // 延迟 400ms 挂载,大幅缩小首渲染组件树 → 点书到阅读页出现更快
+  const [chromeReady, setChromeReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setChromeReady(true), 400);
+    return () => clearTimeout(t);
+  }, []);
   const [currentCfi, setCurrentCfi] = useState("");
   const [selection, setSelection] = useState<SelectionEvent | null>(null);
   const [fontServerUrl, setFontServerUrl] = useState<string | null>(null);
@@ -525,24 +533,26 @@ export function ReaderScreen({ route, navigation }: Props) {
     return () => sub.remove();
   }, []);
 
-  // Load reader HTML asset
+  // Load reader HTML asset (共享预下载:App 启动时已后台下载,这里秒取)
   useEffect(() => {
     if (assetLoadedRef.current) return;
     assetLoadedRef.current = true;
 
     const loadAsset = async () => {
       try {
-        const asset = READER_HTML_ASSET;
-        await asset.downloadAsync();
-        const uri = asset.localUri || asset.uri;
-        setReaderHtmlUri(uri);
+        const uri = await getReaderHtmlUri();
+        if (uri) {
+          setReaderHtmlUri(uri);
+        } else {
+          throw new Error("reader.html localUri unavailable");
+        }
       } catch (err) {
         console.error("[ReaderScreen] Failed to load reader.html asset:", err);
         setError("Failed to load reader");
       }
     };
-    loadAsset();
-  }, []);
+    if (!readerHtmlUri) loadAsset();
+  }, [readerHtmlUri]);
 
   // Controls toggle — declared before bridge so onTap can reference it without TS error
   const toggleControls = useCallback(() => {
@@ -1077,10 +1087,9 @@ export function ReaderScreen({ route, navigation }: Props) {
   // Save progress immediately on unmount
   useEffect(() => {
     return () => {
-      if (fileServerRef.current) {
-        stopFileServer();
-        fileServerRef.current = null;
-      }
+      // 文件服务器不随 Reader 卸载停止:Lighttpd 冷启动约 700ms,每次进出
+      // 阅读页都重启会慢;服务器常驻进程生命周期(docRoot=appData 恒定,
+      // 所有书共享),reload 残留由 local-file-server 的防御逻辑处理
       if (lastCfiRef.current) {
         const db = require("@readany/core/db/database");
         runWithDbRetry(
@@ -1535,7 +1544,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         )}
 
         {/* ─── Top Info Bar (always visible) ─── */}
-        {!showSearch && !showControls && showTopTitleProgress && (
+        {chromeReady && !showSearch && !showControls && showTopTitleProgress && (
           <View style={[s.topInfoBar, { top: layoutTopInset }]}>
             <View style={s.topInfoRow}>
               <Text style={s.topInfoText} numberOfLines={1}>
@@ -1550,9 +1559,9 @@ export function ReaderScreen({ route, navigation }: Props) {
       </Animated.View>
 
       {/* ─── Bookmark Ribbon (top-right) ─── */}
-      <BookmarkRibbon visible={isBookmarked} topOffset={0} />
+      {chromeReady && <BookmarkRibbon visible={isBookmarked} topOffset={0} />}
 
-      {!showSearch && (
+      {chromeReady && !showSearch && (
         <Animated.View
           pointerEvents={showControls ? "auto" : "none"}
           style={[
@@ -1714,7 +1723,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {!showSearch && (
+      {chromeReady && !showSearch && (
         <Animated.View
           pointerEvents={showControls ? "auto" : "none"}
           style={[
@@ -1784,7 +1793,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       )}
 
       {/* ─── Bottom Toolbar ─── */}
-      {!showSearch && (
+      {chromeReady && !showSearch && (
         <Animated.View
           pointerEvents={showControls ? "auto" : "none"}
           style={[

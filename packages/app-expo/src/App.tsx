@@ -26,6 +26,7 @@ import { DarkTheme, DefaultTheme, NavigationContainer } from "@react-navigation/
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { WebView } from "react-native-webview";
 import { LogBox, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -53,6 +54,7 @@ import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { UpdateDialog } from "@/components/update/UpdateDialog";
 import { useUpdateChecker } from "@/hooks/use-update-checker";
 import { navigationRef } from "@/lib/navigationRef";
+import { preloadReaderHtmlAsset } from "@/lib/reader/reader-html-asset";
 import { ExpoPlatformService } from "@/lib/platform/expo-platform-service";
 import { subscribeRagSearchConfiguration } from "@/lib/rag/configure-search";
 import { MobileSyncAdapter } from "@/lib/sync/sync-adapter-mobile";
@@ -120,6 +122,11 @@ export default function App() {
         console.log("[App] bootstrap: import expo/fetch");
         const { fetch: expoFetch } = await import("expo/fetch");
         setStreamingFetch(expoFetch as typeof globalThis.fetch);
+
+        // 后台预下载 reader.html(2MB foliate bundle),dev 模式首次约 1.6s;
+        // 提前下载,进阅读页时秒取,不阻塞 bootstrap
+        console.log("[App] bootstrap: preload reader.html asset");
+        preloadReaderHtmlAsset().catch(() => {});
 
         console.log("[App] bootstrap: configure audio mode");
         await Audio.setAudioModeAsync({
@@ -290,6 +297,23 @@ function AppInner() {
             <StatusBar style={mode === "dark" ? "light" : "dark"} />
             <RootNavigator />
           </NavigationContainer>
+          {/* Android WebView 内核预热:首次创建 WebView 时系统加载内核(数百 ms),
+              发生在点书进阅读页的渲染流程里,是"点书→阅读页出现"的最大单点耗时;
+              App 启动即创建一次隐藏实例,内核提前就绪,进阅读页时秒建 */}
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: 1,
+              height: 1,
+              opacity: 0,
+              zIndex: -1,
+            }}
+            pointerEvents="none"
+          >
+            <WebView source={{ html: "<!DOCTYPE html><html><body></body></html>" }} />
+          </View>
           <UpdateDialog />
           <FloatingTTSBubble />
         </SafeAreaProvider>
