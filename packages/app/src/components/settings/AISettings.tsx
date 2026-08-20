@@ -16,7 +16,6 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ConfigTransfer } from "./ConfigTransfer";
-import { SearchableModelSelect } from "./SearchableModelSelect";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getAIEndpointRequestPreview, testAIEndpoint } from "@readany/core/ai";
 import { getPlatformService } from "@readany/core/services";
@@ -55,48 +54,117 @@ function useProviderOptions(): { value: AIProviderType; label: string }[] {
   ], [t]);
 }
 
-/** Searchable model list with filter input */
+/**
+ * Searchable model list with filter input.
+ * 模型多时(数百个)一次性 map 渲染会卡顿:默认只渲染前 COLLAPSED_LIMIT 个,
+ * 底部"展开全部";搜索时渲染上限 SEARCH_LIMIT,防止每次击键重渲染卡顿。(移植自安卓 5bb2a87)
+ */
+const COLLAPSED_LIMIT = 25;
+const SEARCH_LIMIT = 100;
+
 function ModelSearchableList({
   models,
   onRemove,
+  activeModel,
+  onSelect,
+  open,
 }: {
   models: string[];
   onRemove: (model: string) => void;
+  /** 当前全局活动模型 — 高亮显示(对齐安卓:仅活动端点的 activeModel 高亮) */
+  activeModel?: string;
+  onSelect: (model: string) => void;
+  /** 区块折叠态由调用方控制:false 时整个区块(搜索框+列表)不渲染 */
+  open: boolean;
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  if (!open) return null;
   const filtered = search.trim()
     ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase()))
     : models;
+  const searching = search.trim() !== "";
+  const visible = searching
+    ? filtered.slice(0, SEARCH_LIMIT)
+    : expanded
+      ? filtered
+      : filtered.slice(0, COLLAPSED_LIMIT);
+  const hiddenCount = searching
+    ? Math.max(0, filtered.length - SEARCH_LIMIT)
+    : expanded
+      ? 0
+      : Math.max(0, filtered.length - COLLAPSED_LIMIT);
 
   return (
     <div className="space-y-1.5">
+      {activeModel && models.includes(activeModel) && (
+        <div className="flex items-center gap-1.5 py-0.5">
+          <span className="text-[11px] text-muted-foreground">
+            {t("settings.ai_activeModel", "当前模型")}:
+          </span>
+          <span className="text-xs font-semibold text-primary">{activeModel}</span>
+        </div>
+      )}
       <input
         type="text"
         className="w-full h-7 px-2.5 text-xs border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
         placeholder={t("settings.ai_searchModels")}
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setExpanded(false);
+        }}
       />
       <div className="max-h-36 overflow-y-auto border rounded-md bg-background">
         {filtered.length === 0 ? (
           <div className="px-3 py-2 text-xs text-muted-foreground text-center">{t("settings.ai_noMatchingResults")}</div>
         ) : (
-          filtered.map((m) => (
-            <div
-              key={m}
-              className="flex items-center justify-between px-2.5 py-1.5 text-xs border-b last:border-b-0"
-            >
-              <span className="truncate text-foreground">{m}</span>
-              <button
-                type="button"
-                className="ml-2 text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                onClick={() => onRemove(m)}
+          visible.map((m) => {
+            const isActive = m === activeModel;
+            return (
+              <div
+                key={m}
+                className={`flex items-center justify-between px-2.5 py-1.5 text-xs border-b last:border-b-0 ${
+                  isActive ? "bg-primary/10" : ""
+                }`}
               >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))
+                <button
+                  type="button"
+                  className={`min-w-0 flex-1 truncate text-left ${
+                    isActive ? "font-medium text-primary" : "text-foreground"
+                  }`}
+                  onClick={() => onSelect?.(m)}
+                >
+                  {m}
+                </button>
+                <button
+                  type="button"
+                  className="ml-2 shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(m);
+                  }}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })
+        )}
+        {hiddenCount > 0 && !searching && (
+          <button
+            type="button"
+            className="w-full px-2.5 py-2 text-xs text-primary font-medium text-center hover:bg-muted transition-colors"
+            onClick={() => setExpanded(true)}
+          >
+            {t("settings.ai_expandModels", "展开全部 {{count}} 个模型", { count: hiddenCount })}
+          </button>
+        )}
+        {hiddenCount > 0 && searching && (
+          <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+            {t("settings.ai_searchTooMany", "结果过多，请继续输入以缩小范围")}
+          </div>
         )}
       </div>
       <div className="text-[10px] text-muted-foreground">{t("settings.ai_totalModels", { count: models.length })}</div>
@@ -112,6 +180,9 @@ function EndpointCard({
   onRemove,
   onFetchModels,
   onToggleExpand,
+  activeModel,
+  setActiveEndpoint,
+  setActiveModel,
 }: {
   endpoint: AIEndpoint;
   isActive: boolean;
@@ -120,6 +191,9 @@ function EndpointCard({
   onRemove: (id: string) => void;
   onFetchModels: (id: string) => void;
   onToggleExpand: () => void;
+  activeModel: string;
+  setActiveEndpoint: (id: string) => void;
+  setActiveModel: (model: string) => void;
 }) {
   const { t } = useTranslation();
   const PROVIDER_OPTIONS = useProviderOptions();
@@ -127,6 +201,8 @@ function EndpointCard({
   const [testModel, setTestModel] = useState("__auto__");
   const [testState, setTestState] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  // 模型列表折叠态:模型少(≤25)默认展开,多则默认收起(对齐安卓 5bb2a87)
+  const [modelsOpen, setModelsOpen] = useState(() => endpoint.models.length <= 25);
 
   useEffect(() => {
     if (testModel !== "__auto__" && !endpoint.models.includes(testModel)) {
@@ -407,14 +483,22 @@ function EndpointCard({
                 <div className="mb-1 text-[11px] text-muted-foreground">
                   {t("settings.ai_testModel", "测试模型")}
                 </div>
-                <SearchableModelSelect
-                  models={endpoint.models}
-                  value={testModel}
-                  onValueChange={setTestModel}
-                  extraItems={[
-                    { value: "__auto__", label: t("settings.ai_testModelAuto", "自动选择首个可用模型") },
-                  ]}
-                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                      testModel === "__auto__"
+                        ? "border-primary/50 bg-primary/10 font-medium text-primary"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                    onClick={() => setTestModel("__auto__")}
+                  >
+                    {t("settings.ai_testModelAutoChip", "自动")}
+                  </button>
+                  {testModel !== "__auto__" && (
+                    <span className="text-xs font-medium text-primary">{testModel}</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -490,12 +574,17 @@ function EndpointCard({
 
           {/* Models list + manual add */}
           <div>
-            <label
-              htmlFor={`newModel-${endpoint.id}`}
-              className="mb-1.5 block text-xs text-muted-foreground"
-            >
-              {t("settings.ai_modelsList")}
-            </label>
+            {/* 标题可点击折叠:模型多(>25)默认收起,避免一次性渲染卡顿(对齐安卓 5bb2a87) */}
+            <div className="mb-1.5 flex items-center justify-between">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => setModelsOpen(!modelsOpen)}
+              >
+                {t("settings.ai_modelsList")} ({endpoint.models.length})
+                <span className="text-xs">{modelsOpen ? "▲" : "▼"}</span>
+              </button>
+            </div>
 
             {/* Manual add input */}
             <div className="flex items-center gap-1.5 mb-2">
@@ -519,9 +608,19 @@ function EndpointCard({
               </Button>
             </div>
 
-            {/* Model list — searchable */}
+            {/* Model list — searchable; 点选模型行 = 设默认端点+全局模型+测试模型(对齐安卓 5bb2a87) */}
             {endpoint.models.length > 0 ? (
-              <ModelSearchableList models={endpoint.models} onRemove={handleRemoveModel} />
+              <ModelSearchableList
+                models={endpoint.models}
+                activeModel={isActive ? activeModel : undefined}
+                open={modelsOpen}
+                onSelect={(m) => {
+                  setActiveEndpoint(endpoint.id);
+                  setActiveModel(m);
+                  setTestModel(m);
+                }}
+                onRemove={handleRemoveModel}
+              />
             ) : (
               <p className="text-xs text-muted-foreground">{t("settings.ai_noModels")}</p>
             )}
@@ -540,6 +639,7 @@ export function AISettings() {
     updateEndpoint,
     removeEndpoint,
     setActiveEndpoint,
+    setActiveModel,
     updateAIConfig,
     fetchModels,
   } = useSettingsStore();
@@ -617,6 +717,9 @@ export function AISettings() {
               onRemove={removeEndpoint}
               onFetchModels={handleFetchModels}
               onToggleExpand={() => setExpandedId(expandedId === ep.id ? null : ep.id)}
+              activeModel={aiConfig.activeModel}
+              setActiveEndpoint={setActiveEndpoint}
+              setActiveModel={setActiveModel}
             />
           ))}
         </div>
