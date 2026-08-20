@@ -166,6 +166,8 @@ export interface AIConfig {
   temperature: number;
   maxTokens: number;
   slidingWindowSize: number;
+  /** "Spoiler-free" toggle per chat context (general chat vs in-book chat), persisted. */
+  spoilerFree: { general: boolean; book: boolean };
 }
 
 export type AIModel = string;

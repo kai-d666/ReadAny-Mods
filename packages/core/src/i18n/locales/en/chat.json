@@ -35,6 +35,7 @@
     "spoilerFree": "Spoiler-Free",
     "spoilerFreeHint": "AI will avoid revealing content beyond your current reading position",
     "currentModel": "Model",
+    "modelNotConfigured": "Not configured",
     "notConfigured": "Please configure an AI model first",
     "notConfiguredDesc": "You need to set up an API key and select a model before using AI features.",
     "goSettings": "Configure",

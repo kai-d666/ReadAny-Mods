@@ -1,4 +1,3 @@
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -8,8 +7,8 @@ import {
 } from "@/components/ui/select";
 import { useSettingsStore } from "@/stores/settings-store";
 import type { AIModelSelection } from "@readany/core/types/translation";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SearchableModelSelect } from "./SearchableModelSelect";
 
 interface TranslationModelSelectorProps {
   value?: AIModelSelection;
@@ -21,7 +20,6 @@ export function TranslationModelSelector({ value, onChange }: TranslationModelSe
   const { t } = useTranslation();
   const aiConfig = useSettingsStore((s) => s.aiConfig);
   const endpoints = aiConfig.endpoints;
-  const [search, setSearch] = useState("");
 
   // Prefer the stored endpoint; if it was deleted, fall back to the first one
   // for display only (a new selection writes the effective endpoint back).
@@ -29,9 +27,6 @@ export function TranslationModelSelector({ value, onChange }: TranslationModelSe
   const displayEndpoint = storedEndpoint ?? endpoints[0];
 
   const models = displayEndpoint?.models ?? [];
-  const filteredModels = search.trim()
-    ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase()))
-    : models;
 
   return (
     <div className="space-y-2">
@@ -43,7 +38,6 @@ export function TranslationModelSelector({ value, onChange }: TranslationModelSe
           <Select
             value={storedEndpoint ? storedEndpoint.id : undefined}
             onValueChange={(id) => {
-              setSearch("");
               onChange({ endpointId: id, model: "" });
             }}
           >
@@ -63,39 +57,12 @@ export function TranslationModelSelector({ value, onChange }: TranslationModelSe
       <div className="space-y-1.5">
         <span className="text-xs text-muted-foreground">{t("settings.model")}</span>
         {models.length > 0 ? (
-          <Select
+          <SearchableModelSelect
+            models={models}
             value={value?.model}
             onValueChange={(m) => onChange({ endpointId: displayEndpoint.id, model: m })}
-          >
-            <SelectTrigger className="h-8 w-full text-sm">
-              <SelectValue placeholder={t("settings.ai_selectModel")} />
-            </SelectTrigger>
-            <SelectContent className="max-h-[320px]">
-              <div className="border-b p-1.5">
-                <Input
-                  type="text"
-                  className="h-7 text-xs"
-                  placeholder={t("settings.ai_searchModels")}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                />
-              </div>
-              <div className="max-h-[240px] overflow-y-auto">
-                {filteredModels.length === 0 ? (
-                  <div className="px-3 py-2 text-center text-xs text-muted-foreground">
-                    {t("settings.ai_noMatchingResults")}
-                  </div>
-                ) : (
-                  filteredModels.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))
-                )}
-              </div>
-            </SelectContent>
-          </Select>
+            placeholder={t("settings.ai_selectModel")}
+          />
         ) : (
           <p className="text-xs text-muted-foreground">{t("settings.noModelsFetched")}</p>
         )}

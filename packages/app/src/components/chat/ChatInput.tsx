@@ -4,6 +4,7 @@
  */
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AttachedQuote } from "@readany/core/types";
+import { useSettingsStore } from "@/stores/settings-store";
 import { Brain, EyeOff, Quote, Send, Square, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +22,8 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   showDeepThinking?: boolean;
+  /** Chat context — each keeps its own persisted spoiler-free state. */
+  variant?: "general" | "book";
   quotes?: AttachedQuote[];
   onRemoveQuote?: (id: string) => void;
 }
@@ -32,13 +35,16 @@ export function ChatInput({
   disabled,
   placeholder,
   showDeepThinking = true,
+  variant = "general",
   quotes = [],
   onRemoveQuote,
 }: ChatInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [deepThinking, setDeepThinking] = useState(false);
-  const [spoilerFree, setSpoilerFree] = useState(false);
+  const aiConfig = useSettingsStore((s) => s.aiConfig);
+  const updateAIConfig = useSettingsStore((s) => s.updateAIConfig);
+  const spoilerFree = aiConfig.spoilerFree[variant];
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const resolvedPlaceholder = placeholder || t("chat.askPlaceholder");
@@ -78,8 +84,10 @@ export function ChatInput({
   }, []);
 
   const toggleSpoilerFree = useCallback(() => {
-    setSpoilerFree((prev) => !prev);
-  }, []);
+    updateAIConfig({
+      spoilerFree: { ...aiConfig.spoilerFree, [variant]: !aiConfig.spoilerFree[variant] },
+    });
+  }, [aiConfig, variant, updateAIConfig]);
 
   return (
     <div className="mx-auto w-full max-w-3xl">

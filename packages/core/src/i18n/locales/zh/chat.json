@@ -35,6 +35,7 @@
     "spoilerFree": "防剧透",
     "spoilerFreeHint": "AI 将避免透露当前阅读进度之后的内容",
     "currentModel": "模型",
+    "modelNotConfigured": "未配置",
     "notConfigured": "请先配置 AI 模型",
     "notConfiguredDesc": "需要配置 API 密钥和选择模型后才能使用 AI 功能。",
     "goSettings": "去配置",

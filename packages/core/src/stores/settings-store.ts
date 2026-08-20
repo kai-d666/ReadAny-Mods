@@ -25,7 +25,9 @@ export interface SettingsState {
   updateReadSettings: (updates: Partial<ReadSettings>) => void;
   updateTranslationConfig: (updates: Partial<TranslationConfig>) => void;
   updateAIConfig: (
-    updates: Partial<Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize">>,
+    updates: Partial<
+      Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree">
+    >,
   ) => void;
 
   // Endpoint management
@@ -83,6 +85,7 @@ const defaultAIConfig: AIConfig = {
   temperature: 0.7,
   maxTokens: 8192,
   slidingWindowSize: 8,
+  spoilerFree: { general: false, book: false },
 };
 
 function migrateSettingsState(state: SettingsState): SettingsState {
@@ -93,6 +96,17 @@ function migrateSettingsState(state: SettingsState): SettingsState {
       aiConfig: {
         ...next.aiConfig,
         maxTokens: defaultAIConfig.maxTokens,
+      },
+    };
+  }
+  // spoilerFree used to be a boolean; migrate to per-context object
+  const sf = next.aiConfig.spoilerFree as unknown;
+  if (typeof sf === "boolean" || sf === undefined) {
+    next = {
+      ...next,
+      aiConfig: {
+        ...next.aiConfig,
+        spoilerFree: { general: !!sf, book: !!sf },
       },
     };
   }

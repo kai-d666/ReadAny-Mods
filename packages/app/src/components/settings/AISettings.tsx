@@ -1,4 +1,9 @@
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import {
@@ -11,6 +16,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ConfigTransfer } from "./ConfigTransfer";
+import { SearchableModelSelect } from "./SearchableModelSelect";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getAIEndpointRequestPreview, testAIEndpoint } from "@readany/core/ai";
 import { getPlatformService } from "@readany/core/services";
@@ -401,21 +407,14 @@ function EndpointCard({
                 <div className="mb-1 text-[11px] text-muted-foreground">
                   {t("settings.ai_testModel", "测试模型")}
                 </div>
-                <Select value={testModel} onValueChange={setTestModel}>
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__auto__">
-                      {t("settings.ai_testModelAuto", "自动选择首个可用模型")}
-                    </SelectItem>
-                    {endpoint.models.map((model) => (
-                      <SelectItem key={model} value={model}>
-                        {model}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableModelSelect
+                  models={endpoint.models}
+                  value={testModel}
+                  onValueChange={setTestModel}
+                  extraItems={[
+                    { value: "__auto__", label: t("settings.ai_testModelAuto", "自动选择首个可用模型") },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -541,13 +540,13 @@ export function AISettings() {
     updateEndpoint,
     removeEndpoint,
     setActiveEndpoint,
-    setActiveModel,
     updateAIConfig,
     fetchModels,
   } = useSettingsStore();
 
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(true);
 
   const handleAddEndpoint = useCallback(() => {
     const defaultProvider: AIProviderType = "openai";
@@ -574,16 +573,12 @@ export function AISettings() {
           setFetchError(
             "No models returned. Check your API key, model access, and whether the base URL points to the API root.",
           );
-        } else if (!aiConfig.activeModel) {
-          // 自动选中第一个模型（如果当前没有选中任何模型）
-          setActiveEndpoint(endpointId);
-          setActiveModel(models[0]);
         }
       } catch (err) {
         setFetchError(err instanceof Error ? err.message : "Failed to fetch models");
       }
     },
-    [fetchModels, aiConfig.activeModel, setActiveEndpoint, setActiveModel],
+    [fetchModels],
   );
 
   return (
@@ -629,67 +624,116 @@ export function AISettings() {
         {fetchError && <p className="mt-2 text-xs text-destructive">{fetchError}</p>}
       </section>
 
-      {/* Parameters */}
-      <section className="rounded-lg bg-muted/60 p-4 space-y-5">
-        <h2 className="text-sm font-medium text-foreground">{t("settings.parameters")}</h2>
-
-        {/* Temperature */}
-        <div>
-          <h3 className="mb-2 text-xs text-muted-foreground">
-            {t("settings.temperature", { value: aiConfig.temperature })}
-          </h3>
-          <Slider
-            min={0}
-            max={1}
-            step={0.1}
-            value={[aiConfig.temperature]}
-            onValueChange={([v]) => updateAIConfig({ temperature: v })}
-          />
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>0</span>
-            <span>0.5</span>
-            <span>1</span>
+      {/* AI 助手：端点选择 + 参数（折叠项） */}
+      <Collapsible
+        open={aiAssistantOpen}
+        onOpenChange={setAiAssistantOpen}
+        className="rounded-lg bg-muted/60"
+      >
+        <CollapsibleTrigger
+          className="flex w-full items-center justify-between p-4 cursor-pointer hover:bg-muted/50"
+          role="button"
+        >
+          <h2 className="text-sm font-medium text-foreground">{t("settings.aiAssistantTitle")}</h2>
+          <span className="text-muted-foreground text-sm">{aiAssistantOpen ? "▲" : "▼"}</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-5 border-t border-border/50 p-4 pt-4">
+          {/* AI 助手端点选择（只选端点，模型在聊天窗口选） */}
+          <div>
+            <h3 className="mb-1 text-xs text-muted-foreground">
+              {t("settings.aiAssistantEndpoint")}
+            </h3>
+            <p className="mb-2 text-xs text-muted-foreground/80">
+              {t("settings.aiAssistantEndpointDesc")}
+            </p>
+            {aiConfig.endpoints.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t("settings.aiAssistantNoEndpoints")}</p>
+            ) : (
+              <Select
+                value={
+                  aiConfig.endpoints.some((e) => e.id === aiConfig.activeEndpointId)
+                    ? aiConfig.activeEndpointId
+                    : undefined
+                }
+                onValueChange={(id) => setActiveEndpoint(id)}
+              >
+                <SelectTrigger className="h-8 w-full text-sm">
+                  <SelectValue placeholder={t("settings.ai_selectEndpoint")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {aiConfig.endpoints.map((ep) => (
+                    <SelectItem key={ep.id} value={ep.id}>
+                      {ep.name || ep.baseUrl}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
-        </div>
 
-        {/* Max Tokens */}
-        <div>
-          <h3 className="mb-2 text-xs text-muted-foreground">
-            {t("settings.maxTokens", { value: aiConfig.maxTokens ?? 8192 })}
-          </h3>
-          <Slider
-            min={1024}
-            max={32768}
-            step={1024}
-            value={[aiConfig.maxTokens ?? 8192]}
-            onValueChange={([v]) => updateAIConfig({ maxTokens: v })}
-          />
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>1024</span>
-            <span>16384</span>
-            <span>32768</span>
-          </div>
-        </div>
+          {/* 参数 */}
+          <div className="space-y-5">
+            <h3 className="text-sm font-medium text-foreground">{t("settings.parameters")}</h3>
 
-        {/* Sliding Window Size */}
-        <div>
-          <h3 className="mb-2 text-xs text-muted-foreground">
-            {t("settings.slidingWindowSize", { value: aiConfig.slidingWindowSize ?? 8 })}
-          </h3>
-          <Slider
-            min={2}
-            max={30}
-            step={1}
-            value={[aiConfig.slidingWindowSize ?? 8]}
-            onValueChange={([v]) => updateAIConfig({ slidingWindowSize: v })}
-          />
-          <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-            <span>2</span>
-            <span>16</span>
-            <span>30</span>
+            {/* Temperature */}
+            <div>
+              <h4 className="mb-2 text-xs text-muted-foreground">
+                {t("settings.temperature", { value: aiConfig.temperature })}
+              </h4>
+              <Slider
+                min={0}
+                max={1}
+                step={0.1}
+                value={[aiConfig.temperature]}
+                onValueChange={([v]) => updateAIConfig({ temperature: v })}
+              />
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                <span>0</span>
+                <span>0.5</span>
+                <span>1</span>
+              </div>
+            </div>
+
+            {/* Max Tokens */}
+            <div>
+              <h4 className="mb-2 text-xs text-muted-foreground">
+                {t("settings.maxTokens", { value: aiConfig.maxTokens ?? 8192 })}
+              </h4>
+              <Slider
+                min={1024}
+                max={32768}
+                step={1024}
+                value={[aiConfig.maxTokens ?? 8192]}
+                onValueChange={([v]) => updateAIConfig({ maxTokens: v })}
+              />
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                <span>1024</span>
+                <span>16384</span>
+                <span>32768</span>
+              </div>
+            </div>
+
+            {/* Sliding Window Size */}
+            <div>
+              <h4 className="mb-2 text-xs text-muted-foreground">
+                {t("settings.slidingWindowSize", { value: aiConfig.slidingWindowSize ?? 8 })}
+              </h4>
+              <Slider
+                min={2}
+                max={30}
+                step={1}
+                value={[aiConfig.slidingWindowSize ?? 8]}
+                onValueChange={([v]) => updateAIConfig({ slidingWindowSize: v })}
+              />
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                <span>2</span>
+                <span>16</span>
+                <span>30</span>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Transfer */}
       <section className="space-y-3">

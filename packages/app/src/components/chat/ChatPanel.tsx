@@ -473,6 +473,7 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
           onStop={stopStream}
           isStreaming={isStreaming}
           placeholder={t("chat.askBookPlaceholder")}
+          variant="book"
           quotes={attachedQuotes}
           onRemoveQuote={handleRemoveQuote}
         />
