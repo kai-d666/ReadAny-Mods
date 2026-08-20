@@ -3550,6 +3550,8 @@ function applyRendererSettings(
       rendererWidth > 0 ? Math.round(Math.max(980, Math.min(rendererWidth * 0.94, 1600))) : 1280;
     renderer.setAttribute("max-inline-size", isSinglePage ? `${singlePageInlineSize}px` : "760px");
     renderer.setAttribute("max-block-size", "1440px");
+    // 平滑翻页动画(foliate 内置,animated 门控:同章 300ms 滑动过渡,翻页跟手) — 移植自安卓 bae545e
+    renderer.setAttribute("animated", "");
     renderer.setAttribute("gap", isSinglePage ? "1.2%" : "4.5%");
     applyReflowLayoutSettings(view, settings);
   }
