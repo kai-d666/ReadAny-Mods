@@ -4,7 +4,9 @@ import { fontSize as fs, fontWeight as fw, radius, useColors, withOpacity } from
 import type { ThemeColors } from "@/styles/theme";
 /**
  * ModelSelector — compact pill trigger with popover dropdown.
- * Matches app-mobile MobileModelSelector style.
+ * Only lists the models of the currently active endpoint (the endpoint is
+ * chosen in Settings → AI → AI Assistant); selecting a model does not change
+ * the endpoint. Matches desktop ModelSelector.
  */
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,6 +16,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -24,27 +27,36 @@ interface ModelSelectorProps {
 
 export function ModelSelector({ onNavigateToSettings }: ModelSelectorProps) {
   const [visible, setVisible] = useState(false);
+  const [search, setSearch] = useState("");
   const { t } = useTranslation();
   const colors = useColors();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const aiConfig = useSettingsStore((st) => st.aiConfig);
-  const setActiveEndpoint = useSettingsStore((st) => st.setActiveEndpoint);
   const setActiveModel = useSettingsStore((st) => st.setActiveModel);
 
-  const endpointsWithModels = aiConfig.endpoints.filter((ep) => ep.models.length > 0);
-  const totalModels = endpointsWithModels.reduce((sum, ep) => sum + ep.models.length, 0);
-  const canSwitch = totalModels >= 1;
+  const activeEndpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
+  const models = activeEndpoint?.models ?? [];
+  const filteredModels = search.trim()
+    ? models.filter((m) => m.toLowerCase().includes(search.toLowerCase()))
+    : models;
+  const hasActiveModel = aiConfig.activeModel !== "" && models.includes(aiConfig.activeModel);
+  const configured = !!activeEndpoint && models.length > 0;
+  const canSwitch = configured && models.length > 1;
 
-  const displayName = aiConfig.activeModel || t("chat.currentModel", "模型");
+  const displayName = hasActiveModel
+    ? aiConfig.activeModel.length > 20
+      ? `${aiConfig.activeModel.slice(0, 18)}...`
+      : aiConfig.activeModel
+    : t("chat.modelNotConfigured", "未配置");
 
   const handleSelect = useCallback(
-    (endpointId: string, model: string) => {
-      setActiveEndpoint(endpointId);
+    (model: string) => {
       setActiveModel(model);
+      setSearch("");
       setVisible(false);
     },
-    [setActiveEndpoint, setActiveModel],
+    [setActiveModel],
   );
 
   if (aiConfig.endpoints.length === 0) {
@@ -61,7 +73,10 @@ export function ModelSelector({ onNavigateToSettings }: ModelSelectorProps) {
     <>
       <TouchableOpacity
         style={s.trigger}
-        onPress={() => canSwitch && setVisible(true)}
+        onPress={() => {
+          setSearch("");
+          if (canSwitch) setVisible(true);
+        }}
         activeOpacity={canSwitch ? 0.7 : 1}
       >
         <Text style={s.triggerText} numberOfLines={1}>
@@ -78,34 +93,43 @@ export function ModelSelector({ onNavigateToSettings }: ModelSelectorProps) {
       >
         <Pressable style={s.backdrop} onPress={() => setVisible(false)}>
           <View style={s.popover}>
+            {activeEndpoint && (
+              <Text style={s.epName} numberOfLines={1}>
+                {activeEndpoint.name || activeEndpoint.baseUrl}
+              </Text>
+            )}
+            <TextInput
+              style={s.searchInput}
+              placeholder={t("settings.ai_searchModels", "搜索模型...")}
+              placeholderTextColor={colors.mutedForeground}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
             <ScrollView style={s.popoverScroll} showsVerticalScrollIndicator={false}>
-              {endpointsWithModels.map((ep) => (
-                <View key={ep.id}>
-                  {endpointsWithModels.length > 1 && (
-                    <Text style={s.epName}>{ep.name || ep.baseUrl}</Text>
-                  )}
-                  {ep.models.map((model) => {
-                    const isActive =
-                      ep.id === aiConfig.activeEndpointId && model === aiConfig.activeModel;
-                    return (
-                      <TouchableOpacity
-                        key={`${ep.id}-${model}`}
-                        style={[s.modelItem, isActive && s.modelItemActive]}
-                        onPress={() => handleSelect(ep.id, model)}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[s.modelText, isActive && s.modelTextActive]}
-                          numberOfLines={1}
-                        >
-                          {model}
-                        </Text>
-                        {isActive && <CheckIcon size={12} color={colors.primary} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))}
+              {filteredModels.length === 0 ? (
+                <Text style={s.noResults}>
+                  {t("settings.ai_noMatchingResults", "无匹配结果")}
+                </Text>
+              ) : (
+                filteredModels.map((model) => {
+                  const isActive = model === aiConfig.activeModel;
+                  return (
+                    <TouchableOpacity
+                      key={model}
+                      style={[s.modelItem, isActive && s.modelItemActive]}
+                      onPress={() => handleSelect(model)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.modelText, isActive && s.modelTextActive]} numberOfLines={1}>
+                        {model}
+                      </Text>
+                      {isActive && <CheckIcon size={12} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
             </ScrollView>
           </View>
         </Pressable>
@@ -165,6 +189,24 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 10,
       paddingTop: 8,
       paddingBottom: 2,
+    },
+    searchInput: {
+      height: 28,
+      marginHorizontal: 6,
+      marginBottom: 4,
+      paddingHorizontal: 8,
+      fontSize: fs.xs,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      backgroundColor: colors.background,
+      color: colors.foreground,
+    },
+    noResults: {
+      paddingVertical: 10,
+      textAlign: "center",
+      fontSize: fs.xs,
+      color: colors.mutedForeground,
     },
     modelItem: {
       flexDirection: "row",

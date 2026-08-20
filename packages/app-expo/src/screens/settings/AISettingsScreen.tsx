@@ -7,6 +7,9 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
+  Modal,
+  Pressable,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -14,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConfigTransfer } from "../../components/settings/ConfigTransfer";
-import { MinusIcon, PlusIcon } from "../../components/ui/Icon";
+import { CheckIcon, MinusIcon, PlusIcon } from "../../components/ui/Icon";
 import { useColors } from "../../styles/theme";
 import { fontSize, fontWeight, spacing } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
@@ -40,6 +43,11 @@ export default function AISettingsScreen() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
+  const [endpointPickerVisible, setEndpointPickerVisible] = useState(false);
+
+  const activeEndpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
+  const activeEndpointName = activeEndpoint?.name || activeEndpoint?.baseUrl || "";
 
   const handleAddEndpoint = useCallback(async () => {
     const defaultProvider = "openai";
@@ -159,77 +167,155 @@ export default function AISettingsScreen() {
 
             {fetchError ? <Text style={styles.errorText}>{fetchError}</Text> : null}
 
-            {/* Global Settings */}
+            {/* AI 助手:端点选择 + 参数(折叠) */}
             <View style={styles.sectionCard}>
-              <Text style={styles.sectionTitle}>{t("settings.ai_globalParams", "全局参数")}</Text>
+              <TouchableOpacity
+                style={styles.assistantHeader}
+                onPress={() => setAiAssistantOpen(!aiAssistantOpen)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.sectionTitle}>{t("settings.aiAssistantTitle", "AI 助手")}</Text>
+                <Text style={styles.chevron}>{aiAssistantOpen ? "▲" : "▼"}</Text>
+              </TouchableOpacity>
 
-              <View style={styles.paramRow}>
-                <Text style={styles.paramLabel}>Temperature</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ temperature: Math.round(Math.max(0, aiConfig.temperature - 0.1) * 10) / 10 })}>
-                    <MinusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.stepperInput}
-                    value={String(aiConfig.temperature)}
-                    onChangeText={(v) => { const n = Number.parseFloat(v); if (!Number.isNaN(n) && n >= 0 && n <= 1) updateAIConfig({ temperature: n }); }}
-                    keyboardType="decimal-pad"
-                    placeholder="0.0 - 1.0"
-                    textAlign="center"
-                  />
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ temperature: Math.round(Math.min(1, aiConfig.temperature + 0.1) * 10) / 10 })}>
-                    <PlusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+              {aiAssistantOpen && (
+                <>
+                  {/* AI 助手端点选择(只选端点,模型在聊天窗口选) */}
+                  <View style={{ gap: 4 }}>
+                    <Text style={styles.sectionDesc}>{t("settings.aiAssistantEndpoint", "端点")}</Text>
+                    <Text style={styles.sectionDesc}>
+                      {t("settings.aiAssistantEndpointDesc")}
+                    </Text>
+                    {aiConfig.endpoints.length === 0 ? (
+                      <Text style={styles.sectionDesc}>
+                        {t("settings.aiAssistantNoEndpoints")}
+                      </Text>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.endpointSelectRow}
+                        onPress={() => setEndpointPickerVisible(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.endpointSelectText} numberOfLines={1}>
+                          {activeEndpointName ||
+                            t("settings.ai_selectEndpoint", "选择端点")}
+                        </Text>
+                        <Text style={styles.chevron}>▾</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
-              <View style={[styles.paramRow, { marginTop: spacing.md }]}>
-                <Text style={styles.paramLabel}>Max Tokens</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ maxTokens: Math.max(256, aiConfig.maxTokens - 256) })}>
-                    <MinusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.stepperInput}
-                    value={String(aiConfig.maxTokens)}
-                    onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ maxTokens: n }); }}
-                    keyboardType="number-pad"
-                    textAlign="center"
-                  />
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ maxTokens: Math.min(32768, aiConfig.maxTokens + 256) })}>
-                    <PlusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+                  {/* 参数 */}
+                  <View style={styles.paramRow}>
+                    <Text style={styles.paramLabel}>Temperature</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
+                        onPress={() => updateAIConfig({ temperature: Math.round(Math.max(0, aiConfig.temperature - 0.1) * 10) / 10 })}>
+                        <MinusIcon size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={styles.stepperInput}
+                        value={String(aiConfig.temperature)}
+                        onChangeText={(v) => { const n = Number.parseFloat(v); if (!Number.isNaN(n) && n >= 0 && n <= 1) updateAIConfig({ temperature: n }); }}
+                        keyboardType="decimal-pad"
+                        placeholder="0.0 - 1.0"
+                        textAlign="center"
+                      />
+                      <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
+                        onPress={() => updateAIConfig({ temperature: Math.round(Math.min(1, aiConfig.temperature + 0.1) * 10) / 10 })}>
+                        <PlusIcon size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-              <View style={[styles.paramRow, { marginTop: spacing.md }]}>
-                <Text style={styles.paramLabel}>{t("settings.ai_slidingWindow", "上下文窗口")}</Text>
-                <View style={styles.stepperContainer}>
-                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ slidingWindowSize: Math.max(1, aiConfig.slidingWindowSize - 1) })}>
-                    <MinusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.stepperInput}
-                    value={String(aiConfig.slidingWindowSize)}
-                    onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ slidingWindowSize: n }); }}
-                    keyboardType="number-pad"
-                    textAlign="center"
-                  />
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    activeOpacity={0.7}
-                    onPress={() => updateAIConfig({ slidingWindowSize: Math.min(100, aiConfig.slidingWindowSize + 1) })}
-                  >
-                    <PlusIcon size={16} color={colors.foreground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+                  <View style={[styles.paramRow, { marginTop: spacing.md }]}>
+                    <Text style={styles.paramLabel}>Max Tokens</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
+                        onPress={() => updateAIConfig({ maxTokens: Math.max(256, aiConfig.maxTokens - 256) })}>
+                        <MinusIcon size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={styles.stepperInput}
+                        value={String(aiConfig.maxTokens)}
+                        onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ maxTokens: n }); }}
+                        keyboardType="number-pad"
+                        textAlign="center"
+                      />
+                      <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
+                        onPress={() => updateAIConfig({ maxTokens: Math.min(32768, aiConfig.maxTokens + 256) })}>
+                        <PlusIcon size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={[styles.paramRow, { marginTop: spacing.md }]}>
+                    <Text style={styles.paramLabel}>{t("settings.ai_slidingWindow", "上下文窗口")}</Text>
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.7}
+                        onPress={() => updateAIConfig({ slidingWindowSize: Math.max(1, aiConfig.slidingWindowSize - 1) })}>
+                        <MinusIcon size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={styles.stepperInput}
+                        value={String(aiConfig.slidingWindowSize)}
+                        onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ slidingWindowSize: n }); }}
+                        keyboardType="number-pad"
+                        textAlign="center"
+                      />
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        activeOpacity={0.7}
+                        onPress={() => updateAIConfig({ slidingWindowSize: Math.min(100, aiConfig.slidingWindowSize + 1) })}
+                      >
+                        <PlusIcon size={16} color={colors.foreground} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
+
+            {/* 端点选择 Modal */}
+            <Modal
+              visible={endpointPickerVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setEndpointPickerVisible(false)}
+            >
+              <Pressable
+                style={styles.endpointPickerBackdrop}
+                onPress={() => setEndpointPickerVisible(false)}
+              >
+                <View style={styles.endpointPickerSheet}>
+                  <Text style={styles.sectionTitle}>{t("settings.aiAssistantEndpoint", "端点")}</Text>
+                  <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+                    {aiConfig.endpoints.map((ep) => {
+                      const isActive = ep.id === aiConfig.activeEndpointId;
+                      return (
+                        <TouchableOpacity
+                          key={ep.id}
+                          style={[styles.endpointPickerItem, isActive && styles.endpointPickerItemActive]}
+                          onPress={() => {
+                            setActiveEndpoint(ep.id);
+                            setEndpointPickerVisible(false);
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[styles.endpointPickerText, isActive && styles.endpointPickerTextActive]}
+                            numberOfLines={1}
+                          >
+                            {ep.name || ep.baseUrl}
+                          </Text>
+                          {isActive && <CheckIcon size={14} color={colors.primary} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </Pressable>
+            </Modal>
 
             {/* Transfer */}
             <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>

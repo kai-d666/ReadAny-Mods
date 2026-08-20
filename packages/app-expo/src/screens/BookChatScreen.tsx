@@ -580,6 +580,7 @@ export function BookChatScreen({ route, navigation }: Props) {
               quotes={quotes}
               onRemoveQuote={handleRemoveQuote}
               keyboardBottomOffset={insets.bottom}
+              variant="book"
             />
           </View>
         </View>

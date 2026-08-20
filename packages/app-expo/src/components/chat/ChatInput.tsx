@@ -7,6 +7,7 @@ import {
   XIcon,
 } from "@/components/ui/Icon";
 import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
+import { useSettingsStore } from "@/stores/settings-store";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { AttachedQuote } from "@readany/core/types";
@@ -40,6 +41,8 @@ interface ChatInputProps {
   onRemoveQuote?: (id: string) => void;
   placeholder?: string;
   keyboardBottomOffset?: number;
+  /** 聊天上下文,决定防剧透开关读写 aiConfig.spoilerFree 的哪个场景(全局聊天/书内聊天) */
+  variant?: "general" | "book";
 }
 
 const SINGLE_LINE_INPUT_HEIGHT = 46;
@@ -54,10 +57,10 @@ export function ChatInput({
   onRemoveQuote,
   placeholder,
   keyboardBottomOffset = 0,
+  variant = "general",
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [deepThinking, setDeepThinking] = useState(false);
-  const [spoilerFree, setSpoilerFree] = useState(false);
   const [inputHeight, setInputHeight] = useState(SINGLE_LINE_INPUT_HEIGHT);
   const { t } = useTranslation();
   const colors = useColors();
@@ -73,6 +76,17 @@ export function ChatInput({
     ? visibleKeyboardPadding
     : Math.max(4, Math.min(keyboardInsets.safeAreaBottom, 8));
 
+  // 防剧透开关按聊天上下文(general/book)持久记忆,发送后不重置(移植自桌面 ea0bd55)
+  const aiConfig = useSettingsStore((st) => st.aiConfig);
+  const updateAIConfig = useSettingsStore((st) => st.updateAIConfig);
+  const spoilerFree = aiConfig.spoilerFree[variant];
+
+  const handleToggleSpoilerFree = useCallback(() => {
+    updateAIConfig({
+      spoilerFree: { ...aiConfig.spoilerFree, [variant]: !aiConfig.spoilerFree[variant] },
+    });
+  }, [aiConfig.spoilerFree, variant, updateAIConfig]);
+
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if (!trimmed && quotes.length === 0) return;
@@ -80,7 +94,6 @@ export function ChatInput({
     setInputHeight(SINGLE_LINE_INPUT_HEIGHT);
     setText("");
     setDeepThinking(false);
-    setSpoilerFree(false);
   }, [text, deepThinking, spoilerFree, quotes, onSend]);
 
   const handleTextChange = useCallback((nextText: string) => {
@@ -163,7 +176,7 @@ export function ChatInput({
 
             <TouchableOpacity
               style={[s.deepThinkBtn, spoilerFree && s.deepThinkBtnActive]}
-              onPress={() => setSpoilerFree(!spoilerFree)}
+              onPress={handleToggleSpoilerFree}
               activeOpacity={0.7}
             >
               <EyeOffIcon size={13} color={spoilerFree ? colors.primary : colors.mutedForeground} />
