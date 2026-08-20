@@ -218,6 +218,7 @@ export default function AISettingsScreen() {
                       </TouchableOpacity>
                       <TextInput
                         style={styles.stepperInput}
+                    includeFontPadding={false} // 防字体 padding 撑高行高
                         value={String(aiConfig.temperature)}
                         onChangeText={(v) => { const n = Number.parseFloat(v); if (!Number.isNaN(n) && n >= 0 && n <= 1) updateAIConfig({ temperature: n }); }}
                         keyboardType="decimal-pad"
@@ -240,6 +241,7 @@ export default function AISettingsScreen() {
                       </TouchableOpacity>
                       <TextInput
                         style={styles.stepperInput}
+                    includeFontPadding={false} // 防字体 padding 撑高行高
                         value={String(aiConfig.maxTokens)}
                         onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ maxTokens: n }); }}
                         keyboardType="number-pad"
@@ -261,6 +263,7 @@ export default function AISettingsScreen() {
                       </TouchableOpacity>
                       <TextInput
                         style={styles.stepperInput}
+                    includeFontPadding={false} // 防字体 padding 撑高行高
                         value={String(aiConfig.slidingWindowSize)}
                         onChangeText={(v) => { const n = Number.parseInt(v, 10); if (!Number.isNaN(n) && n > 0) updateAIConfig({ slidingWindowSize: n }); }}
                         keyboardType="number-pad"

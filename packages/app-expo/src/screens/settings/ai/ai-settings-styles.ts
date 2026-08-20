@@ -125,6 +125,9 @@ export const makeStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
       backgroundColor: colors.background,
       paddingHorizontal: spacing.sm,
+      // paddingVertical 必须为 0:RN 在 Android 默认上下留 ~8-10px padding,
+      // 小输入框(36 高)被挤压后文本行高超出框内可用高度,普通拖动时文本会上下滚动
+      paddingVertical: 0,
       fontSize: fontSize.sm,
       color: colors.foreground,
       textAlignVertical: "center",

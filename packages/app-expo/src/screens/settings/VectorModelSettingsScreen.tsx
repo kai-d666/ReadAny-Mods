@@ -515,6 +515,7 @@ function RemoteModelsSection() {
           <Text style={s.fieldLabel}>{t("settings.vm_name", "名称")} *</Text>
           <TextInput
             style={s.fieldInput}
+            includeFontPadding={false} // 防字体 padding 撑高行高
             value={formName}
             onChangeText={setFormName}
             placeholder="OpenAI Embedding"
@@ -524,6 +525,7 @@ function RemoteModelsSection() {
           <Text style={s.fieldLabel}>{t("settings.vm_modelId", "模型 ID")} *</Text>
           <TextInput
             style={s.fieldInput}
+            includeFontPadding={false} // 防字体 padding 撑高行高
             value={formModelId}
             onChangeText={setFormModelId}
             placeholder="text-embedding-3-small"
@@ -533,6 +535,7 @@ function RemoteModelsSection() {
           <Text style={s.fieldLabel}>{t("settings.vm_url", "URL")} *</Text>
           <TextInput
             style={s.fieldInput}
+            includeFontPadding={false} // 防字体 padding 撑高行高
             value={formUrl}
             onChangeText={setFormUrl}
             placeholder="https://api.openai.com/v1"
@@ -543,6 +546,7 @@ function RemoteModelsSection() {
           <Text style={s.fieldLabel}>{t("settings.vm_apiKey", "API Key")}</Text>
           <PasswordInput
             style={s.fieldInput}
+            includeFontPadding={false} // 防字体 padding 撑高行高
             value={formApiKey}
             onChangeText={setFormApiKey}
             placeholder="sk-..."
@@ -552,6 +556,7 @@ function RemoteModelsSection() {
           <Text style={s.fieldLabel}>{t("settings.vm_description", "描述")}</Text>
           <TextInput
             style={s.fieldInput}
+            includeFontPadding={false} // 防字体 padding 撑高行高
             value={formDesc}
             onChangeText={setFormDesc}
             placeholderTextColor={colors.mutedForeground}
@@ -789,6 +794,7 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.muted,
       borderRadius: radius.lg,
       paddingHorizontal: 12,
+      paddingVertical: 0, // 防 Android 默认 padding 挤压导致文本上下滚动
       fontSize: fontSize.sm,
       color: colors.foreground,
     },

@@ -98,10 +98,12 @@ function ModelSearchableList({
           borderColor: colors.border,
           borderRadius: 6,
           paddingHorizontal: 10,
+          paddingVertical: 0, // 防 Android 默认 padding 挤压导致文本上下滚动
           fontSize: 12,
           color: colors.foreground,
           backgroundColor: colors.background,
         }}
+        includeFontPadding={false} // 防字体 padding 撑高行高,小输入框文本被上下裁剪
         placeholder={t("settings.ai_searchModelPlaceholder", "搜索模型...")}
         placeholderTextColor={colors.mutedForeground}
         value={search}
@@ -318,6 +320,7 @@ export function EndpointEditor({
         <Text style={styles.fieldLabel}>{t("settings.ai_name", "名称")}</Text>
         <TextInput
           style={styles.input}
+          includeFontPadding={false} // 防字体 padding 撑高行高,小输入框文本被上下裁剪
           value={name}
           onChangeText={setName}
           onBlur={() => { if (name !== ep.name) onUpdate(ep.id, { name }).catch(console.error); }}
@@ -361,6 +364,7 @@ export function EndpointEditor({
         <Text style={styles.fieldLabel}>{t("settings.ai_apiKey", "API Key")}</Text>
         <PasswordInput
           style={styles.input}
+          includeFontPadding={false} // 防字体 padding 撑高行高,小输入框文本被上下裁剪
           value={apiKey}
           onChangeText={setApiKey}
           onBlur={() => { if (apiKey !== ep.apiKey) onUpdate(ep.id, { apiKey }).catch(console.error); }}
@@ -377,6 +381,7 @@ export function EndpointEditor({
         </Text>
         <TextInput
           style={styles.input}
+          includeFontPadding={false} // 防字体 padding 撑高行高,小输入框文本被上下裁剪
           value={baseUrl}
           onChangeText={setBaseUrl}
           onBlur={() => { if (baseUrl !== ep.baseUrl) onUpdate(ep.id, { baseUrl }).catch(console.error); }}
@@ -488,6 +493,7 @@ export function EndpointEditor({
         <View style={styles.addModelRow}>
           <TextInput
             style={[styles.input, { flex: 1 }]}
+            includeFontPadding={false} // 防字体 padding 撑高行高,小输入框文本被上下裁剪
             placeholder={t("settings.ai_addManualModelPlaceholder", "手动添加模型名")}
             placeholderTextColor={colors.mutedForeground}
             value={newModelInput}

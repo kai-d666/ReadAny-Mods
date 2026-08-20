@@ -100,6 +100,7 @@ export function ModelSelector({ onNavigateToSettings }: ModelSelectorProps) {
             )}
             <TextInput
               style={s.searchInput}
+              includeFontPadding={false} // 防字体 padding 撑高行高
               placeholder={t("settings.ai_searchModels", "搜索模型...")}
               placeholderTextColor={colors.mutedForeground}
               value={search}
@@ -195,6 +196,7 @@ const makeStyles = (colors: ThemeColors) =>
       marginHorizontal: 6,
       marginBottom: 4,
       paddingHorizontal: 8,
+      paddingVertical: 0, // 防 Android 默认 padding 挤压导致文本上下滚动
       fontSize: fs.xs,
       borderWidth: 1,
       borderColor: colors.border,
