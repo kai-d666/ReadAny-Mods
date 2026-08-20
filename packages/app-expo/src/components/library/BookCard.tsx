@@ -21,6 +21,12 @@ import {
 import { BookCardActionSheet } from "./BookCardActionSheet";
 import { makeStyles } from "./book-card-styles";
 
+// 封面绝对路径缓存(bookId → file:// 绝对路径)。
+// 书库列表在导航(进入阅读页等)时会被整体卸载重挂,每次重挂都走异步解析
+// (getAppDataDir + joinPath,几十 ms)会让封面闪回占位块;缓存让重挂第一帧
+// 就能同步取到封面路径,消除闪烁。
+const coverUriCache = new Map<string, string>();
+
 const AnimatedLoader = () => {
   const spinValue = useRef(new Animated.Value(0)).current;
 
@@ -88,7 +94,13 @@ export const BookCard = memo(function BookCard({
   const [imageError, setImageError] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [actionAnchor, setActionAnchor] = useState<LayoutRectangle | null>(null);
-  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | undefined>(undefined);
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState<string | undefined>(() => {
+    // 惰性初始化:重挂时同步命中缓存,第一帧即显示封面,不闪占位块
+    const raw = book.meta.coverUrl;
+    if (!raw) return undefined;
+    if (raw.startsWith("http") || raw.startsWith("blob") || raw.startsWith("file")) return raw;
+    return coverUriCache.get(book.id);
+  });
   const coverRef = useRef<View>(null);
   const menuTriggerRef = useRef<View>(null);
   const suppressOpenUntilRef = useRef(0);
@@ -109,6 +121,7 @@ export const BookCard = memo(function BookCard({
         const platform = getPlatformService();
         const appData = await platform.getAppDataDir();
         const absPath = await platform.joinPath(appData, raw);
+        coverUriCache.set(book.id, absPath);
         setResolvedCoverUrl(absPath);
       } catch (err) {
         console.warn("[Library] Failed to resolve cover URL:", err);
