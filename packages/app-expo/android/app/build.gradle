@@ -108,6 +108,8 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            // 与 release(com.readany.app.dev)并存:debug 用独立包名,互不覆盖
+            applicationIdSuffix ".debug"
         }
         release {
             // Caution! In production, you need to generate your own keystore file.

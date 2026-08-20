@@ -44,6 +44,7 @@ import {
   mergeMessagesWithStreaming,
 } from "@readany/core/utils";
 import * as Clipboard from "expo-clipboard";
+import * as NavigationBar from "expo-navigation-bar";
 
 import { ChatInput } from "@/components/chat/ChatInput";
 import { MessageList } from "@/components/chat/MessageList";
@@ -92,6 +93,16 @@ export function BookChatScreen({ route, navigation }: Props) {
 
   const { books } = useLibraryStore();
   const book = useMemo(() => books.find((b) => b.id === bookId), [books, bookId]);
+
+  // 书内聊天从阅读器(沉浸隐藏三键)push 而来,挂载时恢复三键;
+  // 返回阅读器时不动导航栏,由阅读器自身的 showControls 逻辑接管
+  useEffect(() => {
+    console.log("[BookChat] mount: restoring nav bar");
+    NavigationBar.setVisibilityAsync("visible").then(
+      () => console.log("[BookChat] setVisibilityAsync visible OK"),
+      (e) => console.log("[BookChat] setVisibilityAsync ERROR:", e),
+    );
+  }, []);
 
   // Initial quote from reader selection
   const [quotes, setQuotes] = useState<AttachedQuote[]>([]);

@@ -1241,15 +1241,16 @@ export function ReaderScreen({ route, navigation }: Props) {
   }, [themeMode, webViewReady]);
 
   // 沉浸式全屏:进入阅读隐藏系统三键导航栏;控制栏/搜索显示时恢复
+  // 注意:仅在页面聚焦时管理导航栏,否则书内聊天(BookChat)等覆盖页会与这里打架
   useEffect(() => {
-    if (!webViewReady) return;
+    if (!webViewReady || !isFocused) return;
     if (showControls || showSearch) {
       NavigationBar.setVisibilityAsync("visible").catch(() => {});
     } else {
       NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
       NavigationBar.setVisibilityAsync("hidden").catch(() => {});
     }
-  }, [showControls, showSearch, webViewReady]);
+  }, [showControls, showSearch, webViewReady, isFocused]);
 
   // 退出阅读器恢复导航栏
   useEffect(() => {
