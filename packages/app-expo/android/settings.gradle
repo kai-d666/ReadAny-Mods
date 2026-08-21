@@ -36,7 +36,12 @@ rootProject.name = 'ReadAny Dev'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
-// ReactAndroid 源码参与构建(改 RN 原生行为必须;Maven AAR 预编译不生效)
-include ':ReactAndroid'
-project(':ReactAndroid').projectDir = file('../node_modules/react-native/ReactAndroid')
+// ReactAndroid 源码参与构建(改 RN 原生行为必须;Maven AAR 预编译不生效)。
+// 官方方式:includeBuild 复合构建 + 显式 substitution(项目名 ReactAndroid 与 artifactId react-android 不一致,自动替换不生效)
+includeBuild('../../../node_modules/react-native') {
+  dependencySubstitution {
+    substitute(module("com.facebook.react:react-android"))
+        .using(project(":packages:react-native:ReactAndroid"))
+  }
+}
 includeBuild(expoAutolinking.reactNativeGradlePlugin)

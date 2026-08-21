@@ -98,3 +98,22 @@ override fun onTouchEvent(ev: MotionEvent): Boolean {
 - `BUILD FAILED: No variants exist` — 根因:`node_modules/react-native/ReactAndroid/gradle/` 目录缺失(`libs.versions.toml` 不在),android.library 插件解析失败,ReactAndroid 无 variants
 - **解法方向**:从 GitHub react-native v0.81.5 补回 `ReactAndroid/gradle/`(libs.versions.toml),或查 react-native npm 包 files 为何不含该目录(pnpm 裁剪?)
 - 补回后预计还有后续坑(NDK/CMake 版本,参考 android-toolchain 记忆)
+
+## 2026-08-22 实施完成(源码构建 + 拖动/编辑分离 patch 全部生效)
+
+**源码构建最终方案(已验证 BUILD SUCCESSFUL)**:
+- `settings.gradle`: `includeBuild('../../../node_modules/react-native') { dependencySubstitution { substitute(module("com.facebook.react:react-android")).using(project(":packages:react-native:ReactAndroid")) } }`(官方方式:includeBuild 复合构建,项目名≠artifactId 必须显式 substitution)
+- `app/build.gradle`: 保持 `implementation("com.facebook.react:react-android")`(复合构建自动替换)
+- 磁盘:app/build、ReactAndroid/build、hermes-engine/build 三个目录 junction 到 `G:\lingshiiiiiii\`(D 盘仅 13G,产物全写 G 盘)
+- 构建命令:`./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`(arm64-only,首次 6-12 分钟;debug 变体首次 ~12 分钟)
+- Hermes:hermesc 用 npm 包自带预编译(`sdks/hermesc/win64-bin/`),patch hermes-engine/build.gradle.kts 空转 configureBuildForHermes/buildHermesC + `HERMES_ENABLE_TOOLS=False` + `HERMES_ENABLE_TEST_SUITE=False` + 手工 ImportHermesc.cmake 指向预编译 hermesc + 跳过 downloadHermes/unzipHermes(离线)
+- 注意:pnpm install 后 node_modules 内所有 patch 会还原,需重新应用(建议 patch-package 固化)
+
+**ReactEditText.kt 最终 patch(拖动/编辑分离 + 左对齐)**:
+- DOWN: `showSoftInputOnFocus = false`(按下不弹键盘)+ `isCursorVisible = false`(隐藏光标)+ requestDisallowInterceptTouchEvent
+- MOVE: 位移超 touchSlop → `dragged = true`
+- UP 拖动: 吞掉(return true,不光标不编辑)+ `suppressBlurScroll = true`(失焦不滚回)+ `super.setSelection(可视区中间位置)`(光标虚拟位置移到可视区,防系统 ensureCursorVisible 弹回开头)
+- UP 点击(未拖动): `isCursorVisible = true` + `showSoftInputOnFocus = true` + `inputMethodManager.showSoftInput(this, 0)`(正常编辑)
+- onLayout 首次: `layoutSettled` 防重入,`isCursorVisible = false` + `super.setSelection(0, 0)` + `scrollTo(0, 0)`(挂载左对齐,setText 后 selection 默认末尾会右对齐)
+- onFocusChanged 失焦: `suppressBlurScroll` 时不滚回,否则 `isCursorVisible = false` + `scrollTo(0, 0)`(编辑后失焦左对齐)
+- setSelection override: `isCursorVisible == false` 时忽略(阻止 selection 驱动的 ensureCursorVisible 滚动)

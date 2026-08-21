@@ -159,7 +159,8 @@ dependencies {
     implementation project(':onnxruntime-react-native')
     // onnxruntime-react-native @generated end onnxruntime-react-native
     // The version of react-native is set by the React Native Gradle Plugin
-    implementation(project(":ReactAndroid"))
+    // includeBuild(node_modules/react-native) 复合构建会自动用源码替换此 AAR
+    implementation("com.facebook.react:react-android")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
