@@ -36,4 +36,7 @@ rootProject.name = 'ReadAny Dev'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
+// ReactAndroid 源码参与构建(改 RN 原生行为必须;Maven AAR 预编译不生效)
+include ':ReactAndroid'
+project(':ReactAndroid').projectDir = file('../node_modules/react-native/ReactAndroid')
 includeBuild(expoAutolinking.reactNativeGradlePlugin)

@@ -85,3 +85,16 @@ override fun onTouchEvent(ev: MotionEvent): Boolean {
 - 长按查词(WebView 内)不受影响——触摸不经过 TextInput
 - 点击(无位移)不受影响——UP 正常,光标定位照旧
 - 长按 TextInput 选文本不受影响(无位移)
+
+## 2026-08-21 进度更新(已配置,构建卡住)
+
+**已完成**:
+- `settings.gradle`:include ':ReactAndroid' + projectDir(源码参与构建)
+- `app/build.gradle`:`implementation(project(":ReactAndroid"))` 替换 AAR
+- **磁盘方案**:app/build 与 ReactAndroid/build 均 junction 到 `G:\lingshiiiiiii\`(D 盘只剩 13G;gradle 无感知,产物写 G 盘,已验证)
+- 构建命令:`./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`
+
+**卡点(当前)**:
+- `BUILD FAILED: No variants exist` — 根因:`node_modules/react-native/ReactAndroid/gradle/` 目录缺失(`libs.versions.toml` 不在),android.library 插件解析失败,ReactAndroid 无 variants
+- **解法方向**:从 GitHub react-native v0.81.5 补回 `ReactAndroid/gradle/`(libs.versions.toml),或查 react-native npm 包 files 为何不含该目录(pnpm 裁剪?)
+- 补回后预计还有后续坑(NDK/CMake 版本,参考 android-toolchain 记忆)
