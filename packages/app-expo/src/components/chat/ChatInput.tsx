@@ -117,7 +117,9 @@ export function ChatInput({
         return;
       }
       const contentHeight = e.nativeEvent.contentSize.height;
-      const totalHeight = contentHeight + INPUT_PADDING_VERTICAL;
+      // Android 的 contentSize 已含内边距,不再叠加;单行时保持初始尺寸,换行后才增高
+      const totalHeight =
+        contentHeight + (Platform.OS === "ios" ? INPUT_PADDING_VERTICAL : 0);
       const h = Math.min(totalHeight, MAX_INPUT_HEIGHT);
       setInputHeight(Math.max(SINGLE_LINE_INPUT_HEIGHT, h));
     },
@@ -126,8 +128,21 @@ export function ChatInput({
 
   const canSend = text.trim().length > 0 || quotes.length > 0;
 
+  // Android edge-to-edge:键盘弹出时窗口不 resize。
+  // 输入栏恒 absolute 悬浮(不参与布局,背景零重排;不用 transform,避免 Android TextInput
+  // 光标/输入法连接错位),bottom 随键盘状态切换;消息列表由 MessageList 恒留 120dp 占位,
+  // 键盘弹出前后列表尺寸完全一致,背景永不跳变。
+  const floatUp = Platform.OS === "android";
+
   return (
-    <View style={[s.wrapper, { paddingBottom: bottomPadding }]}>
+    <View
+      style={[
+        s.wrapper,
+        floatUp
+          ? { position: "absolute", left: 0, right: 0, bottom: bottomPadding }
+          : { paddingBottom: bottomPadding },
+      ]}
+    >
       <View style={s.container}>
         {/* Attached quotes chips */}
         {quotes.length > 0 && (
@@ -158,6 +173,7 @@ export function ChatInput({
               : placeholder || t("chat.inputPlaceholder", "输入消息...")
           }
           placeholderTextColor={colors.mutedForeground}
+          includeFontPadding={false} // 统一字体内边距,避免 placeholder 与输入文字垂直错位
           value={text}
           onChangeText={handleTextChange}
           multiline
@@ -289,7 +305,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingBottom: 6,
       minHeight: SINGLE_LINE_INPUT_HEIGHT,
       maxHeight: MAX_INPUT_HEIGHT,
-      lineHeight: 20,
+      // 不设 lineHeight:Android 上输入文本会因行盒内居中而比 placeholder(系统绘制)低半个行高差
       textAlignVertical: "top",
     },
     actionBar: {

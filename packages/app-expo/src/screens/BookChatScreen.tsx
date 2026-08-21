@@ -97,11 +97,7 @@ export function BookChatScreen({ route, navigation }: Props) {
   // 书内聊天从阅读器(沉浸隐藏三键)push 而来,挂载时恢复三键;
   // 返回阅读器时不动导航栏,由阅读器自身的 showControls 逻辑接管
   useEffect(() => {
-    console.log("[BookChat] mount: restoring nav bar");
-    NavigationBar.setVisibilityAsync("visible").then(
-      () => console.log("[BookChat] setVisibilityAsync visible OK"),
-      (e) => console.log("[BookChat] setVisibilityAsync ERROR:", e),
-    );
+    NavigationBar.setVisibilityAsync("visible").catch(() => {});
   }, []);
 
   // Initial quote from reader selection

@@ -59,6 +59,10 @@ export function MessageList({
   const colors = useColors();
   const s = makeStyles(colors);
   const flatListRef = useRef<FlatList>(null);
+  // 输入栏恒 absolute 悬浮(不占布局),列表恒留 120dp 占位:
+  // - 容器 paddingBottom 压缩可视区,键盘弹出前后列表尺寸一致,背景不跳变
+  // - 内容 paddingBottom 留滚动余量,最后一条消息可滚到输入栏上方
+  const listBottomPad = Platform.OS === "android" ? 120 : 0;
   const isAtBottomRef = useRef(true);
   const [showScrollDown, setShowScrollDown] = useState(false);
 
@@ -161,13 +165,14 @@ export function MessageList({
     (!lastMsg || lastMsg.role !== "assistant" || lastMsg.parts.length === 0);
 
   return (
-    <View style={s.container} onTouchStart={Keyboard.dismiss}>
+    // 键盘弹出时容器 paddingBottom 压缩可视区,高度与键盘弹出前(输入栏占位)一致,背景不跳变
+    <View style={[s.container, { paddingBottom: listBottomPad }]} onTouchStart={Keyboard.dismiss}>
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
-        contentContainerStyle={s.listContent}
+        contentContainerStyle={[s.listContent, { paddingBottom: listBottomPad }]}
         onScroll={handleScroll}
         onScrollBeginDrag={Keyboard.dismiss}
         scrollEventThrottle={16}
