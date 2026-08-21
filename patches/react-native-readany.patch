@@ -1,0 +1,226 @@
+diff --git a/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt b/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt
+index 42f6e03..abeac6e 100644
+--- a/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt
++++ b/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt
+@@ -35,6 +35,7 @@ import android.view.Menu
+ import android.view.MenuItem
+ import android.view.MotionEvent
+ import android.view.View
++import android.view.ViewConfiguration
+ import android.view.ViewGroup
+ import android.view.accessibility.AccessibilityNodeInfo
+ import android.view.inputmethod.EditorInfo
+@@ -130,6 +131,14 @@ public open class ReactEditText public constructor(context: Context) : AppCompat
+   private var scrollWatcher: ScrollWatcher?
+   private var keyListener: InternalKeyListener? = null
+   private var detectScrollMovement = false
++  // ReadAny patch: 区分"拖动查看文本"与"点击编辑"——拖动(位移超 touch slop)后
++  // 松手不触发光标定位/键盘弹出,UP 被吞掉;只有未拖动的点击才走原生光标插入。
++  private var downRawX = 0f
++  private var downRawY = 0f
++  private var dragged = false
++  private var layoutSettled = false
++  private var suppressBlurScroll = false
++  private val touchSlop: Int = ViewConfiguration.get(context).scaledTouchSlop
+   private var onKeyPress = false
+   private val textAttributes: TextAttributes
+   private var typefaceDirty = false
+@@ -284,6 +293,17 @@ public open class ReactEditText public constructor(context: Context) : AppCompat
+ 
+   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+     onContentSizeChange()
++    // 仅首次布局(挂载)时隐藏光标并左对齐:setText 后 selection 默认在末尾,系统
++    // ensureCursorVisible 会把文本滚到末尾(右对齐);把 selection 设到开头则不会滚动。
++    // 之后(拖动/编辑)不干预,否则松手后的布局变化会把文本滚回开头
++    if (changed && !layoutSettled) {
++      isCursorVisible = false
++      if (selectionStart != 0 || selectionEnd != 0) {
++        super.setSelection(0, 0)
++      }
++      scrollTo(0, 0)
++      layoutSettled = true
++    }
+     if (selectTextOnFocus && isFocused) {
+       // Explicitly call this method to select text when layout is drawn
+       selectAll()
+@@ -296,22 +316,57 @@ public open class ReactEditText public constructor(context: Context) : AppCompat
+     when (ev.action) {
+       MotionEvent.ACTION_DOWN -> {
+         detectScrollMovement = true
++        downRawX = ev.rawX
++        downRawY = ev.rawY
++        dragged = false
++        // 拖动查看文本时不应弹键盘:DOWN 聚焦会立即弹键盘(用户感知为松手时),
++        // 这里临时禁止"聚焦自动弹键盘",点击(UP 未拖动)时再手动弹出
++        showSoftInputOnFocus = false
++        // 隐藏光标:拖动查看全程无光标;点击(UP 未拖动)时恢复
++        isCursorVisible = false
+         // Disallow parent views to intercept touch events, until we can detect if we should be
+         // capturing these touches or not.
+         this.parent.requestDisallowInterceptTouchEvent(true)
+       }
+ 
+-      MotionEvent.ACTION_MOVE ->
+-          if (detectScrollMovement) {
+-            if (!canScrollVertically(-1) &&
+-                !canScrollVertically(1) &&
+-                !canScrollHorizontally(-1) &&
+-                !canScrollHorizontally(1)) {
+-              // We cannot scroll, let parent views take care of these touches.
+-              this.parent.requestDisallowInterceptTouchEvent(false)
+-            }
+-            detectScrollMovement = false
++      MotionEvent.ACTION_MOVE -> {
++        if (detectScrollMovement) {
++          if (!canScrollVertically(-1) &&
++              !canScrollVertically(1) &&
++              !canScrollHorizontally(-1) &&
++              !canScrollHorizontally(1)) {
++            // We cannot scroll, let parent views take care of these touches.
++            this.parent.requestDisallowInterceptTouchEvent(false)
++          }
++          detectScrollMovement = false
++        }
++        if (!dragged &&
++            (Math.abs(ev.rawX - downRawX) > touchSlop ||
++                Math.abs(ev.rawY - downRawY) > touchSlop)) {
++          dragged = true
++        }
++      }
++
++      MotionEvent.ACTION_UP -> {
++        // 拖动后松手:吞掉 UP,不进入编辑(无光标无键盘,拖动查看 ≠ 点击编辑)
++        if (dragged) {
++          dragged = false
++          // 拖动查看后可能触发失焦,失焦时不再滚回开头(保持拖动位置)
++          suppressBlurScroll = true
++          // 光标停在开头(0)时,UP 后系统 ensureCursorVisible 会把文本弹回开头;
++          // 把光标移到可视区中间(光标可见,系统不再弹回)
++          val visiblePos =
++              layout?.getOffsetForHorizontal(0, scrollX + width / 2f) ?: selectionStart
++          if (visiblePos >= 0 && visiblePos <= (text?.length ?: 0)) {
++            super.setSelection(visiblePos, visiblePos)
+           }
++          return true
++        }
++        // 点击(无拖动):恢复光标与"聚焦弹键盘",手动弹出键盘,光标由 super 的 UP 定位
++        isCursorVisible = true
++        showSoftInputOnFocus = true
++        inputMethodManager.showSoftInput(this, 0)
++      }
+     }
+     return super.onTouchEvent(ev)
+   }
+@@ -458,6 +513,10 @@ public open class ReactEditText public constructor(context: Context) : AppCompat
+     if (DEBUG_MODE) {
+       FLog.e(TAG, "setSelection[$id]: $start $end")
+     }
++    // 光标隐藏时(挂载/拖动查看)忽略 selection 更新:避免 ensureCursorVisible 把文本滚到光标处
++    if (!isCursorVisible) {
++      return
++    }
+     super.setSelection(start, end)
+   }
+ 
+@@ -477,6 +536,16 @@ public open class ReactEditText public constructor(context: Context) : AppCompat
+     if (focused && selectionWatcher != null) {
+       selectionWatcher?.onSelectionChanged(selectionStart, selectionEnd)
+     }
++    // 失焦:文本滚回开头并隐藏光标(左对齐显示,避免停留在末尾)。
++    // 但拖动查看后失焦不滚回(拖动位置保持),只有编辑(点击)后失焦才左对齐
++    if (!focused) {
++      if (suppressBlurScroll) {
++        suppressBlurScroll = false
++      } else {
++        isCursorVisible = false
++        scrollTo(0, 0)
++      }
++    }
+   }
+ 
+   internal fun setSelectionWatcher(selectionWatcher: SelectionWatcher?) {
+
+index 283d16b..d4e9d39 100644
+--- a/settings.gradle.kts
++++ b/settings.gradle.kts
+@@ -19,6 +19,9 @@ pluginManagement {
+   }
+ }
+ 
++// 本地补丁:复合构建需要 gradle-plugin(否则 ReactAndroid classpath 解析失败)
++includeBuild("../@react-native/gradle-plugin")
++
+ rootProject.name = "react-native-build-from-source"
+ 
+ include(":packages:react-native:ReactAndroid")
+
+index 69814d8..1cd1345 100644
+--- a/ReactAndroid/hermes-engine/build.gradle.kts
++++ b/ReactAndroid/hermes-engine/build.gradle.kts
+@@ -153,7 +153,8 @@ val configureBuildForHermes by
+       if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+         cmakeCommandLine = cmakeCommandLine + "-GNMake Makefiles"
+       }
+-      commandLine(cmakeCommandLine)
++      // 本地补丁(Windows 无 MSVC):hermesc 源码编译跳过,空转;headers 由 prepareHeadersForPrefab 从源码目录拷贝
++      commandLine("cmd", "/c", "exit 0")
+       standardOutputFile.set(project.file("$buildDir/configure-hermesc.log"))
+     }
+ 
+@@ -163,15 +164,8 @@ val buildHermesC by
+       workingDir(hermesDir)
+       inputs.files(hermesBuildOutputFileTree)
+       outputs.file(hermesCOutputBinary)
+-      commandLine(
+-          cmakeBinaryPath,
+-          "--build",
+-          hermesBuildDir.toString(),
+-          "--target",
+-          "hermesc",
+-          "-j",
+-          ndkBuildJobs,
+-      )
++      // 本地补丁:hermesc 编译空转(同 configureBuildForHermes)
++      commandLine("cmd", "/c", "exit 0")
+       standardOutputFile.set(project.file("$buildDir/build-hermesc.log"))
+       errorOutputFile.set(project.file("$buildDir/build-hermesc.error.log"))
+     }
+@@ -264,7 +258,10 @@ android {
+             "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=True",
+             // We intentionally build Hermes with Intl support only. This is to simplify
+             // the build setup and to avoid overcomplicating the build-type matrix.
+-            "-DHERMES_ENABLE_INTL=True")
++            "-DHERMES_ENABLE_INTL=True",
++            // 本地补丁(Windows):host 工具(hermesc 等)由预编译版提供,不在此交叉编译
++            "-DHERMES_ENABLE_TOOLS=False",
++            "-DHERMES_ENABLE_TEST_SUITE=False")
+ 
+         targets("libhermes")
+       }
+@@ -377,3 +374,7 @@ apply(from = "../publish.gradle")
+ publishing {
+   publications { getByName("release", MavenPublication::class) { artifactId = "hermes-android" } }
+ }
++
++// 本地补丁(离线):hermes tarball 与解压源码已存在(sdks/download + sdks/hermes),跳过网络下载与解压
++tasks.named("downloadHermes").configure { enabled = false }
++tasks.named("unzipHermes").configure { enabled = false }
+
+diff --git a/ReactAndroid/cmake-utils/ReactNative-application.cmake b/ReactAndroid/cmake-utils/ReactNative-application.cmake
+--- a/ReactAndroid/cmake-utils/ReactNative-application.cmake
++++ b/ReactAndroid/cmake-utils/ReactNative-application.cmake
+@@ -32,9 +32,13 @@
+ endif(CCACHE_FOUND)
+ 
+ # If the user toolchain supports IPO, we enable it for the app build
++# NOTE (Windows): thin LTO + lld cannot resolve VTT/vtable symbols across
++# shared libraries on Windows (RN 0.81 known issue) - disabled.
++# (CMAKE_HOST_WIN32, not WIN32: WIN32 reflects the *target*, which is
++# Android here.)
+ include(CheckIPOSupported)
+ check_ipo_supported(RESULT IPO_SUPPORT)
+-if (IPO_SUPPORT)
++if (IPO_SUPPORT AND NOT CMAKE_HOST_WIN32)
+   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+ endif()
+
