@@ -1,3 +1,74 @@
+diff --git a/ReactAndroid/cmake-utils/ReactNative-application.cmake b/ReactAndroid/cmake-utils/ReactNative-application.cmake
+index baa0fef..5f272aa 100644
+--- a/ReactAndroid/cmake-utils/ReactNative-application.cmake
++++ b/ReactAndroid/cmake-utils/ReactNative-application.cmake
+@@ -32,9 +32,13 @@ if(CCACHE_FOUND)
+ endif(CCACHE_FOUND)
+ 
+ # If the user toolchain supports IPO, we enable it for the app build
++# NOTE (Windows): thin LTO + lld cannot resolve VTT/vtable symbols across
++# shared libraries on Windows (RN 0.81 known issue) - disabled.
++# (CMAKE_HOST_WIN32, not WIN32: WIN32 reflects the *target*, which is
++# Android here.)
+ include(CheckIPOSupported)
+ check_ipo_supported(RESULT IPO_SUPPORT)
+-if (IPO_SUPPORT)
++if (IPO_SUPPORT AND NOT CMAKE_HOST_WIN32)
+   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+ endif()
+ 
+diff --git a/ReactAndroid/hermes-engine/build.gradle.kts b/ReactAndroid/hermes-engine/build.gradle.kts
+index 69814d8..1cd1345 100644
+--- a/ReactAndroid/hermes-engine/build.gradle.kts
++++ b/ReactAndroid/hermes-engine/build.gradle.kts
+@@ -153,7 +153,8 @@ val configureBuildForHermes by
+       if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+         cmakeCommandLine = cmakeCommandLine + "-GNMake Makefiles"
+       }
+-      commandLine(cmakeCommandLine)
++      // 本地补丁(Windows 无 MSVC):hermesc 源码编译跳过,空转;headers 由 prepareHeadersForPrefab 从源码目录拷贝
++      commandLine("cmd", "/c", "exit 0")
+       standardOutputFile.set(project.file("$buildDir/configure-hermesc.log"))
+     }
+ 
+@@ -163,15 +164,8 @@ val buildHermesC by
+       workingDir(hermesDir)
+       inputs.files(hermesBuildOutputFileTree)
+       outputs.file(hermesCOutputBinary)
+-      commandLine(
+-          cmakeBinaryPath,
+-          "--build",
+-          hermesBuildDir.toString(),
+-          "--target",
+-          "hermesc",
+-          "-j",
+-          ndkBuildJobs,
+-      )
++      // 本地补丁:hermesc 编译空转(同 configureBuildForHermes)
++      commandLine("cmd", "/c", "exit 0")
+       standardOutputFile.set(project.file("$buildDir/build-hermesc.log"))
+       errorOutputFile.set(project.file("$buildDir/build-hermesc.error.log"))
+     }
+@@ -264,7 +258,10 @@ android {
+             "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=True",
+             // We intentionally build Hermes with Intl support only. This is to simplify
+             // the build setup and to avoid overcomplicating the build-type matrix.
+-            "-DHERMES_ENABLE_INTL=True")
++            "-DHERMES_ENABLE_INTL=True",
++            // 本地补丁(Windows):host 工具(hermesc 等)由预编译版提供,不在此交叉编译
++            "-DHERMES_ENABLE_TOOLS=False",
++            "-DHERMES_ENABLE_TEST_SUITE=False")
+ 
+         targets("libhermes")
+       }
+@@ -377,3 +374,7 @@ apply(from = "../publish.gradle")
+ publishing {
+   publications { getByName("release", MavenPublication::class) { artifactId = "hermes-android" } }
+ }
++
++// 本地补丁(离线):hermes tarball 与解压源码已存在(sdks/download + sdks/hermes),跳过网络下载与解压
++tasks.named("downloadHermes").configure { enabled = false }
++tasks.named("unzipHermes").configure { enabled = false }
 diff --git a/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt b/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt
 index 42f6e03..abeac6e 100644
 --- a/ReactAndroid/src/main/java/com/facebook/react/views/textinput/ReactEditText.kt
@@ -139,7 +210,7 @@ index 42f6e03..abeac6e 100644
    }
  
    internal fun setSelectionWatcher(selectionWatcher: SelectionWatcher?) {
-
+diff --git a/settings.gradle.kts b/settings.gradle.kts
 index 283d16b..d4e9d39 100644
 --- a/settings.gradle.kts
 +++ b/settings.gradle.kts
@@ -153,74 +224,3 @@ index 283d16b..d4e9d39 100644
  rootProject.name = "react-native-build-from-source"
  
  include(":packages:react-native:ReactAndroid")
-
-index 69814d8..1cd1345 100644
---- a/ReactAndroid/hermes-engine/build.gradle.kts
-+++ b/ReactAndroid/hermes-engine/build.gradle.kts
-@@ -153,7 +153,8 @@ val configureBuildForHermes by
-       if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-         cmakeCommandLine = cmakeCommandLine + "-GNMake Makefiles"
-       }
--      commandLine(cmakeCommandLine)
-+      // 本地补丁(Windows 无 MSVC):hermesc 源码编译跳过,空转;headers 由 prepareHeadersForPrefab 从源码目录拷贝
-+      commandLine("cmd", "/c", "exit 0")
-       standardOutputFile.set(project.file("$buildDir/configure-hermesc.log"))
-     }
- 
-@@ -163,15 +164,8 @@ val buildHermesC by
-       workingDir(hermesDir)
-       inputs.files(hermesBuildOutputFileTree)
-       outputs.file(hermesCOutputBinary)
--      commandLine(
--          cmakeBinaryPath,
--          "--build",
--          hermesBuildDir.toString(),
--          "--target",
--          "hermesc",
--          "-j",
--          ndkBuildJobs,
--      )
-+      // 本地补丁:hermesc 编译空转(同 configureBuildForHermes)
-+      commandLine("cmd", "/c", "exit 0")
-       standardOutputFile.set(project.file("$buildDir/build-hermesc.log"))
-       errorOutputFile.set(project.file("$buildDir/build-hermesc.error.log"))
-     }
-@@ -264,7 +258,10 @@ android {
-             "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=True",
-             // We intentionally build Hermes with Intl support only. This is to simplify
-             // the build setup and to avoid overcomplicating the build-type matrix.
--            "-DHERMES_ENABLE_INTL=True")
-+            "-DHERMES_ENABLE_INTL=True",
-+            // 本地补丁(Windows):host 工具(hermesc 等)由预编译版提供,不在此交叉编译
-+            "-DHERMES_ENABLE_TOOLS=False",
-+            "-DHERMES_ENABLE_TEST_SUITE=False")
- 
-         targets("libhermes")
-       }
-@@ -377,3 +374,7 @@ apply(from = "../publish.gradle")
- publishing {
-   publications { getByName("release", MavenPublication::class) { artifactId = "hermes-android" } }
- }
-+
-+// 本地补丁(离线):hermes tarball 与解压源码已存在(sdks/download + sdks/hermes),跳过网络下载与解压
-+tasks.named("downloadHermes").configure { enabled = false }
-+tasks.named("unzipHermes").configure { enabled = false }
-
-diff --git a/ReactAndroid/cmake-utils/ReactNative-application.cmake b/ReactAndroid/cmake-utils/ReactNative-application.cmake
---- a/ReactAndroid/cmake-utils/ReactNative-application.cmake
-+++ b/ReactAndroid/cmake-utils/ReactNative-application.cmake
-@@ -32,9 +32,13 @@
- endif(CCACHE_FOUND)
- 
- # If the user toolchain supports IPO, we enable it for the app build
-+# NOTE (Windows): thin LTO + lld cannot resolve VTT/vtable symbols across
-+# shared libraries on Windows (RN 0.81 known issue) - disabled.
-+# (CMAKE_HOST_WIN32, not WIN32: WIN32 reflects the *target*, which is
-+# Android here.)
- include(CheckIPOSupported)
- check_ipo_supported(RESULT IPO_SUPPORT)
--if (IPO_SUPPORT)
-+if (IPO_SUPPORT AND NOT CMAKE_HOST_WIN32)
-   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
- endif()
-
