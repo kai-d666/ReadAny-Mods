@@ -1,6 +1,8 @@
---- a/lighttpd1.4/src/CMakeLists.txt	2026-08-19 07:05:21.960786400 +0800
-+++ b/lighttpd1.4/src/CMakeLists.txt	2026-08-19 07:05:52.113159300 +0800
-@@ -331,9 +331,9 @@
+diff --git a/lighttpd1.4/src/CMakeLists.txt b/lighttpd1.4/src/CMakeLists.txt
+index c677597..b79fdb4 100644
+--- a/lighttpd1.4/src/CMakeLists.txt
++++ b/lighttpd1.4/src/CMakeLists.txt
+@@ -331,9 +331,9 @@ macro(XCONFIG _package _link_FLAGS _cflags)
  		else()
  			execute_process(COMMAND ${XCONFIG_EXECUTABLE} --libs OUTPUT_VARIABLE __link_FLAGS)
  		endif()
@@ -12,7 +14,7 @@
  	else()
  		message(STATUS "found ${_package}: no")
  	endif()
-@@ -567,6 +567,17 @@
+@@ -567,6 +567,17 @@ if(WITH_PCRE2)
  		## if we have pcre2-config, use it
  		xconfig(pcre2-config PCRE_LDFLAGS PCRE_CFLAGS)
  	endif()
@@ -30,7 +32,7 @@
  	if(PCRE_LDFLAGS OR PCRE_CFLAGS)
  		message(STATUS "found pcre2 at: LDFLAGS: ${PCRE_LDFLAGS} CFLAGS: ${PCRE_CFLAGS}")
  
-@@ -578,7 +589,7 @@
+@@ -578,7 +589,7 @@ if(WITH_PCRE2)
  		set(HAVE_PCRE2_H 1)
  		set(HAVE_PCRE 1)
  	else()
@@ -39,11 +41,3 @@
  			check_include_files(pcre2.h HAVE_PCRE2_H)
  			check_library_exists(pcre2-8 pcre2_match_8 "" HAVE_PCRE)
  			set(PCRE_LDFLAGS -lpcre2-8)
-@@ -598,6 +609,7 @@
- 				set(CMAKE_REQUIRED_INCLUDES)
- 				set(CMAKE_REQUIRED_LIBRARIES)
- 				include_directories(${PCRE_INCLUDE_DIR})
-+				set(PCRE_LDFLAGS ${PCRE_LIBRARY})
- 			endif()
- 		endif()
- 	endif()
