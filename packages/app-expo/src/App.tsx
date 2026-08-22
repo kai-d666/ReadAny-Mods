@@ -24,13 +24,14 @@ if (typeof navigator !== "undefined" && !navigator.userAgent) {
 
 import { DarkTheme, DefaultTheme, NavigationContainer } from "@react-navigation/native";
 import * as SplashScreen from "expo-splash-screen";
+import * as NavigationBar from "expo-navigation-bar";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WebView } from "react-native-webview";
 import { LogBox, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimatedSplash } from "@/components/splash/AnimatedSplash";
 import { rnSessionEventSource } from "@/hooks";
@@ -268,6 +269,31 @@ export default function App() {
   );
 }
 
+/** 三键区域背景(跟随主题纯色)+ 三键白色图标(必须在 SafeAreaProvider 内使用) */
+function NavBarScrim() {
+  const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
+  useEffect(() => {
+    // 三键图标按主题对比度:深色底用白键,浅色底用黑键
+    NavigationBar.setButtonStyleAsync(isDark ? "light" : "dark").catch(() => {});
+  }, [isDark]);
+  if (insets.bottom <= 0) return null;
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: insets.bottom,
+        backgroundColor: colors.background,
+        zIndex: 9999,
+      }}
+    />
+  );
+}
+
 function AppInner() {
   const { colors, isDark, mode } = useTheme();
   const loadBooks = useLibraryStore((s) => s.loadBooks);
@@ -316,6 +342,8 @@ function AppInner() {
           </View>
           <UpdateDialog />
           <FloatingTTSBubble />
+          {/* 三键区域 30% 半透明黑背景:edge-to-edge 下系统忽略导航栏背景色,内容层自绘(全局) */}
+          <NavBarScrim />
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>
