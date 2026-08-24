@@ -5,6 +5,10 @@
 <h1 align="center">ReadAny</h1>
 
 <p align="center">
+  📌 本仓库为个人魔改版,改动说明见 <a href="MODS_CN.md">MODS_CN.md</a>
+</p>
+
+<p align="center">
   <strong>本地优先的 AI 电子书阅读器，覆盖桌面端与移动端</strong>
 </p>
 
