@@ -106,6 +106,7 @@ class ReadingContextService {
         surroundingText: partial.surroundingText || "",
         recentHighlights,
         operationType: partial.operationType || "reading",
+        ...(partial.toc ? { toc: partial.toc } : {}),
         timestamp: now,
       };
     } else {
