@@ -28,10 +28,19 @@ export function createGetCurrentChapterTool(bookId: string): ToolDefinition {
         };
       }
 
+      // Resolve chapter title from the context TOC when the relocate event
+      // didn't carry a tocItem label (some books/spines leave it empty).
+      const chapter = context.currentChapter;
+      let title = chapter.title;
+      if (!title && context.toc) {
+        const tocTitle = context.toc.find((item) => item.index === chapter.index)?.title;
+        if (tocTitle) title = tocTitle;
+      }
+
       return {
         bookId,
         bookTitle: book?.meta?.title || context.bookTitle,
-        chapter: context.currentChapter,
+        chapter: { ...chapter, title },
         position: context.currentPosition,
         operationType: context.operationType,
         selectionActive: Boolean(context.selection?.text?.trim()),

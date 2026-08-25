@@ -1626,7 +1626,17 @@
           if (view && msg.cfi) await view.goTo(msg.cfi);
           break;
         case 'search':
-          await handleSearch(msg.query);
+          await handleSearch(msg.query, msg.requestId);
+          break;
+        case 'getChapter':
+          await handleGetChapter(msg.chapterIndex, msg.requestId);
+          break;
+        case 'getToc':
+          if (currentBook && currentBook.toc) {
+            postToRN('tocWithRequest', { requestId: msg.requestId, items: convertTOC(currentBook.toc) });
+          } else {
+            postToRN('tocWithRequest', { requestId: msg.requestId, items: [] });
+          }
           break;
         case 'clearSearch':
           if (view) view.clearSearch();
@@ -1723,6 +1733,7 @@
 
     // ─── Book loading ───
     async function openBook(msg) {
+      postToRN('debug', { message: '[ReaderSearchSession-rdr] openBook cmd received' });
       const container = document.getElementById('reader-container');
       const loading = document.getElementById('loading');
       currentBookIsPdf = isPDFBookMessage(msg);
@@ -1770,9 +1781,11 @@
           if (isZipFormat) {
             try {
               // HEAD request to get file size and check Range support
+              postToRN('debug', { message: '[ReaderFetch] HEAD start ' + msg.uri });
               const headRes = await fetch(msg.uri, { method: 'HEAD' });
               const acceptRanges = headRes.headers.get('Accept-Ranges');
               const contentLength = parseInt(headRes.headers.get('Content-Length'), 10);
+              postToRN('debug', { message: '[ReaderFetch] HEAD done status=' + headRes.status + ' acceptRanges=' + acceptRanges + ' len=' + contentLength });
 
               if (acceptRanges === 'bytes' && contentLength > 0) {
                 // Create a HttpRangeReader compatible with zip.js's ZipReader
@@ -1851,6 +1864,12 @@
         const book = (file && file.sections) ? file : await makeBook(file);
         currentBook = book;
         attachBookTransformHandler(book);
+        postToRN('debug', { message: '[ReaderSearchSession-rdr] makeBook done, sections=' + ((book && book.sections) ? book.sections.length : '-') + ', toc=' + ((book && book.toc) ? book.toc.length : '-') });
+
+        // Book structure parsed (makeBook done) — search-ready signal. RN search
+        // session uses this (not first-page render) so large books open fast.
+        postToRN('bookReady', {});
+        postToRN('debug', { message: '[ReaderSearchSession-rdr] bookReady posted' });
 
         const el = document.createElement('foliate-view');
         readerElement = el;
@@ -2097,7 +2116,7 @@
     }
 
     // ─── Search ───
-    async function handleSearch(query) {
+    async function handleSearch(query, requestId) {
       if (!view || !query) return;
       searchResults = [];
       searchIndex = 0;
@@ -2110,24 +2129,44 @@
           if (result.subitems) {
             totalResults += result.subitems.length;
             for (const sub of result.subitems) {
+              // Attach the chapter index so the search session can map matches
+              // back to chapter titles/indices.
+              if (result.index != null && sub.chapterIndex == null) {
+                sub.chapterIndex = result.index;
+              }
               searchResults.push(sub);
+              // Stream each match as it's found (search session resolves early).
+              if (requestId) {
+                postToRN('searchHit', { requestId, match: sub });
+              }
             }
           } else if (result.cfi) {
             totalResults++;
             searchResults.push(result);
+            if (requestId && result.cfi) {
+              postToRN('searchHit', { requestId, match: result });
+            }
           }
           if (result.progress != null) {
-            postToRN('searchProgress', { progress: result.progress });
+            postToRN('searchProgress', { progress: result.progress, ...(requestId ? { requestId } : {}) });
           }
         }
         postToRN('searchComplete', { count: totalResults });
+        // If the caller asked for the full results (with cfi+excerpt), send them back.
+        if (requestId) {
+          postToRN('searchResultsFull', { requestId, count: totalResults, results: searchResults });
+        }
         // Navigate to first result
         if (searchResults.length > 0) {
           await view.goTo(searchResults[0].cfi);
           postToRN('searchResult', { index: 0, count: totalResults });
         }
       } catch (err) {
-        postToRN('error', { message: 'Search failed: ' + String(err) });
+        if (requestId) {
+          postToRN('searchError', { requestId, error: 'Search failed: ' + String(err) });
+        } else {
+          postToRN('error', { message: 'Search failed: ' + String(err) });
+        }
       }
     }
 
@@ -2139,6 +2178,33 @@
         postToRN('searchResult', { index, count: searchResults.length });
       } catch (err) {
         postToRN('error', { message: 'Navigate search failed: ' + String(err) });
+      }
+    }
+
+    // Single-chapter full text, one section only — never parses the whole book.
+    async function handleGetChapter(chapterIndex, requestId) {
+      if (!currentBook || !requestId) return;
+      try {
+        const sections = currentBook.sections || [];
+        const section = sections[chapterIndex];
+        if (!section || typeof section.createDocument !== 'function') {
+          postToRN('chapterFullText', { requestId, error: 'Section not found' });
+          return;
+        }
+        // Cap the per-section read — a hung/unusable section must fail fast
+        // instead of blocking the tool's timeout.
+        const doc = await Promise.race([
+          section.createDocument(),
+          new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        if (!doc?.body) {
+          postToRN('chapterFullText', { requestId, error: 'No document body' });
+          return;
+        }
+        const text = (doc.body.innerText || '').replace(/\s+/g, ' ').trim();
+        postToRN('chapterFullText', { requestId, content: text });
+      } catch (err) {
+        postToRN('chapterFullText', { requestId, error: String(err) });
       }
     }
 
@@ -3256,6 +3322,8 @@ a { color: ${primary} !important; }
           title: item.label || 'Chapter ' + (i + 1),
           level: level,
           href: item.href,
+          // foliate toc items carry the section index; keep it for the search session
+          index: item.index != null ? item.index : undefined,
           subitems: item.subitems && item.subitems.length > 0
             ? convertTOC(item.subitems, level + 1)
             : undefined,

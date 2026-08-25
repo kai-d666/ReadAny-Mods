@@ -55,6 +55,7 @@ import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { UpdateDialog } from "@/components/update/UpdateDialog";
 import { useUpdateChecker } from "@/hooks/use-update-checker";
 import { navigationRef } from "@/lib/navigationRef";
+import { ReaderSearchSession } from "@/lib/rag/reader-search-session";
 import { preloadReaderHtmlAsset } from "@/lib/reader/reader-html-asset";
 import { ExpoPlatformService } from "@/lib/platform/expo-platform-service";
 import { subscribeRagSearchConfiguration } from "@/lib/rag/configure-search";
@@ -342,6 +343,10 @@ function AppInner() {
           </View>
           <UpdateDialog />
           <FloatingTTSBubble />
+          {/* 单常驻阅读器会话(隐藏 WebView,fallback 工具后端)——挂在 App 级
+              保证永不卸载;若挂在 LibraryScreen,tab 切换/screen detach 会卸载
+              WebView → fallback 工具的命令注入到死 WebView → 15s 超时 */}
+          <ReaderSearchSession />
           {/* 三键区域 30% 半透明黑背景:edge-to-edge 下系统忽略导航栏背景色,内容层自绘(全局) */}
           <NavBarScrim />
         </SafeAreaProvider>

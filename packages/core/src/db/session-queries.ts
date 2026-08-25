@@ -59,8 +59,10 @@ export async function insertReadingSession(session: ReadingSession): Promise<voi
   const now = Date.now();
   const deviceId = await getDeviceId();
   const syncVersion = await nextSyncVersion(database, "reading_sessions");
+  // UPSERT: a session can be re-saved (e.g. saveCurrentSession racing stopSession)
+  // with the same id — id is the PK. Conflict → update instead of failing.
   await database.execute(
-    "INSERT INTO reading_sessions (id, book_id, started_at, ended_at, total_active_time, pages_read, characters_read, state, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO reading_sessions (id, book_id, started_at, ended_at, total_active_time, pages_read, characters_read, state, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ended_at = excluded.ended_at, total_active_time = excluded.total_active_time, pages_read = excluded.pages_read, characters_read = excluded.characters_read, state = excluded.state, updated_at = excluded.updated_at, sync_version = excluded.sync_version, last_modified_by = excluded.last_modified_by",
     [
       session.id,
       session.bookId,

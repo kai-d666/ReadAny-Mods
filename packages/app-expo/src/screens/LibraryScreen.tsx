@@ -2,6 +2,7 @@ import { BookCard } from "@/components/library/BookCard";
 import { GroupCard } from "@/components/library/GroupCard";
 import { GroupPickerSheet } from "@/components/library/GroupPickerSheet";
 import { type ExtractorRef, ExtractorWebView } from "@/components/rag/ExtractorWebView";
+import { resetReaderSearchBookRegistry } from "@/lib/rag/reader-search-session";
 import {
   ArrowDownAZIcon,
   ArrowUpAZIcon,
@@ -43,7 +44,7 @@ import {
   type WebDavImportSource,
   getPlatformService,
 } from "@readany/core";
-import { setFallbackContentProvider } from "@readany/core/ai";
+import { setBookContentSearchProvider, setFallbackContentProvider } from "@readany/core/ai";
 import { onLibraryChanged } from "@readany/core/events/library-events";
 import { useSyncStore } from "@readany/core/stores";
 import { SYNC_SECRET_KEYS } from "@readany/core/sync/sync-backend";
@@ -306,12 +307,22 @@ export function LibraryScreen() {
       setExtractorRef(null);
       setFallbackContentProvider(null);
       setCallback(null);
+      setBookContentSearchProvider(null);
     };
   }, []);
 
   useEffect(() => {
     return onLibraryChanged((deletedTags) => loadBooks(deletedTags));
   }, [loadBooks]);
+
+  // Keep the reader-search session's book registry in sync with the library.
+  useEffect(() => {
+    resetReaderSearchBookRegistry(
+      books
+        .filter((b) => !b.deletedAt)
+        .map((b) => ({ id: b.id, filePath: b.filePath, format: b.format })),
+    );
+  }, [books]);
 
   const filteredBooks = useMemo(() => {
     let result = [...books];

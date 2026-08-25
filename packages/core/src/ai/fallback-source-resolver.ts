@@ -1,10 +1,10 @@
 import { getBook } from "../db/database";
 import {
+  getBookContentSearchProvider,
   type FallbackChapter,
   type FallbackTextSegment,
   fallbackContentService,
 } from "./fallback-content-service";
-
 export interface FallbackChaptersResult {
   bookTitle: string;
   chapters: FallbackChapter[];
@@ -135,19 +135,54 @@ export async function resolveFallbackCitationSource(args: {
   quotedText: string;
   preferredCfi?: string;
 }): Promise<ResolvedFallbackSource | null> {
-  const data = await getFallbackChaptersForBook(args.bookId);
-  if ("error" in data) return null;
+  // Mobile: reader session (single chapter read, 5s cap). The old full-book
+  // extraction is REMOVED on mobile — it hit the 45s wall and blocked the tool.
+  const provider = getBookContentSearchProvider();
+  if (!provider) {
+    // Desktop (no provider registered): keep the old local extraction.
+    const data = await getFallbackChaptersForBook(args.bookId);
+    if ("error" in data) return null;
 
-  const chapter = data.chapters.find((item) => item.index === args.chapterIndex);
-  if (!chapter) return null;
+    const chapter = data.chapters.find((item) => item.index === args.chapterIndex);
+    if (!chapter) return null;
 
-  const segment = findFallbackSegmentByQuote(chapter, args.quotedText, args.preferredCfi);
-  if (!segment?.cfi) return null;
+    const segment = findFallbackSegmentByQuote(chapter, args.quotedText, args.preferredCfi);
+    if (!segment?.cfi) return null;
 
-  return {
-    chapterTitle: chapter.title,
-    chapterIndex: chapter.index,
-    text: segment.text,
-    cfi: segment.cfi,
-  };
+    return {
+      chapterTitle: chapter.title,
+      chapterIndex: chapter.index,
+      text: segment.text,
+      cfi: segment.cfi,
+    };
+  }
+
+  try {
+    const chapter = await Promise.race([
+      provider.getChapter(args.bookId, args.chapterIndex),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ]);
+    if (!chapter?.content) return null;
+    const quoteAt = args.quotedText ? chapter.content.indexOf(args.quotedText.trim()) : -1;
+    if (quoteAt >= 0) {
+      return {
+        chapterTitle: chapter.chapterTitle,
+        chapterIndex: args.chapterIndex,
+        text: chapter.content.slice(Math.max(0, quoteAt - 80), quoteAt + args.quotedText.length + 80),
+        cfi: args.preferredCfi || "",
+      };
+    }
+    if (args.preferredCfi) {
+      return {
+        chapterTitle: chapter.chapterTitle,
+        chapterIndex: args.chapterIndex,
+        text: chapter.content.slice(0, 200),
+        cfi: args.preferredCfi,
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn("[resolveFallbackCitationSource] provider failed, returning null:", err);
+    return null;
+  }
 }

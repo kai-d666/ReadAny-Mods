@@ -16,6 +16,53 @@ export interface FallbackContentProvider {
   getChapters(book: Book): Promise<FallbackChapter[]>;
 }
 
+/**
+ * Book content search provider — registered per platform (mobile: single resident
+ * reader session using foliate incremental search; desktop: stays on
+ * FallbackContentProvider / local extraction). fallback* tools prefer this
+ * provider when registered; otherwise they fall back to getFallbackChaptersForBook.
+ *
+ * Unlike FallbackContentProvider (full-book chapter extraction), these are
+ * incremental/on-demand queries that never parse the whole book at once.
+ */
+export interface BookContentSearchProvider {
+  /** Search the book inside the loaded reader session. Returns cfi+excerpt matches. */
+  searchBookContent(
+    bookId: string,
+    query: string,
+    opts: { topK: number },
+  ): Promise<BookContentSearchResult>;
+  /** Full text of one chapter from the loaded reader session. */
+  getChapter(bookId: string, chapterIndex: number): Promise<{ chapterTitle: string; content: string }>;
+  /** Chapter list (TOC) — parsed by the reader when the book is opened. */
+  getToc(bookId: string): Promise<{ index: number; title: string }[]>;
+}
+
+export interface BookContentSearchMatch {
+  cfi: string;
+  pre?: string;
+  match?: string;
+  post?: string;
+  chapterTitle?: string;
+  chapterIndex?: number;
+}
+export interface BookContentSearchResult {
+  query: string;
+  matches: BookContentSearchMatch[];
+  totalMatches: number;
+  searchDurationMs: number;
+}
+
+let bookContentSearchProvider: BookContentSearchProvider | null = null;
+
+export function setBookContentSearchProvider(provider: BookContentSearchProvider | null): void {
+  bookContentSearchProvider = provider;
+}
+
+export function getBookContentSearchProvider(): BookContentSearchProvider | null {
+  return bookContentSearchProvider;
+}
+
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 8;
 const PROVIDER_TIMEOUT_MS = 45_000;

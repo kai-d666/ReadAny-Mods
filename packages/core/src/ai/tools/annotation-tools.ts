@@ -175,6 +175,23 @@ export function createAddCitationTool(bookId: string): ToolDefinition {
       }
 
       if (!hasIndexedChapterChunks && !chunkLookupFailed) {
+        // Non-vectorized book, but the AI already has a precise CFI from the
+        // reader session (foliate search produces exact Range-based CFIs).
+        // Trust it directly — re-verifying via chapter index often fails on
+        // these books and would downgrade a clickable citation to plain text.
+        if (aiCfi) {
+          return {
+            type: "citation",
+            bookId,
+            chapterTitle,
+            chapterIndex,
+            cfi: aiCfi,
+            text: quotedText,
+            citationIndex,
+            timestamp: Date.now(),
+            message: `Citation [${citationIndex}] registered: "${chapterTitle}" - Reference this in your response as [${citationIndex}].`,
+          };
+        }
         try {
           const fallbackSource = await resolveFallbackCitationSource({
             bookId,

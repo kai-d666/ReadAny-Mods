@@ -800,12 +800,17 @@ export function ReaderScreen({ route, navigation }: Props) {
       }
 
       // Sync reading context for AI tools
+      const tocIndex = detail.section?.current ?? 0;
+      const tocTitle =
+        detail.tocItem?.label ||
+        toc.find((item) => item.index === tocIndex)?.title ||
+        "";
       readingContextService.updateContext({
         bookId,
         bookTitle: book?.meta?.title || "",
         currentChapter: {
-          index: detail.section?.current ?? 0,
-          title: detail.tocItem?.label || "",
+          index: tocIndex,
+          title: tocTitle,
           href: detail.tocItem?.href || "",
         },
         currentPosition: {
@@ -816,6 +821,21 @@ export function ReaderScreen({ route, navigation }: Props) {
     },
     onTocReady: (items: TOCItem[]) => {
       setToc(items);
+      // Feed TOC to the reading context so AI tools can resolve chapter titles
+      // even when relocate events don't carry a tocItem label.
+      const flatToc: Array<{ index: number; title: string; href?: string }> = [];
+      const walk = (list: TOCItem[]) => {
+        for (const item of list) {
+          flatToc.push({
+            index: item.index ?? flatToc.length,
+            title: item.title,
+            ...(item.href ? { href: item.href } : {}),
+          });
+          if (item.subitems?.length) walk(item.subitems);
+        }
+      };
+      walk(items);
+      readingContextService.updateContext({ toc: flatToc as never });
     },
     onSelection: (detail: SelectionEvent) => {
       setSelection(detail);

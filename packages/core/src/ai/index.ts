@@ -39,7 +39,12 @@ export { readingContextService, getReadingContextSnapshot } from "./reading-cont
 export {
   fallbackContentService,
   setFallbackContentProvider,
+  setBookContentSearchProvider,
+  getBookContentSearchProvider,
   type FallbackChapter,
   type FallbackContentProvider,
   type FallbackTextSegment,
+  type BookContentSearchProvider,
+  type BookContentSearchResult,
+  type BookContentSearchMatch,
 } from "./fallback-content-service";

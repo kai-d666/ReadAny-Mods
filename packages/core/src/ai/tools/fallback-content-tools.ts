@@ -1,5 +1,6 @@
 import { estimateTokens } from "../../rag/chunker";
 import type { FallbackChapter } from "../fallback-content-service";
+import { getBookContentSearchProvider } from "../fallback-content-service";
 import {
   buildFallbackSnippet,
   findFallbackSegmentByTerms,
@@ -50,6 +51,20 @@ function findSnippet(chapter: FallbackChapter, terms: string[]): string {
   return content.slice(start, start + 900);
 }
 
+/** Build a display snippet from a reader-search match's pre/match/post excerpt. */
+function buildMatchSnippet(match: {
+  cfi?: string;
+  pre?: string;
+  match?: string;
+  post?: string;
+}): string {
+  const pre = (match.pre ?? "").replace(/\s+/g, " ").trim();
+  const m = (match.match ?? "").replace(/\s+/g, " ").trim();
+  const post = (match.post ?? "").replace(/\s+/g, " ").trim();
+  if (!pre && !m && !post) return "";
+  return [pre, m ? `「${m}」` : "", post].filter(Boolean).join(" ");
+}
+
 export function createFallbackTocTool(bookId: string): ToolDefinition {
   return {
     name: "fallbackToc",
@@ -78,14 +93,32 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
       },
     },
     execute: async (args) => {
-      const data = await getFallbackChaptersForBook(bookId);
-      if ("error" in data) return data;
+      // Prefer the platform search provider (mobile: TOC parsed by the reader on
+      // openBook — no full-book extraction).
+      const searchProvider = getBookContentSearchProvider();
+      let chapters: { index: number; title: string; content: string }[] | null = null;
+      let bookTitle = "";
+      if (searchProvider) {
+        try {
+          const toc = await searchProvider.getToc(bookId);
+          chapters = toc.map((item) => ({ index: item.index, title: item.title, content: "" }));
+          bookTitle = "";
+        } catch (err) {
+          console.warn(`[fallbackToc] provider failed for book ${bookId}:`, err);
+        }
+      }
 
-      let chapters = data.chapters.map((chapter) => ({
-        index: chapter.index,
-        title: chapter.title,
-        content: chapter.content,
-      }));
+      if (!chapters) {
+        const data = await getFallbackChaptersForBook(bookId);
+        if ("error" in data) return data;
+        bookTitle = data.bookTitle;
+        chapters = data.chapters.map((chapter) => ({
+          index: chapter.index,
+          title: chapter.title,
+          content: chapter.content,
+        }));
+      }
+
       const query = String(args.query || "").trim();
       const aroundChapter =
         typeof args.aroundChapter === "number" ? Number(args.aroundChapter) : undefined;
@@ -108,7 +141,7 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
 
       const pagedChapters = chapters.slice(offset, offset + limit);
       return {
-        bookTitle: data.bookTitle,
+        bookTitle,
         chapters: pagedChapters.map((chapter) => ({
           index: chapter.index,
           title: chapter.title,
@@ -116,7 +149,7 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
             ? { preview: chapter.content.replace(/\s+/g, " ").trim().slice(0, 180) }
             : {}),
         })),
-        totalChapters: data.chapters.length,
+        totalChapters: chapters.length,
         matchedChapters: chapters.length,
         returned: pagedChapters.length,
         offset,
@@ -176,11 +209,42 @@ export function createFallbackSearchTool(bookId: string): ToolDefinition {
       topK: { type: "number", description: "Number of chapters/snippets to return (default: 5)" },
     },
     execute: async (args) => {
+      const query = String(args.query || "").trim();
+      if (!query) return { error: "Query is empty" };
+      const topK = Math.max(1, Math.min(10, Number(args.topK) || 5));
+
+      // Prefer the platform search provider (mobile: resident reader session via
+      // foliate incremental search — no full-book extraction, no 45s timeout).
+      const searchProvider = getBookContentSearchProvider();
+      if (searchProvider) {
+        try {
+          const result = await searchProvider.searchBookContent(bookId, query, { topK });
+          const results = result.matches.slice(0, topK).map((match) => ({
+            chapterTitle: match.chapterTitle ?? "",
+            chapterIndex: match.chapterIndex ?? 0,
+            content: buildMatchSnippet(match),
+            score: 0,
+            ...(match.cfi ? { cfi: match.cfi, cfiPrecision: "segment" as const } : {}),
+          }));
+          return {
+            query,
+            results,
+            totalResults: result.totalMatches,
+            returnedResults: results.length,
+            totalTokens: results.reduce((sum, r) => sum + estimateTokens(r.content), 0),
+            tokenBudget: SEARCH_TOKEN_BUDGET,
+            instruction:
+              "These are keyword fallback results from the original file, not semantic vector results. If a result has a non-empty cfi, you may call addCitation with that exact cfi and quotedText. If no cfi is present, cite chapterTitle/chapterIndex in plain text.",
+          };
+        } catch (err) {
+          // Provider failure → fall through to the original-file path below.
+          console.warn(`[fallbackSearch] provider failed for book ${bookId}:`, err);
+        }
+      }
+
       const data = await getFallbackChaptersForBook(bookId);
       if ("error" in data) return data;
 
-      const query = String(args.query || "").trim();
-      const topK = Math.max(1, Math.min(10, Number(args.topK) || 5));
       const terms = normalize(query)
         .split(/[\s,，。.!?;；:：、]+/)
         .filter(Boolean);
@@ -249,10 +313,49 @@ export function createFallbackChapterContextTool(bookId: string): ToolDefinition
       },
     },
     execute: async (args) => {
+      const chapterIndex = Number(args.chapterIndex);
+
+      // Prefer the platform search provider (mobile: resident reader session —
+      // single-chapter read, no full-book extraction).
+      const searchProvider = getBookContentSearchProvider();
+      if (searchProvider) {
+        try {
+          const chapter = await searchProvider.getChapter(bookId, chapterIndex);
+          const tokens = estimateTokens(chapter.content);
+          const content =
+            tokens > CHAPTER_TOKEN_BUDGET
+              ? chapter.content.slice(0, CHAPTER_TOKEN_BUDGET * 4)
+              : chapter.content;
+          const sourceRefs = content
+            ? [
+                {
+                  id: `${chapterIndex}-0`,
+                  excerpt: content.slice(0, 180),
+                  chapterTitle: chapter.chapterTitle,
+                  chapterIndex,
+                },
+              ]
+            : [];
+          return {
+            chapterTitle: chapter.chapterTitle,
+            chapterIndex,
+            content,
+            sourceRefs,
+            totalTokens: Math.min(tokens, CHAPTER_TOKEN_BUDGET),
+            tokenBudget: CHAPTER_TOKEN_BUDGET,
+            truncated: estimateTokens(chapter.content) > CHAPTER_TOKEN_BUDGET,
+            instruction:
+              "Summarize or analyze this chapter using only the returned content. If the specific chunk you cite has a non-empty cfi, you may call addCitation with that exact cfi and quotedText. If no cfi is present, cite chapterTitle/chapterIndex in plain text.",
+          };
+        } catch (err) {
+          // Provider failure → fall through to the original-file path below.
+          console.warn(`[fallbackChapterContext] provider failed for book ${bookId}:`, err);
+        }
+      }
+
       const data = await getFallbackChaptersForBook(bookId);
       if ("error" in data) return data;
 
-      const chapterIndex = Number(args.chapterIndex);
       const chapter = data.chapters.find((item) => item.index === chapterIndex);
       if (!chapter) return { error: `Chapter ${chapterIndex} not found` };
 
