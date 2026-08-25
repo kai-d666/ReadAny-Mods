@@ -14,11 +14,12 @@ import { estimateTokens } from "../../rag/chunker";
  * 4. Real streaming via streamEvents API
  * 5. System prompt from system-prompt.ts
  */
-import type { AIConfig, Book, SemanticContext, Skill } from "../../types";
+import type { AIChatMode, AIConfig, Book, SemanticContext, Skill } from "../../types";
 import { createChatModel } from "../llm-provider";
 import { getReadingContextSnapshot } from "../reading-context-service";
-import { buildSystemPrompt } from "../system-prompt";
+import { buildFastSystemPrompt, buildSystemPrompt } from "../system-prompt";
 import { ThinkTagStreamParser } from "../think-tag-parser";
+import { LITE_DEFAULT_TOOLS, LITE_FORBIDDEN_TOOLS } from "../tools";
 import type { ToolDefinition, ToolParameter } from "../tools/tool-types";
 
 const CHAPTER_REFERENCE_RE =
@@ -30,6 +31,9 @@ const CHAPTER_TASK_RECURSION_LIMIT = 24;
 const DEFAULT_TOOL_TIMEOUT_MS = 45_000;
 const TOOL_EXECUTION_LIMIT = 12;
 const REPEATED_TOOL_CALL_LIMIT = 2;
+/** Lite mode: bounded recursion — enough for a normal tool round-trip chain
+ *  (e.g. toc → chapter → answer) without hitting the full standard 24. */
+const LITE_RECURSION_LIMIT = 16;
 const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   getSelection: 5_000,
   getCurrentChapter: 5_000,
@@ -46,9 +50,9 @@ const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   analyzeArguments: 35_000,
   findQuotes: 35_000,
   compareSections: 35_000,
-  fallbackSearch: 60_000,
-  fallbackToc: 45_000,
-  fallbackChapterContext: 60_000,
+  fallbackSearch: 30_000,
+  fallbackToc: 30_000,
+  fallbackChapterContext: 30_000,
   classifyBooks: 60_000,
   tagBooks: 30_000,
   manageBookTags: 30_000,
@@ -279,8 +283,11 @@ function detectQuestionCategory(options: {
   if (hasExplicitCurrentPageCue || (asksForImmediateExplanation && hasExplicitCurrentPageCue)) {
     return "current_page_context";
   }
-  if (CHAPTER_REFERENCE_RE.test(text)) return "specific_chapter_request";
+  // "当前/这一章/本章" cues take priority over a bare chapter-number reference —
+  // "总结当前章节" should get current-context tools (incl. getCurrentChapter),
+  // not the narrow specific_chapter_request set that omits them.
   if (hasExplicitCurrentChapterCue) return "current_chapter_context";
+  if (CHAPTER_REFERENCE_RE.test(text)) return "specific_chapter_request";
   if (BOOK_CONTENT_RE.test(text)) return "book_wide_search";
   return "book_wide_search";
 }
@@ -584,6 +591,10 @@ export interface ReadingAgentOptions {
   deepThinking?: boolean;
   spoilerFree?: boolean;
   memorySummary?: string;
+  /** Lite-mode flag: fast direct-chat path (no routing, limited toolset). */
+  chatMode?: AIChatMode;
+  /** Lite-mode customizable tool whitelist; undefined → LITE_DEFAULT_TOOLS. */
+  liteToolIds?: string[];
   /** Injected tool provider — returns available tools for the agent */
   getAvailableTools: (options: {
     bookId: string | null;
@@ -819,7 +830,11 @@ export async function* streamReadingAgent(
     getAvailableTools,
     signal,
     toolTimeoutMs = DEFAULT_TOOL_TIMEOUT_MS,
+    chatMode = "standard",
+    liteToolIds,
   } = options;
+
+  const isLite = chatMode === "lite";
 
   // Helper to check if aborted
   const isAborted = () => signal?.aborted ?? false;
@@ -869,15 +884,37 @@ export async function* streamReadingAgent(
     if (isAborted()) return;
 
     // Register tools via injected getAvailableTools, then narrow obvious chapter tasks.
-    const tools = filterToolsForQuestion({
-      tools: getAvailableTools({
-        bookId: effectiveBookId,
-        isVectorized,
-        enabledSkills,
-      }),
-      category: questionCategory,
+    // Lite mode: whitelist only (default LITE_DEFAULT_TOOLS or user liteToolIds);
+    // forbidden RAG/analysis tools are stripped regardless of user config.
+    const liteWhitelist = new Set(
+      (liteToolIds && liteToolIds.length > 0 ? liteToolIds : LITE_DEFAULT_TOOLS).filter(
+        (name) => !LITE_FORBIDDEN_TOOLS.has(name),
+      ),
+    );
+    const allAvailable = getAvailableTools({
+      bookId: effectiveBookId,
       isVectorized,
+      enabledSkills: isLite ? [] : enabledSkills,
     });
+    console.log(
+      "[ReadingAgent] lite-diag",
+      JSON.stringify({
+        isLite,
+        chatMode,
+        isVectorized,
+        liteToolIds: liteToolIds ?? null,
+        liteWhitelist: [...liteWhitelist],
+        allAvailableNames: allAvailable.map((t) => t.name),
+        bookId: effectiveBookId,
+      }),
+    );
+    const tools = isLite
+      ? allAvailable.filter((tool) => liteWhitelist.has(tool.name))
+      : filterToolsForQuestion({
+          tools: allAvailable,
+          category: questionCategory,
+          isVectorized,
+        });
     console.log(
       "[ReadingAgent] tools",
       JSON.stringify({
@@ -888,20 +925,33 @@ export async function* streamReadingAgent(
     );
 
     // Build system prompt
-    const systemPrompt = buildSystemPrompt({
-      book,
-      bookId: effectiveBookId,
-      semanticContext,
-      enabledSkills,
-      isVectorized,
-      userLanguage: i18n.language || "en",
-      spoilerFree,
-      memorySummary,
-      questionCategory,
-      selectionActive,
-      routeHint: buildRouteHint(questionCategory, selectionActive, isVectorized),
-      allowedToolNames: tools.map((tool) => tool.name),
-    });
+    const systemPrompt = isLite
+      ? buildFastSystemPrompt({
+          book,
+          bookId: effectiveBookId,
+          semanticContext,
+          enabledSkills: [], // skills excluded in lite mode
+          isVectorized,
+          userLanguage: i18n.language || "en",
+          spoilerFree,
+          memorySummary,
+          selectionText: readingContextSnapshot?.selection?.text || "",
+          allowedToolNames: tools.map((tool) => tool.name),
+        })
+      : buildSystemPrompt({
+          book,
+          bookId: effectiveBookId,
+          semanticContext,
+          enabledSkills,
+          isVectorized,
+          userLanguage: i18n.language || "en",
+          spoilerFree,
+          memorySummary,
+          questionCategory,
+          selectionActive,
+          routeHint: buildRouteHint(questionCategory, selectionActive, isVectorized),
+          allowedToolNames: tools.map((tool) => tool.name),
+        });
 
     // Build input messages (history + user input, without system — handled by agent prompt)
     // For DeepSeek reasoner, we must include reasoning_content in assistant messages
@@ -1126,9 +1176,11 @@ export async function* streamReadingAgent(
       { messages: inputMessages },
       {
         version: "v2",
-        recursionLimit: isChapterTask
-          ? CHAPTER_TASK_RECURSION_LIMIT
-          : getRecursionLimitForCategory(questionCategory),
+        recursionLimit: isLite
+          ? LITE_RECURSION_LIMIT
+          : isChapterTask
+            ? CHAPTER_TASK_RECURSION_LIMIT
+            : getRecursionLimitForCategory(questionCategory),
       },
     );
 

@@ -53,6 +53,46 @@ import type { ToolDefinition } from "./tool-types";
 export type { ToolDefinition, ToolParameter } from "./tool-types";
 export { getContextTools } from "./context-tools";
 
+/**
+ * Lite-mode default tool whitelist — all tools here are "no vectorization
+ * required + millisecond direct read / keyword search":
+ *  - Context (5): current reading position
+ *  - Fallback (4): keyword search for non-vectorized books
+ *  - General (1): mindmap
+ * RAG/analysis tools are intentionally excluded (heavy, vectorization-dependent).
+ */
+export const LITE_DEFAULT_TOOLS = [
+  "getCurrentChapter",
+  "getSelection",
+  "getSurroundingContext",
+  "getReadingProgress",
+  "getRecentHighlights",
+  // Both retrieval families are allowed: the active one depends on isVectorized —
+  // vectorized books get rag* (seconds, CFI-carrying), non-vectorized get fallback*.
+  "ragSearch",
+  "ragToc",
+  "ragContext",
+  "fallbackSearch",
+  "fallbackToc",
+  "fallbackChapterContext",
+  "resolveChapterReference",
+  "mindmap",
+];
+
+/**
+ * Named tools lite mode must never expose, regardless of user config.
+ * Only heavyweight analysis tools — basic retrieval stays available:
+ * - Vectorized books: ragSearch/ragToc/ragContext (fast, CFI-carrying, seconds)
+ * - Non-vectorized books: fallbackSearch/fallbackToc/fallbackChapterContext
+ */
+export const LITE_FORBIDDEN_TOOLS = new Set([
+  "summarize",
+  "extractEntities",
+  "analyzeArguments",
+  "findQuotes",
+  "compareSections",
+]);
+
 /** Get general (non-book-specific) tools */
 function getGeneralTools(): ToolDefinition[] {
   return [

@@ -117,5 +117,9 @@
   "mermaid": {
     "title": "Mermaid diagram",
     "hint": "Double-tap to zoom · scroll to zoom · drag to pan"
-  }
+  },
+  "chatMode": "Chat mode",
+  "chatModeStandard": "Standard (full)",
+  "chatModeLite": "Lite",
+  "chatModeLiteHint": "Fast direct mode: quicker responses, best for current-chapter Q&A and summaries"
 }

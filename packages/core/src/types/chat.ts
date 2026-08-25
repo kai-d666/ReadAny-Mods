@@ -111,6 +111,9 @@ export interface ReadingContext {
     note?: string;
   }>;
   operationType: "reading" | "highlighting" | "searching" | "navigating" | "selecting";
+  /** TOC captured when the reader publishes it — lets AI tools resolve chapter titles
+   *  when the relocate event doesn't carry a tocItem label. */
+  toc?: Array<{ index: number; title: string; href?: string }>;
   timestamp: number;
 }
 
@@ -168,7 +171,13 @@ export interface AIConfig {
   slidingWindowSize: number;
   /** "Spoiler-free" toggle per chat context (general chat vs in-book chat), persisted. */
   spoilerFree: { general: boolean; book: boolean };
+  /** Chat pipeline mode: "standard" (routing + full toolset) or "lite" (fast direct chat). */
+  chatMode?: AIChatMode;
+  /** Lite-mode custom tool whitelist; undefined → LITE_DEFAULT_TOOLS. */
+  liteToolIds?: string[];
 }
+
+export type AIChatMode = "standard" | "lite";
 
 export type AIModel = string;
 

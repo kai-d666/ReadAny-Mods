@@ -32,6 +32,8 @@ interface PromptContext {
   selectionActive?: boolean;
   routeHint?: string;
   allowedToolNames?: string[];
+  /** Text currently selected in the reader (from ReadingContext snapshot — not on SemanticContext). */
+  selectionText?: string;
 }
 
 /** Build the full system prompt from context */
@@ -662,6 +664,105 @@ function buildConstraintsSection(
     lines.push("- The reader's own highlights and notes");
     lines.push(
       "- Factual/contextual information that isn't from the book itself (historical background, etc.)",
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Lite-mode system prompt — fast direct-chat variant.
+ * Keeps only: role, book metadata, reading-context snapshot, memory, spoiler-free.
+ * No routing, no RAG/analysis tool catalogs, no workflow/citation sections.
+ */
+export function buildFastSystemPrompt(ctx: PromptContext): string {
+  const sections: string[] = [
+    buildRoleSection(),
+    buildBookContextSection(ctx.book),
+    buildMemorySection(ctx.memorySummary),
+    buildLiteSemanticSection(ctx.semanticContext, ctx.selectionText),
+    buildLiteToolsSection(ctx.allowedToolNames),
+    buildLiteConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book),
+  ];
+
+  return sections.filter(Boolean).join("\n\n---\n\n");
+}
+
+function buildLiteSemanticSection(
+  ctx: SemanticContext | null,
+  selectionText?: string,
+): string {
+  if (!ctx) return selectionText ? `## Reading Context\n- Selected Text:\n> ${compactText(selectionText, 2000)}` : "";
+  const lines = [
+    "## Reading Context",
+    `- Current Chapter: ${ctx.currentChapter}`,
+    `- Reader Activity: ${ctx.operationType}`,
+  ];
+  // Lite gives the current chapter/selection directly in the prompt (no tool round-trip
+  // for the common "what am I reading" case); allow up to 2000 chars.
+  if (selectionText?.trim()) {
+    lines.push(`- Selected Text:\n> ${compactText(selectionText, 2000)}`);
+  }
+  if (ctx.surroundingText) {
+    lines.push(`- Surrounding Text:\n> ${compactText(ctx.surroundingText, 2000)}`);
+  }
+  if (ctx.recentHighlights.length > 0) {
+    lines.push(
+      `- Recent Highlights:\n${ctx.recentHighlights
+        .slice(0, 3)
+        .map((h) => `  > ${compactText(h, 120)}`)
+        .join("\n")}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function buildLiteToolsSection(allowedToolNames?: string[]): string {
+  if (!allowedToolNames || allowedToolNames.length === 0) {
+    return "## Available Tools\n- No tools are available. Answer directly.";
+  }
+  return [
+    "## Available Tools",
+    "- Only these lightweight tools are callable (direct reads / keyword search — no semantic retrieval):",
+    ...allowedToolNames.map((name) => `- **${name}**`),
+  ].join("\n");
+}
+
+function buildLiteConstraintsSection(
+  language: string,
+  spoilerFree?: boolean,
+  book?: Book | null,
+): string {
+  const lines = [
+    "## Response Guidelines",
+    `- **IMPORTANT: You MUST respond in ${language || "English"}. This is non-negotiable regardless of the book's language.**`,
+    "- Use the tools (if any) only to retrieve content you don't already have from the context above.",
+    "- **NEVER fabricate** quotes, chapter content, or details from your own knowledge. If you cannot retrieve the content, tell the user honestly.",
+    "- Keep responses concise unless the user asks for detailed analysis.",
+    "- Use markdown formatting for readability.",
+  ];
+
+  if (spoilerFree && book) {
+    const progress = getBookProgressPercent(book.progress);
+    lines.push("");
+    lines.push("### Spoiler-Free Mode (ACTIVE)");
+    lines.push(
+      `The reader is currently at **${progress}%** of the book. Everything after this position is FUTURE CONTENT and must be protected.`,
+    );
+    lines.push(
+      "1. **NEVER reveal** plot events, character fates, twists, deaths, relationships, or any narrative developments that occur after the reader's current position.",
+    );
+    lines.push(
+      "2. **NEVER use the fallback tools to retrieve content from chapters beyond the current reading position.**",
+    );
+    lines.push(
+      '3. **If the user explicitly asks about later content**, politely decline and suggest they keep reading.',
+    );
+    lines.push(
+      "4. **When uncertain**, err on the side of caution — refuse rather than risk revealing future content.",
+    );
+    lines.push(
+      "- Content up to the current chapter (inclusive) can still be discussed freely.",
     );
   }
 

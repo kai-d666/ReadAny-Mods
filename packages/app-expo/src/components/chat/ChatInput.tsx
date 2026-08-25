@@ -3,6 +3,7 @@ import {
   ChevronDownIcon,
   EyeOffIcon,
   SendIcon,
+  SparklesIcon,
   StopCircleIcon,
   XIcon,
 } from "@/components/ui/Icon";
@@ -87,12 +88,17 @@ export function ChatInput({
   const aiConfig = useSettingsStore((st) => st.aiConfig);
   const updateAIConfig = useSettingsStore((st) => st.updateAIConfig);
   const spoilerFree = aiConfig.spoilerFree[variant];
+  const chatMode = aiConfig.chatMode ?? "standard";
 
   const handleToggleSpoilerFree = useCallback(() => {
     updateAIConfig({
       spoilerFree: { ...aiConfig.spoilerFree, [variant]: !aiConfig.spoilerFree[variant] },
     });
   }, [aiConfig.spoilerFree, variant, updateAIConfig]);
+
+  const handleToggleChatMode = useCallback(() => {
+    updateAIConfig({ chatMode: chatMode === "lite" ? "standard" : "lite" });
+  }, [chatMode, updateAIConfig]);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -183,9 +189,24 @@ export function ChatInput({
           editable={!isStreaming}
         />
 
-        {/* Action bar: deep thinking toggle + spoiler-free toggle + send */}
+        {/* Action bar: chat mode toggle + deep thinking toggle + spoiler-free toggle + send */}
         <View style={s.actionBar}>
           <View style={s.toggleRow}>
+            <TouchableOpacity
+              style={[s.deepThinkBtn, chatMode === "lite" && s.deepThinkBtnActive]}
+              onPress={handleToggleChatMode}
+              activeOpacity={0.7}
+              accessibilityLabel={t("chat.chatModeLite", "Lite")}
+            >
+              <SparklesIcon
+                size={13}
+                color={chatMode === "lite" ? colors.primary : colors.mutedForeground}
+              />
+              <Text style={[s.deepThinkText, chatMode === "lite" && s.deepThinkTextActive]}>
+                {t("chat.chatModeLite", "Lite")}
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[s.deepThinkBtn, deepThinking && s.deepThinkBtnActive]}
               onPress={() => setDeepThinking(!deepThinking)}
@@ -250,6 +271,9 @@ export function ChatInput({
         <Text style={s.deepThinkHint}>
           {t("chat.spoilerFreeHint", "AI 将避免透露当前阅读进度之后的内容")}
         </Text>
+      )}
+      {chatMode === "lite" && (
+        <Text style={s.deepThinkHint}>{t("chat.chatModeLiteHint", "快速直连模式")}</Text>
       )}
     </View>
   );

@@ -115,5 +115,9 @@
   "mermaid": {
     "title": "Mermaidダイアグラム",
     "hint": "ダブルタップでズーム · スクロールでズーム · ドラッグで移動"
-  }
+  },
+  "chatMode": "チャットモード",
+  "chatModeStandard": "標準（フル）",
+  "chatModeLite": "Lite",
+  "chatModeLiteHint": "高速ダイレクトモード:応答が速く、現在の章のQ&Aや要約に最適"
 }

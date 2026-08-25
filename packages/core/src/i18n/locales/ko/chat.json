@@ -115,5 +115,9 @@
   "mermaid": {
     "title": "Mermaid 다이어그램",
     "hint": "더블 탭으로 확대 · 스크롤로 확대/축소 · 드래그로 이동"
-  }
+  },
+  "chatMode": "채팅 모드",
+  "chatModeStandard": "표준(전체)",
+  "chatModeLite": "Lite",
+  "chatModeLiteHint": "빠른 직접 모드:응답이 빠르며 현재 챕터 Q&A 및 요약에 적합"
 }

@@ -115,5 +115,9 @@
   "mermaid": {
     "title": "Diagrama Mermaid",
     "hint": "Doble toque para zoom · desplaza para zoom · arrastra para mover"
-  }
+  },
+  "chatMode": "Modo de chat",
+  "chatModeStandard": "Estándar (completo)",
+  "chatModeLite": "Lite",
+  "chatModeLiteHint": "Modo directo rápido: respuestas más rápidas, ideal para preguntas y resúmenes del capítulo actual"
 }

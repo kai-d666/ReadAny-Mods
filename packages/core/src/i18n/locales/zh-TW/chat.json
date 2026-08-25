@@ -115,5 +115,9 @@
   "mermaid": {
     "title": "Mermaid 圖表",
     "hint": "雙擊放大 · 滾輪縮放 · 拖曳移動"
-  }
+  },
+  "chatMode": "聊天模式",
+  "chatModeStandard": "標準(完整)",
+  "chatModeLite": "Lite",
+  "chatModeLiteHint": "快速直連模式:回應更快,適合當前章節問答與摘要"
 }

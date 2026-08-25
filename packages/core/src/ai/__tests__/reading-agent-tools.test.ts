@@ -41,6 +41,7 @@ function makeAIConfig(): AIConfig {
     temperature: 0.7,
     maxTokens: 1000,
     slidingWindowSize: 8,
+    spoilerFree: { general: false, book: false },
   };
 }
 

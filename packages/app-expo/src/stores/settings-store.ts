@@ -28,7 +28,10 @@ export interface SettingsState {
   updateTranslationConfig: (updates: Partial<TranslationConfig>) => void;
   updateAIConfig: (
     updates: Partial<
-      Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree">
+      Pick<
+        AIConfig,
+        "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree" | "chatMode" | "liteToolIds"
+      >
     >,
   ) => void;
   addEndpoint: (endpoint: AIEndpoint) => Promise<void>;
@@ -84,6 +87,7 @@ const defaultAIConfig: AIConfig = {
   maxTokens: 8192,
   slidingWindowSize: 8,
   spoilerFree: { general: false, book: false },
+  chatMode: "standard",
 };
 
 function migrateSettingsState(state: SettingsState): SettingsState {

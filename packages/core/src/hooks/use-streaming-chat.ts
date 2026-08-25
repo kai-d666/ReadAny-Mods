@@ -265,16 +265,23 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         const stream = new StreamingChat();
         activeStreams.set(sessionKey, stream);
 
-        const enabledSkills = await loadEnabledSkills();
+        const chatMode = aiConfigOverride?.chatMode ?? aiConfig.chatMode ?? "standard";
+        const isLite = chatMode === "lite";
+
+        // Lite mode skips the heavy pre-steps: no skill loading (nothing to inject),
+        // no memory compression (no extra LLM round-trip before the first token).
+        const enabledSkills = isLite ? [] : await loadEnabledSkills();
 
         const updatedThread: Thread = {
           ...thread,
           messages: [...thread.messages, userMessage as any],
         };
-        const threadForStream = await maybeCompressThreadMemory(
-          updatedThread,
-          aiConfigOverride || aiConfig,
-        );
+        const threadForStream = isLite
+          ? updatedThread
+          : await maybeCompressThreadMemory(
+              updatedThread,
+              aiConfigOverride || aiConfig,
+            );
         if (threadForStream.memoryMessageCount !== updatedThread.memoryMessageCount) {
           useChatStore.setState((storeState) => ({
             threads: storeState.threads.map((item) =>
@@ -358,6 +365,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           enabledSkills,
           isVectorized: streamIsVectorized,
           aiConfig: aiConfigOverride || aiConfig,
+          chatMode,
           deepThinking,
           spoilerFree,
           getAvailableTools,

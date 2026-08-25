@@ -86,6 +86,7 @@ const defaultAIConfig: AIConfig = {
   maxTokens: 8192,
   slidingWindowSize: 8,
   spoilerFree: { general: false, book: false },
+  chatMode: "standard",
 };
 
 function migrateSettingsState(state: SettingsState): SettingsState {
