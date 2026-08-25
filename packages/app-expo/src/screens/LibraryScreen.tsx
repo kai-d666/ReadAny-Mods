@@ -44,7 +44,7 @@ import {
   type WebDavImportSource,
   getPlatformService,
 } from "@readany/core";
-import { setBookContentSearchProvider, setFallbackContentProvider } from "@readany/core/ai";
+import { setFallbackContentProvider } from "@readany/core/ai";
 import { onLibraryChanged } from "@readany/core/events/library-events";
 import { useSyncStore } from "@readany/core/stores";
 import { SYNC_SECRET_KEYS } from "@readany/core/sync/sync-backend";
@@ -307,7 +307,10 @@ export function LibraryScreen() {
       setExtractorRef(null);
       setFallbackContentProvider(null);
       setCallback(null);
-      setBookContentSearchProvider(null);
+      // NOTE: do NOT clear the book-content search provider here — it belongs to
+      // the app-lived ReaderSearchSessionManager, not this screen. Clearing it
+      // left the manager registered with a null provider after screen remounts
+      // and silently sent fallback* tools down the slow full-book path.
     };
   }, []);
 

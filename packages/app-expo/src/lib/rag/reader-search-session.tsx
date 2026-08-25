@@ -1,5 +1,5 @@
 import type { BookContentSearchMatch, BookContentSearchProvider } from "@readany/core/ai";
-import { setBookContentSearchProvider } from "@readany/core/ai";
+import { getBookContentSearchProvider, setBookContentSearchProvider } from "@readany/core/ai";
 import { Asset } from "expo-asset";
 import {
   forwardRef,
@@ -162,14 +162,19 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
     switch (msg.type) {
       case "ready":
         this.readySeen = true;
+        // Re-register on EVERY ready: LibraryScreen's unmount cleanup used to
+        // clear the provider while the app-lived manager stayed mounted — the
+        // old `!_readyResolve` guard only registered on the first ready, so after
+        // a screen remount the provider was permanently null and fallback* tools
+        // silently fell back to the slow full-book path (30s tool timeout).
+        if (getBookContentSearchProvider() !== this) {
+          this.registered = true;
+          setBookContentSearchProvider(this);
+        }
         if (this._readyResolve) {
           if (this._readyTimeout) clearTimeout(this._readyTimeout);
           this._readyResolve();
           this._readyResolve = null;
-          if (!this.registered) {
-            this.registered = true;
-            setBookContentSearchProvider(this);
-          }
         }
         break;
       case "bookReady":
