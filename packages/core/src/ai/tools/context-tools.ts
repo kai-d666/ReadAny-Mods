@@ -9,13 +9,17 @@
  */
 import { getBook, getHighlights } from "../../db/database";
 import { readingContextService } from "../reading-context-service";
+import { getBookContentSearchProvider } from "../fallback-content-service";
 import type { ToolDefinition } from "./tool-types";
+
+const CURRENT_CHAPTER_CONTENT_TIMEOUT_MS = 3500;
+const CURRENT_CHAPTER_CONTENT_MAX_CHARS = 4000;
 
 export function createGetCurrentChapterTool(bookId: string): ToolDefinition {
   return {
     name: "getCurrentChapter",
     description:
-      "Get information about the user's current reading chapter, including title, position, and progress. Use this when the user's question relates to their current location in the book.",
+      "Get information about the user's current reading chapter, including title, position, progress, and (when available) the chapter content itself. Use this when the user's question relates to their current location in the book.",
     parameters: {},
     execute: async () => {
       const context = readingContextService.getContext();
@@ -37,6 +41,27 @@ export function createGetCurrentChapterTool(bookId: string): ToolDefinition {
         if (tocTitle) title = tocTitle;
       }
 
+      // Attach the current chapter's content when the book-content provider is
+      // available (mobile: resident reader session — single-chapter read via
+      // the reliable handleCommand channel, sub-second). The model can then
+      // answer from the returned content without further retrieval steps.
+      let content: string | undefined;
+      try {
+        const searchProvider = getBookContentSearchProvider();
+        if (searchProvider) {
+          const chapterResult = await Promise.race([
+            searchProvider.getChapter(bookId, chapter.index),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), CURRENT_CHAPTER_CONTENT_TIMEOUT_MS)),
+          ]);
+          if (chapterResult?.content) {
+            content = chapterResult.content.slice(0, CURRENT_CHAPTER_CONTENT_MAX_CHARS);
+            if (chapterResult.chapterTitle) title = chapterResult.chapterTitle;
+          }
+        }
+      } catch {
+        // Provider failure → metadata-only response below.
+      }
+
       return {
         bookId,
         bookTitle: book?.meta?.title || context.bookTitle,
@@ -49,6 +74,7 @@ export function createGetCurrentChapterTool(bookId: string): ToolDefinition {
           page: context.currentPosition.page,
         },
         timestamp: context.timestamp,
+        ...(content ? { content } : {}),
       };
     },
   };

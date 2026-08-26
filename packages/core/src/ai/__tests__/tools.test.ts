@@ -842,7 +842,10 @@ describe("fallback content tools", () => {
       citationIndex: 1,
       chapterTitle: "Chapter 1",
       chapterIndex: 0,
-      cfi: "epubcfi(/fake)",
+      // Non-vectorized book + non-empty AI CFI is trusted directly (the reader
+      // session produces exact range CFIs); only the empty-CFI path resolves
+      // via chapter text and can fail — that's what this test exercises.
+      cfi: "",
       quotedText: "not in this chapter",
       reasoning: "fallback source",
     })) as any;
