@@ -72,3 +72,34 @@ export function markRunningToolCallPartsAsError(
     part.updatedAt = now;
   }
 }
+
+/**
+ * Retro-attach the token usage of a just-finished LLM call to the tool_call and
+ * reasoning parts it produced.
+ *
+ * Ordering differs by model: streaming providers (openai/deepseek/gemini) emit
+ * `tool_call` events DURING the stream, BEFORE the usage event arrives at
+ * `on_chat_model_end` — so by the time usage lands, those parts already exist.
+ * Non-streaming providers emit tool calls AFTER usage, which the caller handles
+ * with a pending value. This helper covers the streaming ordering only.
+ *
+ * Force-assign (rather than skip when tokens already set): a tool part created
+ * by the PREVIOUS call may have received that call's usage via the pending path;
+ * once the next usage arrives it must be corrected to its own call's total.
+ *
+ * @param fromIndex Parts before this index belong to earlier LLM calls — untouched.
+ */
+export function attachTokenUsageToParts(
+  parts: Part[],
+  fromIndex: number,
+  tokens: number,
+  now = Date.now(),
+) {
+  for (let i = fromIndex; i < parts.length; i++) {
+    const part = parts[i];
+    if (part.type === "tool_call" || part.type === "reasoning") {
+      part.tokens = tokens;
+      part.updatedAt = now;
+    }
+  }
+}

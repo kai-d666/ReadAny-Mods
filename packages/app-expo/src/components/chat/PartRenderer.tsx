@@ -30,21 +30,53 @@ interface PartProps {
   part: Part;
   citations?: CitationPart[];
   onCitationClick?: (citation: CitationPart) => void;
+  /** Sum of all LLM-call token counts in the whole assistant message. */
+  totalTokens?: number;
+  /** True only on the LAST part of the message that displays a token count —
+   *  renders the total (1,123sum) to the left of its tk. */
+  showTotalTokenUsage?: boolean;
+}
+
+function formatNumber(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
 /** 4,321,456tk — thousands separators + 'tk' suffix. */
 function formatTokens(n: number): string {
-  return `${n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}tk`;
+  return `${formatNumber(n)}tk`;
 }
 
-export function PartRenderer({ part, citations, onCitationClick }: PartProps) {
+/** 4,321,456sum — total across all LLM calls of one assistant message. */
+function formatTotalTokens(n: number): string {
+  return `${formatNumber(n)}sum`;
+}
+
+export function PartRenderer({
+  part,
+  citations,
+  onCitationClick,
+  totalTokens,
+  showTotalTokenUsage,
+}: PartProps) {
   switch (part.type) {
     case "text":
       return <TextPartView part={part} citations={citations} onCitationClick={onCitationClick} />;
     case "reasoning":
-      return <ReasoningPartView part={part} />;
+      return (
+        <ReasoningPartView
+          part={part}
+          totalTokens={totalTokens}
+          showTotalTokenUsage={showTotalTokenUsage}
+        />
+      );
     case "tool_call":
-      return <ToolCallPartView part={part} />;
+      return (
+        <ToolCallPartView
+          part={part}
+          totalTokens={totalTokens}
+          showTotalTokenUsage={showTotalTokenUsage}
+        />
+      );
     case "citation":
       return null;
     case "mindmap":
@@ -92,7 +124,15 @@ function TextPartView({
   );
 }
 
-function ReasoningPartView({ part }: { part: ReasoningPart }) {
+function ReasoningPartView({
+  part,
+  totalTokens,
+  showTotalTokenUsage,
+}: {
+  part: ReasoningPart;
+  totalTokens?: number;
+  showTotalTokenUsage?: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(part.status === "running" || part.status === "completed");
   const throttledText = useThrottledValue(part.text, 100);
   const { t } = useTranslation();
@@ -120,9 +160,7 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
               : t("streaming.reasoningDone", "思考完成")}
           </Text>
         </View>
-        {part.tokens != null ? (
-          <Text style={s.tokenText}>{formatTokens(part.tokens)}</Text>
-        ) : null}
+        {renderTokenBadge(part.tokens, totalTokens, showTotalTokenUsage, s.tokenText)}
         <View style={[s.chevron, isOpen && s.chevronOpen]}>
           <ChevronDownIcon size={14} color={colors.mutedForeground} />
         </View>
@@ -170,7 +208,34 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   fallbackChapterContext: "toolLabels.fallbackChapterContext",
 };
 
-function ToolCallPartView({ part }: { part: ToolCallPart }) {
+/** Header right-side token info: [1,123sum  2,411tk] — the sum (total of all
+ *  LLM calls in this message) only on the last token-bearing part. */
+function renderTokenBadge(
+  partTokens: number | undefined,
+  totalTokens: number | undefined,
+  showTotalTokenUsage: boolean | undefined,
+  tokenStyle: { fontSize: number; color: string; fontVariant: ("tabular-nums")[] },
+) {
+  if (partTokens == null) return null;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      {showTotalTokenUsage && totalTokens != null ? (
+        <Text style={{ ...tokenStyle, fontWeight: "600" }}>{formatTotalTokens(totalTokens)}</Text>
+      ) : null}
+      <Text style={tokenStyle}>{formatTokens(partTokens)}</Text>
+    </View>
+  );
+}
+
+function ToolCallPartView({
+  part,
+  totalTokens,
+  showTotalTokenUsage,
+}: {
+  part: ToolCallPart;
+  totalTokens?: number;
+  showTotalTokenUsage?: boolean;
+}) {
   const hasError = part.status === "error" || Boolean(part.error);
 
   const [isOpen, setIsOpen] = useState(hasError);
@@ -224,9 +289,7 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
             </Text>
           ) : null}
         </View>
-        {part.tokens != null ? (
-          <Text style={s.tokenText}>{formatTokens(part.tokens)}</Text>
-        ) : null}
+        {renderTokenBadge(part.tokens, totalTokens, showTotalTokenUsage, s.tokenText)}
         <View style={[s.chevron, isOpen && s.chevronOpen]}>
           <ChevronDownIcon size={14} color={colors.mutedForeground} />
         </View>

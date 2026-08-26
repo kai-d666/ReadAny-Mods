@@ -4,6 +4,7 @@ import { getBuiltinSkills } from "../ai/skills/builtin-skills";
 import { StreamingChat, createMessageId } from "../ai/streaming";
 import {
   applyToolResultToParts,
+  attachTokenUsageToParts,
   markRunningToolCallPartsAsError,
   toolCallPartToMessageToolCall,
 } from "../ai/tool-call-state";
@@ -301,6 +302,16 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         let currentTextPart: TextPart | null = null;
         let currentReasoningPart: ReasoningPart | null = null;
         let currentToolCallPart: ToolCallPart | null = null;
+        /** Token count of an LLM call that emitted tool calls — attached to the
+         *  tool part that onToolCall creates right after (llm_usage arrives before tool_call). */
+        let pendingUsageForToolCalls: number | undefined;
+        /** Index into currentParts where the CURRENT LLM call's parts start.
+         *  Streaming providers emit tool_call events BEFORE the usage event, so
+         *  when llm_usage lands we retro-attach it to every tool/reasoning part
+         *  since this boundary. IMPORTANT: only advance this in onLlmUsage
+         *  (both branches) — never in onToolCall, which fires BEFORE llm_usage
+         *  on streaming providers and would empty the retro-attach range. */
+        let usageBoundaryIndex = 0;
         let pendingPublishTimer: ReturnType<typeof setTimeout> | null = null;
         let pendingCurrentStep: StreamingState["currentStep"] | undefined;
         let lastPublishedAt = 0;
@@ -539,6 +550,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             currentTextPart = null;
             currentReasoningPart = null;
             currentToolCallPart = createToolCallPart(name, args);
+            // Attach usage of the LLM call that emitted this tool call. Keep
+            // pendingUsageForToolCalls — a call can emit several tools, each
+            // shares the same token count; next llm_usage overwrites it.
+            // NOTE: do NOT touch usageBoundaryIndex here — streaming models
+            // (deepseek/openai) fire onToolCall BEFORE llm_usage; advancing the
+            // boundary would empty the retro-attach range when usage lands.
+            if (pendingUsageForToolCalls != null) {
+              currentToolCallPart.tokens = pendingUsageForToolCalls;
+            }
             currentParts.push(currentToolCallPart);
             flushCurrentMessage("tool_calling");
           },
@@ -564,17 +584,26 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             currentReasoningPart.updatedAt = Date.now();
             scheduleCurrentMessage("thinking");
           },
-          onLlmUsage: (totalTokens) => {
-            // Attach the token count of the finished LLM call to the part it
-            // belongs to: the live reasoning/tool/text part if any, otherwise
-            // the most recent conclusion-relevant part.
-            const target =
-              currentReasoningPart ||
-              currentToolCallPart ||
-              currentTextPart ||
-              [...currentParts]
-                .reverse()
-                .find((p) => p.type === "tool_call" || p.type === "reasoning");
+          onLlmUsage: (totalTokens, toolCalls) => {
+            // A call that emitted tool calls: the parts it produced may either
+            // already exist (streaming providers emit tool_call during the
+            // stream, BEFORE this usage event) or arrive right after (non-
+            // streaming ordering). Cover both: retro-attach to every
+            // tool_call/reasoning part since usageBoundaryIndex, AND keep a
+            // pending value for onToolCall to consume. The pending value stays
+            // until the NEXT llm_usage overwrites it, so a call that emits
+            // several tools attaches the same count to each.
+            if (toolCalls > 0) {
+              pendingUsageForToolCalls = totalTokens;
+              attachTokenUsageToParts(currentParts, usageBoundaryIndex, totalTokens);
+              usageBoundaryIndex = currentParts.length;
+              scheduleCurrentMessage();
+              return;
+            }
+            // Pure reasoning/reply call → attach to the live reasoning/text part.
+            pendingUsageForToolCalls = undefined;
+            usageBoundaryIndex = currentParts.length;
+            const target = currentReasoningPart || currentTextPart;
             if (target) {
               (target as { tokens?: number }).tokens = totalTokens;
               (target as { updatedAt?: number }).updatedAt = Date.now();

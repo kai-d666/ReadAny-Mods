@@ -300,6 +300,15 @@ function MessageBubble({
     if (text) onLongPress(text);
   }, [message, onLongPress]);
 
+  // Sum of all LLM-call token counts in this message. Attached to the LAST
+  // part that has a token count, rendered as "1,123sum" left of its "tk".
+  // Must live with the other hooks (above any conditional return) — a hook
+  // after `return null` breaks the Rules of Hooks on re-render.
+  const totalTokens = useMemo(
+    () => message.parts.reduce((sum, p) => sum + ((p as { tokens?: number }).tokens ?? 0), 0) || 0,
+    [message.parts],
+  );
+
   if (message.role === "user") {
     const quoteParts = message.parts.filter((p) => p.type === "quote") as QuotePart[];
     const textParts = message.parts.filter((p) => p.type === "text") as TextPart[];
@@ -354,6 +363,16 @@ function MessageBubble({
     !isLastPartActiveToolCall &&
     !isLastPartRunningReasoning;
 
+  // Sum of all LLM-call token counts in this message. Attached to the LAST
+  // part that has a token count, rendered as "1,123sum" left of its "tk".
+  let lastTokenPartId: string | null = null;
+  for (let i = message.parts.length - 1; i >= 0; i--) {
+    if ((message.parts[i] as { tokens?: number }).tokens != null) {
+      lastTokenPartId = message.parts[i].id;
+      break;
+    }
+  }
+
   return (
     <View style={s.assistantRow}>
       <Pressable onLongPress={triggerLongPress} delayLongPress={300}>
@@ -363,6 +382,8 @@ function MessageBubble({
             part={part}
             citations={citations}
             onCitationClick={onCitationClick}
+            totalTokens={totalTokens}
+            showTotalTokenUsage={part.id === lastTokenPartId}
           />
         ))}
       </Pressable>

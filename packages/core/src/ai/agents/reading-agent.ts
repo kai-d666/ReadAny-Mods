@@ -560,7 +560,7 @@ function buildRepeatedToolCallResult(
 
 export type AgentStreamEvent =
   | { type: "token"; content: string }
-  | { type: "llm_usage"; totalTokens: number }
+  | { type: "llm_usage"; totalTokens: number; toolCalls: number }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; result: unknown }
   | {
@@ -1349,7 +1349,11 @@ export async function* streamReadingAgent(
             }),
           );
           if (totalTokens != null) {
-            yield { type: "llm_usage", totalTokens };
+            yield {
+              type: "llm_usage",
+              totalTokens,
+              toolCalls: Array.isArray(output?.tool_calls) ? output.tool_calls.length : 0,
+            };
           }
         }
         const toolCalls =
