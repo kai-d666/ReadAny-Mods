@@ -414,6 +414,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
               threadId: thread.id,
               role: "assistant" as const,
               content: textContent,
+              parts: currentParts,
               toolCalls: currentParts
                 .filter((p) => p.type === "tool_call")
                 .map((p) => toolCallPartToMessageToolCall(p as ToolCallPart)),
