@@ -26,18 +26,28 @@ DEVICE="adb-3430047082003V2-E4wJpC (2)._adb-tls-connect._tcp"  # 无线调试 se
 PKG="com.readany.app.dev.debug"
 
 echo "==> Killing old Metro (node on :8081)..."
-powershell -Command "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { \$_.CommandLine -match 'expo start' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" 2>/dev/null || true
-sleep 2
+powershell -Command "Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id \$_ -Force -ErrorAction SilentlyContinue }" 2>/dev/null || true
+# Also catch expo cli processes by command line
+powershell -Command "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { \$_.CommandLine -match 'expo start' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>/dev/null || true
+sleep 3
+# Verify port free, else raise
+if netstat -ano | grep ":8081" | grep -q "LISTENING"; then
+  echo "ERROR: :8081 still in use — kill it manually first."; exit 1
+fi
 
 echo "==> Starting Metro with watchman..."
 cd "$APP_DIR"
 FLAG=""
 if [[ "${1:-}" == "--clear" ]]; then FLAG="--clear"; fi
 (nohup npx expo start --port 8081 $FLAG > /tmp/metro-dev.log 2>&1 &)
-sleep 20
+sleep 25
 
 echo "==> Verifying Metro on :8081..."
-netstat -ano | grep ":8081" | grep -i listen | head -2 || { echo "ERROR: Metro not listening on 8081"; tail -20 /tmp/metro-dev.log; exit 1; }
+if netstat -ano | grep ":8081" | grep -q "LISTENING"; then
+  echo "OK: Metro listening on 8081"
+else
+  echo "ERROR: Metro did not start — log:"; tail -25 /tmp/metro-dev.log; exit 1
+fi
 
 echo "==> Verifying watchman is monitoring roots..."
 watchman watch-list 2>&1 | grep -q "readany-src" && echo "OK: watchman active" || echo "WARN: watchman not monitoring — fs.watch fallback (hot reload may miss changes)"
