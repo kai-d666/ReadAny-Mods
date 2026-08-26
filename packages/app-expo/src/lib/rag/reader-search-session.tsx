@@ -54,7 +54,7 @@ interface PendingRequest {
 class BookSession {
   readonly lock = new AsyncLock();
   readonly pending = new Map<string, PendingRequest>();
-  tocCache: Array<{ index: number; title: string }> | null = null;
+  tocCache: Array<{ index: number; title: string; href?: string }> | null = null;
   chapterTitles = new Map<number, string>();
   /** Whether this book is ready (bookReady received for it in the WebView). */
   ready = false;
@@ -448,6 +448,29 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
     });
   }
 
+  async getChapterByHref(bookId: string, href: string) {
+    const book = this.bookPath.get(bookId);
+    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    await this.ensureBookOpen(book);
+    const session = this.sessionFor(bookId);
+
+    return session.lock.run(async () => {
+      const requestId = randomRequestId("chapter-href");
+      const msg = (await this.runRequest(
+        session,
+        requestId,
+        { type: "getChapterByHref", href, requestId },
+        SEARCH_TIMEOUT_MS,
+      )) as { content?: string; error?: string };
+      if (msg.error) throw new Error(msg.error);
+      // Prefer the TOC title for this href; fall back to a generic label when
+      // the TOC cache doesn't carry hrefs (desktop/old sessions).
+      const tocEntry = session.tocCache?.find((item) => item.href === href);
+      const title = tocEntry?.title ?? `Chapter (${href})`;
+      return { chapterTitle: title, content: msg.content ?? "" };
+    });
+  }
+
   async getToc(bookId: string) {
     const book = this.bookPath.get(bookId);
     if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
@@ -480,13 +503,19 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
   }
 }
 
-function flattenToc(items: Array<Record<string, unknown>>): Array<{ index: number; title: string }> {
-  const flat: Array<{ index: number; title: string }> = [];
+/**
+ * Flatten hierarchical TOC into a flat list. Keeps `href` (foliate toc item
+ * href) so the model can address a chapter directly by href — the anx-style
+ * path: model picks the TOC row it wants, then chapter_content_by_href.
+ */
+function flattenToc(items: Array<Record<string, unknown>>): Array<{ index: number; title: string; href?: string }> {
+  const flat: Array<{ index: number; title: string; href?: string }> = [];
   const walk = (list: Array<Record<string, unknown>>) => {
     for (const item of list) {
       flat.push({
         index: typeof item.index === "number" ? item.index : flat.length,
         title: typeof item.title === "string" && item.title ? item.title : `Chapter ${flat.length + 1}`,
+        ...(typeof item.href === "string" && item.href ? { href: item.href } : {}),
       });
       if (Array.isArray(item.subitems) && item.subitems.length > 0) {
         walk(item.subitems as Array<Record<string, unknown>>);

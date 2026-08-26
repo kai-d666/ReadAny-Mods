@@ -96,12 +96,17 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
       // Prefer the platform search provider (mobile: TOC parsed by the reader on
       // openBook — no full-book extraction).
       const searchProvider = getBookContentSearchProvider();
-      let chapters: { index: number; title: string; content: string }[] | null = null;
+      let chapters: { index: number; title: string; content: string; href?: string }[] | null = null;
       let bookTitle = "";
       if (searchProvider) {
         try {
           const toc = await searchProvider.getToc(bookId);
-          chapters = toc.map((item) => ({ index: item.index, title: item.title, content: "" }));
+          chapters = toc.map((item) => ({
+            index: item.index,
+            title: item.title,
+            content: "",
+            ...(typeof item.href === "string" && item.href ? { href: item.href } : {}),
+          }));
           bookTitle = "";
         } catch (err) {
           console.warn(`[fallbackToc] provider failed for book ${bookId}:`, err);
@@ -145,6 +150,7 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
         chapters: pagedChapters.map((chapter) => ({
           index: chapter.index,
           title: chapter.title,
+          ...(typeof chapter.href === "string" && chapter.href ? { href: chapter.href } : {}),
           ...(includePreview
             ? { preview: chapter.content.replace(/\s+/g, " ").trim().slice(0, 180) }
             : {}),
@@ -160,7 +166,7 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
             ? offset + pagedChapters.length
             : undefined,
         instruction:
-          "This is a compact chapter list. Use resolveChapterReference for user-provided chapter numbers or fuzzy chapter titles.",
+          "This is a compact chapter list. Each entry has an href that addresses the chapter directly — when the user mentions a chapter (e.g. '第九章'), pick the entry whose title matches (e.g. 'Chapter 09') and pass its href to fallbackChapterContext, rather than converting the number/number index yourself. Use resolveChapterReference only if you cannot find a matching entry.",
       };
     },
   };
@@ -335,16 +341,25 @@ export function createFallbackChapterContextTool(bookId: string): ToolDefinition
         description: "Chapter index from fallbackToc",
         required: true,
       },
+      href: {
+        type: "string",
+        description:
+          "Optional. The href from fallbackToc for the exact chapter. When provided, this takes precedence over chapterIndex and addresses the chapter directly (no index/offset math).",
+      },
     },
     execute: async (args) => {
       const chapterIndex = Number(args.chapterIndex);
+      const href = typeof args.href === "string" && args.href.trim() ? args.href.trim() : "";
 
       // Prefer the platform search provider (mobile: resident reader session —
       // single-chapter read, no full-book extraction).
       const searchProvider = getBookContentSearchProvider();
       if (searchProvider) {
         try {
-          const chapter = await searchProvider.getChapter(bookId, chapterIndex);
+          const chapter =
+            href && typeof searchProvider.getChapterByHref === "function"
+              ? await searchProvider.getChapterByHref(bookId, href)
+              : await searchProvider.getChapter(bookId, chapterIndex);
           const tokens = estimateTokens(chapter.content);
           const content =
             tokens > CHAPTER_TOKEN_BUDGET

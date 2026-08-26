@@ -557,7 +557,7 @@ function buildWorkflowSection(
   }
   if (canUse("resolveChapterReference")) {
     steps.push(
-      "- For a specific chapter request, call resolveChapterReference first. If matched=false, present the candidates or ask for clarification instead of guessing chapterIndex.",
+      "- For a specific chapter request, prefer addressing it directly from the TOC: when the chapter list gives each entry a `href`, pick the entry whose title matches what the user asked (e.g. \"Chapter 09\" for \"第九章\"), and pass its `href` to fallbackChapterContext/ragContext instead of converting the number yourself. Only use resolveChapterReference when the chapter list has no usable hrefs.",
     );
     steps.push(
       "- For chapter lookup failures, chapter search gets at most three chances in one turn. The first uses the user's original wording, the second may use one simplified query, and the third is the last chance. After that, STOP and tell the user: 未能可靠定位章节，请补充更准确的章节名",

@@ -1631,6 +1631,9 @@
         case 'getChapter':
           await handleGetChapter(msg.chapterIndex, msg.requestId);
           break;
+        case 'getChapterByHref':
+          await handleGetChapterByHref(msg.href, msg.requestId);
+          break;
         case 'getToc':
           if (currentBook && currentBook.toc) {
             postToRN('tocWithRequest', { requestId: msg.requestId, items: await convertTOC(currentBook.toc) });
@@ -2193,6 +2196,39 @@
         }
         // Cap the per-section read — a hung/unusable section must fail fast
         // instead of blocking the tool's timeout.
+        const doc = await Promise.race([
+          section.createDocument(),
+          new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        if (!doc?.body) {
+          postToRN('chapterFullText', { requestId, error: 'No document body' });
+          return;
+        }
+        const text = (doc.body.innerText || '').replace(/\s+/g, ' ').trim();
+        postToRN('chapterFullText', { requestId, content: text });
+      } catch (err) {
+        postToRN('chapterFullText', { requestId, error: String(err) });
+      }
+    }
+
+    async function handleGetChapterByHref(href, requestId) {
+      if (!currentBook || !href || !requestId) return;
+      try {
+        // anx-style: resolve href -> section index, then read its document —
+        // no chapter-number parsing on the model side.
+        const resolved = view && typeof view.resolveNavigation === 'function'
+          ? await Promise.resolve(view.resolveNavigation(href))
+          : null;
+        const sectionIndex = resolved && Number.isInteger(resolved.index) ? resolved.index : null;
+        if (sectionIndex == null) {
+          postToRN('chapterFullText', { requestId, error: 'Href not in book' });
+          return;
+        }
+        const section = (currentBook.sections || [])[sectionIndex];
+        if (!section || typeof section.createDocument !== 'function') {
+          postToRN('chapterFullText', { requestId, error: 'Section not found' });
+          return;
+        }
         const doc = await Promise.race([
           section.createDocument(),
           new Promise((resolve) => setTimeout(() => resolve(null), 5000)),

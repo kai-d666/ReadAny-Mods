@@ -35,7 +35,13 @@ export interface BookContentSearchProvider {
   /** Full text of one chapter from the loaded reader session. */
   getChapter(bookId: string, chapterIndex: number): Promise<{ chapterTitle: string; content: string }>;
   /** Chapter list (TOC) — parsed by the reader when the book is opened. */
-  getToc(bookId: string): Promise<{ index: number; title: string }[]>;
+  getToc(bookId: string): Promise<{ index: number; title: string; href?: string }[]>;
+  /** Full text of a chapter addressed by TOC href (anx-style: model picks the
+   *  TOC row, then fetches by its href — no chapter-number parsing needed). */
+  getChapterByHref(
+    bookId: string,
+    href: string,
+  ): Promise<{ chapterTitle: string; content: string }>;
 }
 
 export interface BookContentSearchMatch {
