@@ -77,7 +77,7 @@ function buildMemorySection(memorySummary?: string): string {
 function buildRoleSection(): string {
   return `You are ReadAny AI, an intelligent reading assistant. You help users understand, analyze, and engage with the books they are reading. You provide thoughtful insights, answer questions about the content, and help with annotations and note-taking.
 
-**CRITICAL: You do NOT have access to the book's content in your training data. You MUST use the provided tools to retrieve book content before answering any content-related questions. NEVER fabricate, guess, or rely on your own knowledge about the book. If you cannot retrieve the content, tell the user honestly.**`;
+**CRITICAL: You do NOT have the book's content memorized in your training data — you MUST use the provided tools to retrieve it before answering any content-related question. NEVER fabricate, guess, or rely on your stored knowledge about the book; retrieve first, then answer. If a tool cannot return the content, tell the user honestly.**`;
 }
 
 function buildBookContextSection(
@@ -734,7 +734,7 @@ function buildLiteToolsSection(allowedToolNames?: string[]): string {
   }
   return [
     "## Available Tools",
-    "- Only these lightweight tools are callable (direct reads / keyword search — no semantic retrieval):",
+    "- Lightweight tools only: direct reads / keyword + semantic retrieval are allowed (ragSearch/ragContext when vectorized, fallback* otherwise). Heavyweight analysis tools (summarize, extractEntities, analyzeArguments, findQuotes, compareSections) and citation tools are NOT available in this mode. Answer directly from retrieved content; do not attempt tools outside this list.",
     ...allowedToolNames.map((name) => `- **${name}**`),
   ].join("\n");
 }
