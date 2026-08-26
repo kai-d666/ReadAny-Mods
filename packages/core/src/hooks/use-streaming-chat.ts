@@ -563,6 +563,23 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             currentReasoningPart.updatedAt = Date.now();
             scheduleCurrentMessage("thinking");
           },
+          onLlmUsage: (totalTokens) => {
+            // Attach the token count of the finished LLM call to the part it
+            // belongs to: the live reasoning/tool/text part if any, otherwise
+            // the most recent conclusion-relevant part.
+            const target =
+              currentReasoningPart ||
+              currentToolCallPart ||
+              currentTextPart ||
+              [...currentParts]
+                .reverse()
+                .find((p) => p.type === "tool_call" || p.type === "reasoning");
+            if (target) {
+              (target as { tokens?: number }).tokens = totalTokens;
+              (target as { updatedAt?: number }).updatedAt = Date.now();
+              scheduleCurrentMessage();
+            }
+          },
           onCitation: (citation) => {
             const citationPart = createCitationPart(
               citation.bookId,

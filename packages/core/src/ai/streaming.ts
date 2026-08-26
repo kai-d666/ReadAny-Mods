@@ -31,6 +31,8 @@ export interface StreamingOptions {
     enabledSkills: Skill[];
   }) => ToolDefinition[];
   onToken: (token: string) => void;
+  /** Emitted per completed LLM call with its total token usage (prompt+completion). */
+  onLlmUsage?: (totalTokens: number) => void;
   onComplete: (
     fullText: string,
     toolCalls?: Array<{
@@ -164,6 +166,10 @@ export class StreamingChat {
           case "token":
             fullText += event.content;
             options.onToken(event.content);
+            break;
+
+          case "llm_usage":
+            options.onLlmUsage?.(event.totalTokens);
             break;
 
           case "tool_call":

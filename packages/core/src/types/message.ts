@@ -24,6 +24,8 @@ export interface ReasoningPart extends BasePart {
   type: "reasoning";
   text: string;
   thinkingType?: "thinking" | "planning" | "analyzing" | "deciding";
+  /** Total tokens consumed by the LLM call that produced this reasoning (prompt+completion). */
+  tokens?: number;
 }
 
 export interface ToolCallPart extends BasePart {
@@ -34,6 +36,8 @@ export interface ToolCallPart extends BasePart {
   error?: string;
   reasoning?: string;
   notice?: string;
+  /** Total tokens consumed by the LLM call that issued this tool call (prompt+completion). */
+  tokens?: number;
 }
 
 export interface CitationPart extends BasePart {

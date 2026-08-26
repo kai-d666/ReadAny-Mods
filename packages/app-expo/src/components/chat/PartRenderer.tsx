@@ -32,6 +32,11 @@ interface PartProps {
   onCitationClick?: (citation: CitationPart) => void;
 }
 
+/** 4,321,456tk — thousands separators + 'tk' suffix. */
+function formatTokens(n: number): string {
+  return `${n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",")}tk`;
+}
+
 export function PartRenderer({ part, citations, onCitationClick }: PartProps) {
   switch (part.type) {
     case "text":
@@ -115,6 +120,9 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
               : t("streaming.reasoningDone", "思考完成")}
           </Text>
         </View>
+        {part.tokens != null ? (
+          <Text style={s.tokenText}>{formatTokens(part.tokens)}</Text>
+        ) : null}
         <View style={[s.chevron, isOpen && s.chevronOpen]}>
           <ChevronDownIcon size={14} color={colors.mutedForeground} />
         </View>
@@ -216,6 +224,9 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
             </Text>
           ) : null}
         </View>
+        {part.tokens != null ? (
+          <Text style={s.tokenText}>{formatTokens(part.tokens)}</Text>
+        ) : null}
         <View style={[s.chevron, isOpen && s.chevronOpen]}>
           <ChevronDownIcon size={14} color={colors.mutedForeground} />
         </View>
@@ -321,6 +332,12 @@ const makeReasoningStyles = (colors: ThemeColors) =>
       fontWeight: fw.medium,
       color: colors.foreground,
     },
+    tokenText: {
+      fontSize: fs.xs,
+      color: colors.mutedForeground,
+      marginRight: 6,
+      fontVariant: ["tabular-nums"],
+    },
     chevron: {},
     chevronOpen: { transform: [{ rotate: "180deg" }] },
     body: {
@@ -378,6 +395,12 @@ const makeToolStyles = (colors: ThemeColors) =>
       fontSize: fs.xs,
       fontFamily: "Menlo",
       color: colors.mutedForeground,
+    },
+    tokenText: {
+      fontSize: fs.xs,
+      color: colors.mutedForeground,
+      marginRight: 6,
+      fontVariant: ["tabular-nums"],
     },
     errorBadge: {
       borderRadius: radius.sm,

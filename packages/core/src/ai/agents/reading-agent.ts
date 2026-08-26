@@ -560,6 +560,7 @@ function buildRepeatedToolCallResult(
 
 export type AgentStreamEvent =
   | { type: "token"; content: string }
+  | { type: "llm_usage"; totalTokens: number }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; result: unknown }
   | {
@@ -1319,6 +1320,38 @@ export async function* streamReadingAgent(
       // send tool_call_chunks).
       if (event.event === "on_chat_model_end") {
         const output = event.data?.output;
+        // Token usage for the finished LLM call. Provider-specific fields:
+        // openai-compatible → response_metadata.usage (prompt_tokens/completion_tokens);
+        // anthropic → usage.input_tokens/output_tokens.
+        const metadata = [
+          output?.response_metadata,
+          output?.additional_kwargs,
+          output?.usage_metadata,
+        ].find(Boolean) as Record<string, any> | undefined;
+        const usage =
+          metadata?.usage ?? metadata?.token_usage ?? output?.usage_metadata ?? undefined;
+        if (usage) {
+          const promptTokens =
+            usage.prompt_tokens ?? usage.input_tokens ?? usage.promptTokenCount ?? undefined;
+          const completionTokens =
+            usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount ?? undefined;
+          const totalTokens =
+            promptTokens != null && completionTokens != null
+              ? promptTokens + completionTokens
+              : undefined;
+          console.log(
+            "[ReadingAgent][llm-usage]",
+            JSON.stringify({
+              promptTokens,
+              completionTokens,
+              totalTokens,
+              toolCalls: Array.isArray(output?.tool_calls) ? output.tool_calls.length : 0,
+            }),
+          );
+          if (totalTokens != null) {
+            yield { type: "llm_usage", totalTokens };
+          }
+        }
         const toolCalls =
           output?.tool_calls ?? output?.additional_kwargs?.tool_calls ?? ([] as unknown[]);
         const hasToolCalls =
