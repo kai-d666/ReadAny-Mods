@@ -116,7 +116,7 @@ export function createRagSearchTool(bookId: string): ToolDefinition {
   return {
     name: "ragSearch",
     description:
-      "Search book content using semantic or keyword search. Returns results with 'cfi' field for precise location. CRITICAL: When you cite content from search results, you MUST extract and pass the 'cfi' field to addCitation - this enables users to jump to the exact location in the book.",
+      "For finding WHERE a topic/keyword appears in the book (semantic similarity, e.g. '主角叫什么' or '哪个情节提到猫'). NOT for locating a specific chapter — if the user mentions a chapter number or title (e.g. '第八章', 'Salamander'), call resolveChapterReference first, then ragContext to read that chapter. Returns results with 'cfi' field for precise location. CRITICAL: When you cite content from search results, you MUST extract and pass the 'cfi' field to addCitation - this enables users to jump to the exact location in the book.",
     parameters: {
       query: {
         type: "string",
@@ -340,7 +340,7 @@ export function createResolveChapterReferenceTool(bookId: string): ToolDefinitio
   return {
     name: "resolveChapterReference",
     description:
-      "Resolve a user-mentioned chapter number or fuzzy chapter title to the internal chapterIndex. Use before ragContext/summarize when the user asks about a specific chapter.",
+      "Resolve a user-mentioned chapter number or fuzzy chapter title to the internal chapterIndex. Use before ragContext/summarize when the user asks about a specific chapter. When matched=true with confidence≥0.7, use the returned chapterIndex directly with ragContext — do not re-search or call ragToc for the same chapter.",
     parameters: {
       query: {
         type: "string",
@@ -408,7 +408,7 @@ export function createRagContextTool(bookId: string): ToolDefinition {
   return {
     name: "ragContext",
     description:
-      "Get surrounding text context for a specific chapter. Use this when the user asks about content near a specific location. Returns chunks with CFI information - use the CFI from the chunk containing your quoted text when calling addCitation.",
+      "Get surrounding text context for a specific chapter. Use this when the user asks about content near a specific location. range = number of chunks before/after (each chunk ≈500 chars) — for 'what happens in this chapter' use range 5-8 to get enough in ONE call; avoid calling with a small range then repeating with a larger one. Returns chunks with CFI information - use the CFI from the chunk containing your quoted text when calling addCitation.",
     parameters: {
       chapterIndex: { type: "number", description: "The chapter index", required: true },
       range: {

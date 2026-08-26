@@ -381,7 +381,7 @@ function buildWorkflowSection(
     }
     if (canUse("ragSearch")) {
       steps.push(
-        "   - **ragSearch**: primary path for indexed book-content questions by topic/keyword",
+        "   - **ragSearch**: for topic/keyword lookup (WHERE something appears in the book). For user-mentioned chapter number/title, resolveChapterReference first, then ragContext.",
       );
     }
     if (canUse("ragToc")) steps.push("   - **ragToc**: for compact/paginated structure browsing");
