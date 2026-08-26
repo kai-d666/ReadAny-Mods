@@ -69,11 +69,12 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
   return {
     name: "fallbackToc",
     description:
-      "Get the chapter list from the original book file. Each entry has a title and an href — when the user mentions a chapter, fetch this list, pick the entry whose title matches (e.g. 'Chapter 09' for '第九章'), then call fallbackChapterContext with that href. Call with no query to see the whole list.",
+      "Get the chapter list from the original book file. Call with NO query — receive the full list (each entry has a title and href), pick the entry matching what the user asked (e.g. 'Chapter 09' for '第九章'), then call fallbackChapterContext with that href. Do not use query to guess a chapter — it returns empty for zero-padded or non-English references; fetch the full list instead.",
     parameters: {
       query: {
         type: "string",
-        description: "Optional loose chapter-title/number text to pre-filter with (may return nothing for padded numbers — ignore and fetch the full list instead)",
+        description:
+          "Optional advanced pre-filter. Usually omit — missing entries (padded numbers, Chinese refs) is expected, and the full list is the reliable path.",
       },
       aroundChapter: {
         type: "number",
@@ -181,7 +182,7 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
             ? offset + pagedChapters.length
             : undefined,
         instruction:
-          "This is a compact chapter list. Each entry has an href that addresses the chapter directly — when the user mentions a chapter (e.g. '第九章'), pick the entry whose title matches (e.g. 'Chapter 09') and pass its href to fallbackChapterContext, rather than converting the number/number index yourself. Use resolveChapterReference only if you cannot find a matching entry.",
+          "This is the chapter list. Every entry has a title and an href — when the user mentions a chapter, pick the entry whose title matches (e.g. 'Chapter 09' for '第九章') and pass its href to fallbackChapterContext. Do NOT convert the number yourself; use resolveChapterReference only if no entry matches. Do NOT call this with a query to find the chapter — fetch the full list (no query) and look at all titles."
       };
     },
   };
