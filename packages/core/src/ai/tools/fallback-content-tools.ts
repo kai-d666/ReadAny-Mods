@@ -69,11 +69,11 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
   return {
     name: "fallbackToc",
     description:
-      "Get a compact chapter list from the original file without vectorization. Use query/aroundChapter/offset/limit instead of loading the full table of contents.",
+      "Get the chapter list from the original book file. Each entry has a title and an href — when the user mentions a chapter, fetch this list, pick the entry whose title matches (e.g. 'Chapter 09' for '第九章'), then call fallbackChapterContext with that href. Call with no query to see the whole list.",
     parameters: {
       query: {
         type: "string",
-        description: "Optional chapter title or chapter number text to search for",
+        description: "Optional loose chapter-title/number text to pre-filter with (may return nothing for padded numbers — ignore and fetch the full list instead)",
       },
       aroundChapter: {
         type: "number",
@@ -131,11 +131,26 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
       const includePreview = Boolean(args.includePreview);
       let offset = Math.max(0, Number(args.offset) || 0);
 
+      // The model's PRIMARY path is to fetch the (bounded) chapter list and pick
+      // the matching row itself — the list carries hrefs, so it can then address
+      // the chapter directly. Query filtering is only an optional assistant:
+      // loose, numeric-padding tolerant, and never a hard gate (a miss just
+      // falls through to the full list below).
       if (query) {
         const normalized = normalizeQuery(query);
-        chapters = chapters.filter((chapter) =>
-          normalizeQuery(`${chapter.index + 1}${chapter.title}`).includes(normalized),
-        );
+        const numericOnly = /^\d+$/.test(normalized.replace(/\s+/g, ""));
+        chapters = chapters.filter((chapter) => {
+          const haystack = normalizeQuery(`${chapter.index + 1}${chapter.title}`);
+          if (haystack.includes(normalized)) return true;
+          if (numericOnly) {
+            // "07" and "7" should match each other (zero-padded chapter labels).
+            const haystackNum = haystack.replace(/\D/g, "");
+            if (haystackNum && haystackNum.endsWith(normalized.replace(/\D/g, "").replace(/^0+/, ""))) {
+              return true;
+            }
+          }
+          return false;
+        });
         offset = 0;
       } else if (aroundChapter !== undefined && Number.isFinite(aroundChapter)) {
         const half = Math.floor(limit / 2);
