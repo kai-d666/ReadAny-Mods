@@ -1633,7 +1633,7 @@
           break;
         case 'getToc':
           if (currentBook && currentBook.toc) {
-            postToRN('tocWithRequest', { requestId: msg.requestId, items: convertTOC(currentBook.toc) });
+            postToRN('tocWithRequest', { requestId: msg.requestId, items: await convertTOC(currentBook.toc) });
           } else {
             postToRN('tocWithRequest', { requestId: msg.requestId, items: [] });
           }
@@ -2066,7 +2066,7 @@
         }
 
         if (book.toc) {
-          postToRN('toc', { items: convertTOC(book.toc) });
+          postToRN('toc', { items: await convertTOC(book.toc) });
         }
 
         const renderer = el.renderer;
@@ -3313,22 +3313,39 @@ a { color: ${primary} !important; }
     }
 
     // ─── TOC conversion ───
-    function convertTOC(toc, level) {
+    // Resolve each toc item's REAL section index via view.resolveNavigation
+    // (href → section index). This keeps a toc item's index identical to the
+    // chapterIndex used by handleGetChapter / getChapter in the search session —
+    // without it, flattenToc falls back to a flat ordinal that drifts from the
+    // section order the reader session indexes by.
+    async function convertTOC(toc, level) {
       if (!toc) return [];
       level = level || 0;
-      return toc.map(function (item, i) {
+      return Promise.all(toc.map(async function (item, i) {
+        let index = item.index != null ? item.index : undefined;
+        if (index == null && item.href && view && typeof view.resolveNavigation === 'function') {
+          try {
+            const resolved = await Promise.resolve(view.resolveNavigation(item.href));
+            if (resolved && Number.isInteger(resolved.index)) {
+              index = resolved.index;
+            }
+          } catch (err) {
+            // Fall back to ordinal below.
+          }
+        }
         return {
           id: String(item.id != null ? item.id : 'toc-' + level + '-' + i),
           title: item.label || 'Chapter ' + (i + 1),
           level: level,
           href: item.href,
-          // foliate toc items carry the section index; keep it for the search session
-          index: item.index != null ? item.index : undefined,
+          // Real section index (matches sections[] / getChapter); undefined →
+          // consumer falls back to ordinal (approx).
+          index: index,
           subitems: item.subitems && item.subitems.length > 0
-            ? convertTOC(item.subitems, level + 1)
+            ? await convertTOC(item.subitems, level + 1)
             : undefined,
         };
-      });
+      }));
     }
 
     // ─── Utility ───
