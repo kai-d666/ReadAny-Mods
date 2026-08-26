@@ -48,6 +48,9 @@ const QUERY_CHAPTER_RE =
 /** "4. Launch" / "4 Launch" / "4、标题" — number-prefixed chapter titles (common in EPUB TOCs). */
 const NUMBER_PREFIX_TITLE_RE = /^\s*(\d{1,4})\s*[.、．:：)）]?\s+(?=\S)/u;
 
+/** "Chapter 9" / "CHAPTER 09" — common in EPUB TOCs (Dune, 1984, etc.). */
+const CHAPTER_PREFIX_TITLE_RE = /^\s*chapter\s+(\d{1,4})\b/i;
+
 function parseChineseNumber(input: string): number | null {
   const raw = input.trim();
   if (!raw) return null;
@@ -105,6 +108,9 @@ function extractChapterNumber(value: string): number | undefined {
   // "第N章" pattern first (Chinese books, "3. Red Coast I" style).
   const match = value.match(CHAPTER_TITLE_RE);
   if (match?.[1]) return parseChineseNumber(match[1]) ?? undefined;
+  // "Chapter 9" / "CHAPTER 09" (Dune, 1984-style TOCs).
+  const chapterPrefixMatch = value.match(CHAPTER_PREFIX_TITLE_RE);
+  if (chapterPrefixMatch?.[1]) return Number(chapterPrefixMatch[1]);
   // "4. Launch" / "4 Launch" prefix pattern (EPUB TOCs).
   const prefixMatch = value.match(NUMBER_PREFIX_TITLE_RE);
   if (prefixMatch?.[1]) return Number(prefixMatch[1]);
