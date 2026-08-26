@@ -40,7 +40,12 @@ cd "$APP_DIR"
 FLAG=""
 if [[ "${1:-}" == "--clear" ]]; then FLAG="--clear"; fi
 (nohup npx expo start --port 8081 $FLAG > /tmp/metro-dev.log 2>&1 &)
-sleep 25
+# Startup can take 30-60s on first run (watchman index/cache cold); poll up to 90s.
+sleep 8
+for i in $(seq 1 22); do
+  if netstat -ano | grep ":8081" | grep -q "LISTENING"; then break; fi
+  sleep 4
+done
 
 echo "==> Verifying Metro on :8081..."
 if netstat -ano | grep ":8081" | grep -q "LISTENING"; then
