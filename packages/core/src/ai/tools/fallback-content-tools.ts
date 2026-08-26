@@ -183,16 +183,40 @@ export function createFallbackResolveChapterReferenceTool(bookId: string): ToolD
       },
     },
     execute: async (args) => {
-      const data = await getFallbackChaptersForBook(bookId);
-      if ("error" in data) return data;
-
-      return resolveChapterReference(
-        String(args.query || ""),
-        data.chapters.map((chapter) => ({
+      // Prefer the reader-session TOC (real labels, sub-second) — matching the
+      // chapter indexes used by provider.getChapter, so the resolved index
+      // lines up with fallbackChapterContext.
+      let entries: Array<{ chapterIndex: number; chapterTitle: string; preview: string }>;
+      try {
+        const searchProvider = getBookContentSearchProvider();
+        const toc = searchProvider
+          ? await Promise.race([
+              searchProvider.getToc(bookId),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+            ])
+          : null;
+        if (toc && toc.length > 0) {
+          entries = toc.map((chapter) => ({
+            chapterIndex: chapter.index,
+            chapterTitle: chapter.title,
+            preview: "",
+          }));
+        } else {
+          throw new Error("No reader TOC");
+        }
+      } catch {
+        const data = await getFallbackChaptersForBook(bookId);
+        if ("error" in data) return data;
+        entries = data.chapters.map((chapter) => ({
           chapterIndex: chapter.index,
           chapterTitle: chapter.title,
           preview: chapter.content.slice(0, 500),
-        })),
+        }));
+      }
+
+      return resolveChapterReference(
+        String(args.query || ""),
+        entries,
         Number(args.maxCandidates) || 3,
       );
     },

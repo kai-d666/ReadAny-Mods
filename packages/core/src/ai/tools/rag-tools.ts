@@ -8,6 +8,7 @@ import type { SearchQuery } from "../../types";
 import { resolveChapterReference } from "../chapter-reference-resolver";
 import { fallbackContentService } from "../fallback-content-service";
 import { getFallbackChaptersForBook } from "../fallback-source-resolver";
+import { getBookContentSearchProvider } from "../fallback-content-service";
 import type { ToolDefinition } from "./tool-types";
 
 const DEFAULT_TOC_LIMIT = 20;
@@ -236,8 +237,50 @@ export function createRagTocTool(bookId: string): ToolDefinition {
         .map(([index, title]) => ({ index, title }));
 
       if (shouldPreferOriginalToc(chapters)) {
+        // Fast path first: the reader-session provider can return the real TOC
+        // in ~1ms (it was parsed on openBook). Only when that is unavailable
+        // (desktop / no provider) do we attempt the slow full-book extraction —
+        // which previously hit the 45s wall and blew the 20s tool timeout.
+        let fallback: Awaited<ReturnType<typeof getFallbackChaptersForBook>> | null = null;
+        const searchProvider = getBookContentSearchProvider();
+        if (searchProvider) {
+          try {
+            const tocPromise = searchProvider.getToc(bookId);
+            const toc = await Promise.race([
+              tocPromise,
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+            ]);
+            if (toc && toc.length > 0) {
+              console.log("[ragToc] Rebuilt generic section TOC from reader session", {
+                bookId,
+                chapters: toc.length,
+                sampleTitles: toc.slice(0, 5).map((chapter) => chapter.title),
+              });
+              return formatCompactTocResult({
+                bookTitle: "",
+                chapters: toc.map((chapter) => ({
+                  index: chapter.index,
+                  title: chapter.title,
+                })),
+                totalChapters: toc.length,
+                source: "original-file",
+                args,
+                debug: getTocDebugInfo(chapters, {
+                  attempted: true,
+                  chapterCount: toc.length,
+                  sampleTitles: toc.slice(0, 8).map((chapter) => chapter.title),
+                }),
+                instruction:
+                  "The vector index has generic Section titles, so this TOC was rebuilt from the original book file. Re-vectorize the book to refresh RAG chapter titles.",
+              });
+            }
+          } catch (err) {
+            console.warn("[ragToc] Reader-session TOC failed, trying original-file extraction:", err);
+          }
+        }
+
         fallbackContentService.clear(bookId);
-        const fallback = await getFallbackChaptersForBook(bookId);
+        fallback = await getFallbackChaptersForBook(bookId);
         if (!("error" in fallback) && fallback.chapters.length > 0) {
           console.log("[ragToc] Rebuilt generic section TOC from original book", {
             bookId,
@@ -310,22 +353,44 @@ export function createResolveChapterReferenceTool(bookId: string): ToolDefinitio
       },
     },
     execute: async (args) => {
-      const chunks = await getChunks(bookId);
-      const chapters = new Map<number, { title: string; preview: string }>();
-      for (const chunk of chunks) {
-        if (!chapters.has(chunk.chapterIndex)) {
-          chapters.set(chunk.chapterIndex, {
-            title: chunk.chapterTitle,
-            preview: chunk.content.slice(0, 500),
-          });
+      // Prefer the reader-session TOC (real chapter labels parsed on openBook)
+      // so "第四章" style references resolve against actual titles. Fall back
+      // to vector-index chapter titles (generic "Section N") when unavailable.
+      let entries: Array<{ chapterIndex: number; chapterTitle: string; preview: string }>;
+      try {
+        const searchProvider = getBookContentSearchProvider();
+        const toc = searchProvider
+          ? await Promise.race([
+              searchProvider.getToc(bookId),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+            ])
+          : null;
+        if (toc && toc.length > 0) {
+          entries = toc.map((chapter) => ({
+            chapterIndex: chapter.index,
+            chapterTitle: chapter.title,
+            preview: "",
+          }));
+        } else {
+          throw new Error("No reader TOC");
         }
+      } catch {
+        const chunks = await getChunks(bookId);
+        const chapters = new Map<number, { title: string; preview: string }>();
+        for (const chunk of chunks) {
+          if (!chapters.has(chunk.chapterIndex)) {
+            chapters.set(chunk.chapterIndex, {
+              title: chunk.chapterTitle,
+              preview: chunk.content.slice(0, 500),
+            });
+          }
+        }
+        entries = Array.from(chapters.entries()).map(([chapterIndex, chapter]) => ({
+          chapterIndex,
+          chapterTitle: chapter.title,
+          preview: chapter.preview,
+        }));
       }
-
-      const entries = Array.from(chapters.entries()).map(([chapterIndex, chapter]) => ({
-        chapterIndex,
-        chapterTitle: chapter.title,
-        preview: chapter.preview,
-      }));
 
       return resolveChapterReference(
         String(args.query || ""),

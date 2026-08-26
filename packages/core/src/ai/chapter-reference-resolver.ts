@@ -45,6 +45,9 @@ const CHAPTER_TITLE_RE =
 const QUERY_CHAPTER_RE =
   /(?:第\s*)?([零〇一二两三四五六七八九十百千万\d]{1,8})\s*(?:章|卷|节|回|讲|篇|话)/u;
 
+/** "4. Launch" / "4 Launch" / "4、标题" — number-prefixed chapter titles (common in EPUB TOCs). */
+const NUMBER_PREFIX_TITLE_RE = /^\s*(\d{1,4})\s*[.、．:：)）]?\s+(?=\S)/u;
+
 function parseChineseNumber(input: string): number | null {
   const raw = input.trim();
   if (!raw) return null;
@@ -99,9 +102,13 @@ function getLeadingTitle(value = ""): string {
 }
 
 function extractChapterNumber(value: string): number | undefined {
+  // "第N章" pattern first (Chinese books, "3. Red Coast I" style).
   const match = value.match(CHAPTER_TITLE_RE);
-  if (!match?.[1]) return undefined;
-  return parseChineseNumber(match[1]) ?? undefined;
+  if (match?.[1]) return parseChineseNumber(match[1]) ?? undefined;
+  // "4. Launch" / "4 Launch" prefix pattern (EPUB TOCs).
+  const prefixMatch = value.match(NUMBER_PREFIX_TITLE_RE);
+  if (prefixMatch?.[1]) return Number(prefixMatch[1]);
+  return undefined;
 }
 
 function extractQueryChapterNumber(query: string): number | undefined {
