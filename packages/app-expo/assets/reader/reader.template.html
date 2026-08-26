@@ -1634,6 +1634,9 @@
         case 'getChapterByHref':
           await handleGetChapterByHref(msg.href, msg.requestId);
           break;
+        case 'getCfiContext':
+          await handleGetCfiContext(msg.cfi, msg.requestId);
+          break;
         case 'getToc':
           if (currentBook && currentBook.toc) {
             postToRN('tocWithRequest', { requestId: msg.requestId, items: await convertTOC(currentBook.toc) });
@@ -2241,6 +2244,153 @@
         postToRN('chapterFullText', { requestId, content: text });
       } catch (err) {
         postToRN('chapterFullText', { requestId, error: String(err) });
+      }
+    }
+
+    async function handleGetCfiContext(cfi, requestId) {
+      if (!currentBook || !cfi || !requestId) return;
+      try {
+        if (!view || typeof view.resolveCFI !== 'function') {
+          postToRN('cfiContext', { requestId, error: 'CFI resolution unavailable' });
+          return;
+        }
+        // Resolve cfi -> { index, anchor }; the anchor(doc) returns a Range on
+        // the (possibly detached) section Document. Prefer the rendered iframe
+        // doc when available, else createDocument() for the target section.
+        const resolved = view.resolveCFI(cfi);
+        if (!resolved) {
+          postToRN('cfiContext', { requestId, error: 'Unresolvable CFI' });
+          return;
+        }
+
+        let doc = null;
+        let sectionIndex = resolved.index;
+        const rendered = getRendererContents().find((c) => c.index === resolved.index && c.doc);
+        if (rendered?.doc) {
+          doc = rendered.doc;
+        } else if (resolved.index != null && (currentBook.sections || [])[resolved.index]) {
+          doc = await Promise.race([
+            (currentBook.sections[resolved.index]).createDocument(),
+            new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+          ]);
+        }
+        if (!doc || !doc.body) {
+          postToRN('cfiContext', { requestId, error: 'No document for CFI' });
+          return;
+        }
+
+        // anchor -> Range; then find which readable block contains that range
+        // start, and collect before/after blocks around it.
+        let range = null;
+        if (typeof resolved.anchor === 'function') {
+          try { range = anchorToRange(doc, resolved.anchor(doc)); } catch {}
+        }
+        if (!range) {
+          postToRN('cfiContext', { requestId, error: 'CFI anchor failed' });
+          return;
+        }
+
+        const blocks = getReadableBlocksForTTS(doc);
+        if (!blocks.length) {
+          postToRN('cfiContext', { requestId, error: 'No readable blocks in section' });
+          return;
+        }
+        const startContainer = range.startContainer;
+        const anchorNode =
+          startContainer &&
+          (startContainer.nodeType === Node.TEXT_NODE ? startContainer.parentElement : startContainer);
+        // Find the index of the block containing the anchor (or nearest before).
+        let anchorBlockIndex = 0;
+        for (let i = 0; i < blocks.length; i++) {
+          const block = blocks[i];
+          if (block === anchorNode || block.contains(anchorNode)) { anchorBlockIndex = i; break; }
+          // If block is after the anchor, the anchor is in a gap — use the
+          // previous block as the boundary (before = up to it).
+          if (
+            anchorNode &&
+            anchorNode.compareDocumentPosition &&
+            (anchorNode.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING)
+          ) {
+            anchorBlockIndex = Math.max(0, i - 1);
+            break;
+          }
+        }
+
+        // Collect context around the anchor block with per-side character
+        // budgets, NOT fixed block counts: when one side hits the section
+        // boundary (fewer blocks than its budget), the OTHER side absorbs the
+        // remaining budget — so a chapter-end/start anchor still gets a full
+        // ~6000-char context, just shifted. Blocks are never crossed between
+        // sections (doc is a single section).
+        const CONTEXT_SIDE_CHARS = 3000;
+        const anchoredBlock = blocks[anchorBlockIndex];
+
+        const beforeText = [];
+        let beforeChars = 0;
+        for (let i = anchorBlockIndex; i >= 0; i--) {
+          const t = normalizeTTSText(blocks[i].textContent || '');
+          if (!t) continue;
+          beforeText.unshift(t);
+          beforeChars += t.length;
+          if (beforeChars >= CONTEXT_SIDE_CHARS) break;
+        }
+
+        const afterText = [];
+        let afterChars = 0;
+        for (let i = anchorBlockIndex + 1; i < blocks.length; i++) {
+          const t = normalizeTTSText(blocks[i].textContent || '');
+          if (!t) continue;
+          afterText.push(t);
+          afterChars += t.length;
+          if (afterChars >= CONTEXT_SIDE_CHARS) break;
+        }
+
+        // A side that hit the section boundary has leftover budget — give the
+        // remainder to the other side (block-granular, no char-exact math).
+        const MAX_TOTAL_CHARS = CONTEXT_SIDE_CHARS * 2;
+        if (beforeChars < CONTEXT_SIDE_CHARS) {
+          // Before side exhausted (chapter start) — extend after.
+          let totalChars = beforeChars + afterChars;
+          for (let i = anchorBlockIndex + 1 + afterText.length; i < blocks.length && totalChars < MAX_TOTAL_CHARS; i++) {
+            const t = normalizeTTSText(blocks[i].textContent || '');
+            if (!t) continue;
+            afterText.push(t);
+            totalChars += t.length;
+          }
+        } else if (afterChars < CONTEXT_SIDE_CHARS) {
+          // After side exhausted (chapter end) — extend before.
+          let totalChars = beforeChars + afterChars;
+          for (let i = anchorBlockIndex - beforeText.length; i >= 0 && totalChars < MAX_TOTAL_CHARS; i--) {
+            const t = normalizeTTSText(blocks[i].textContent || '');
+            if (!t) continue;
+            beforeText.unshift(t);
+            totalChars += t.length;
+          }
+        }
+
+        // Chapter title via section or toc label.
+        let chapterTitle = '';
+        try {
+          const section = (currentBook.sections || [])[resolved.index];
+          if (section && section.label) chapterTitle = section.label;
+          if (!chapterTitle && currentBook.toc && Array.isArray(currentBook.toc)) {
+            for (const entry of currentBook.toc) {
+              const navResolved = view && typeof view.resolveNavigation === 'function'
+                ? await Promise.resolve(view.resolveNavigation(entry.href))
+                : null;
+              if (navResolved && navResolved.index === resolved.index) { chapterTitle = entry.label || ''; break; }
+            }
+          }
+        } catch {}
+
+        postToRN('cfiContext', {
+          requestId,
+          before: beforeText.join('\n\n'),
+          after: afterText.join('\n\n'),
+          ...(chapterTitle ? { chapterTitle } : {}),
+        });
+      } catch (err) {
+        postToRN('cfiContext', { requestId, error: String(err) });
       }
     }
 

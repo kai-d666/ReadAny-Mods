@@ -2,7 +2,7 @@
  * Context Tools
  *
  * Tools for accessing user's current reading context:
- * - getCurrentChapter: Get current chapter info
+ * - getSurroundingContext: Current position + anchored text (eats getCurrentChapter's job)
  * - getSelection: Get user's selected text
  * - getReadingProgress: Get reading progress
  * - getRecentHighlights: Get recent highlights
@@ -13,72 +13,7 @@ import { getBookContentSearchProvider } from "../fallback-content-service";
 import type { ToolDefinition } from "./tool-types";
 
 const CURRENT_CHAPTER_CONTENT_TIMEOUT_MS = 3500;
-const CURRENT_CHAPTER_CONTENT_MAX_CHARS = 4000;
-
-export function createGetCurrentChapterTool(bookId: string): ToolDefinition {
-  return {
-    name: "getCurrentChapter",
-    description:
-      "Get information about the user's current reading chapter, including title, position, progress, and (when available) the chapter content itself. Use this when the user's question relates to their current location in the book.",
-    parameters: {},
-    execute: async () => {
-      const context = readingContextService.getContext();
-      const book = await getBook(bookId);
-
-      if (!context) {
-        return {
-          error: "No reading context available",
-          hint: "The user may not be actively reading a book",
-        };
-      }
-
-      // Resolve chapter title from the context TOC when the relocate event
-      // didn't carry a tocItem label (some books/spines leave it empty).
-      const chapter = context.currentChapter;
-      let title = chapter.title;
-      if (!title && context.toc) {
-        const tocTitle = context.toc.find((item) => item.index === chapter.index)?.title;
-        if (tocTitle) title = tocTitle;
-      }
-
-      // Attach the current chapter's content when the book-content provider is
-      // available (mobile: resident reader session — single-chapter read via
-      // the reliable handleCommand channel, sub-second). The model can then
-      // answer from the returned content without further retrieval steps.
-      let content: string | undefined;
-      try {
-        const searchProvider = getBookContentSearchProvider();
-        if (searchProvider) {
-          const chapterResult = await Promise.race([
-            searchProvider.getChapter(bookId, chapter.index),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), CURRENT_CHAPTER_CONTENT_TIMEOUT_MS)),
-          ]);
-          if (chapterResult?.content) {
-            content = chapterResult.content.slice(0, CURRENT_CHAPTER_CONTENT_MAX_CHARS);
-            if (chapterResult.chapterTitle) title = chapterResult.chapterTitle;
-          }
-        }
-      } catch {
-        // Provider failure → metadata-only response below.
-      }
-
-      return {
-        bookId,
-        bookTitle: book?.meta?.title || context.bookTitle,
-        chapter: { ...chapter, title },
-        position: context.currentPosition,
-        operationType: context.operationType,
-        selectionActive: Boolean(context.selection?.text?.trim()),
-        progress: {
-          percentage: context.currentPosition.percentage,
-          page: context.currentPosition.page,
-        },
-        timestamp: context.timestamp,
-        ...(content ? { content } : {}),
-      };
-    },
-  };
-}
+const MAX_SURROUNDING_CHARS = 6000;
 
 export function createGetSelectionTool(_bookId: string): ToolDefinition {
   return {
@@ -186,11 +121,11 @@ export function createGetRecentHighlightsTool(bookId: string): ToolDefinition {
   };
 }
 
-export function createGetSurroundingContextTool(_bookId: string): ToolDefinition {
+export function createGetSurroundingContextTool(bookId: string): ToolDefinition {
   return {
     name: "getSurroundingContext",
     description:
-      "Get the text surrounding the user's current reading position. Useful for understanding what the user is currently looking at.",
+      "Get the user's current reading position (chapter + location) and the text AROUND it. The anchor is the user's ACTIVE SELECTION when one exists, otherwise their reading position — the text returned is where the user is actually looking, not the chapter start. Use this when the question relates to what the user is currently reading ('这段讲了什么', '我读到哪了'). Call once; the text it returns is the current context — do not also call other retrieval tools for the same position.",
     parameters: {
       includeSelection: {
         type: "boolean",
@@ -207,13 +142,47 @@ export function createGetSurroundingContextTool(_bookId: string): ToolDefinition
         };
       }
 
+      // Anchor: active selection first (the user's attention is on selected
+      // text), otherwise the reading position. The reader session resolves
+      // whichever cfi we pass to text around it.
+      const selectionCfi = context.selection?.cfi;
+      const anchorCfi = selectionCfi || context.currentPosition.cfi;
+
+      // Fill surroundingText: snapshot may carry it (desktop), else resolve
+      // from the reader session anchored at the chosen cfi. selection text is
+      // returned separately below (not merged into surroundingText).
+      let surroundingText = context.surroundingText;
+      if (!surroundingText) {
+        try {
+          const searchProvider = getBookContentSearchProvider();
+          if (searchProvider && anchorCfi && typeof searchProvider.getContextAroundCfi === "function") {
+            const result = await Promise.race([
+              searchProvider.getContextAroundCfi(bookId, anchorCfi),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), CURRENT_CHAPTER_CONTENT_TIMEOUT_MS)),
+            ]);
+            if (result) {
+              surroundingText = [result.before, result.after].filter(Boolean).join("\n...\n").slice(0, MAX_SURROUNDING_CHARS);
+            }
+          }
+        } catch {
+          // Provider failure → keep whatever snapshot had.
+        }
+      }
+
       return {
+        bookId,
+        bookTitle: context.bookTitle,
         currentChapter: context.currentChapter.title,
         currentChapterIndex: context.currentChapter.index,
         currentPosition: context.currentPosition.percentage,
         currentPage: context.currentPosition.page,
-        surroundingText: context.surroundingText,
-        selection: includeSelection ? context.selection : undefined,
+        cfi: anchorCfi,
+        surroundingText,
+        // Selected text is the anchor when present — include it explicitly so
+        // the model knows what's selected (it's NOT merged into surroundingText).
+        ...(includeSelection && context.selection?.text?.trim()
+          ? { selectedText: context.selection.text, selectionCfi }
+          : {}),
         operationType: context.operationType,
         selectionActive: Boolean(context.selection?.text?.trim()),
       };
@@ -223,7 +192,6 @@ export function createGetSurroundingContextTool(_bookId: string): ToolDefinition
 
 export function getContextTools(bookId: string): ToolDefinition[] {
   return [
-    createGetCurrentChapterTool(bookId),
     createGetSelectionTool(bookId),
     createGetReadingProgressTool(bookId),
     createGetRecentHighlightsTool(bookId),

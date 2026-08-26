@@ -28,10 +28,17 @@ export async function getFallbackChaptersForBook(
     if (chapters.length === 0) return { error: "No readable content found for this book" };
     return { bookTitle: book.meta.title, chapters };
   } catch (error) {
-    return {
-      error:
-        error instanceof Error ? error.message : "Unable to read the book without vectorization",
-    };
+    // The mobile reader is the content provider: when the book isn't open (or
+    // the provider isn't registered), every fallback tool would fail. Tell the
+    // model this is NOT a retryable error so it stops trying fallback*
+    // and answers from what it has (or asks the user to open the book).
+    const message = error instanceof Error ? error.message : "Unable to read the book without vectorization";
+    if (/not registered|not ready|No reading context/i.test(message)) {
+      return {
+        error: `${message}. The book is not open in the reader — fallback content is unavailable. Do NOT retry other fallback tools (fallbackToc/fallbackSearch/fallbackChapterContext) for this book; answer from general knowledge or ask the user to open the book first.`,
+      };
+    }
+    return { error: message };
   }
 }
 

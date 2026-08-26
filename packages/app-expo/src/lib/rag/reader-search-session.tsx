@@ -192,7 +192,8 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
       }
       case "tocWithRequest":
       case "searchResultsFull":
-      case "chapterFullText": {
+      case "chapterFullText":
+      case "cfiContext": {
         const requestId = typeof msg.requestId === "string" ? msg.requestId : null;
         if (requestId) {
           const owner = this.sessionOwning(requestId) ?? session;
@@ -468,6 +469,26 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
       const tocEntry = session.tocCache?.find((item) => item.href === href);
       const title = tocEntry?.title ?? `Chapter (${href})`;
       return { chapterTitle: title, content: msg.content ?? "" };
+    });
+  }
+
+  /** Text around a CFI anchor — the user's actual reading position. */
+  async getContextAroundCfi(bookId: string, cfi: string) {
+    const book = this.bookPath.get(bookId);
+    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    await this.ensureBookOpen(book);
+    const session = this.sessionFor(bookId);
+
+    return session.lock.run(async () => {
+      const requestId = randomRequestId("cfi-context");
+      const msg = (await this.runRequest(
+        session,
+        requestId,
+        { type: "getCfiContext", cfi, requestId },
+        SEARCH_TIMEOUT_MS,
+      )) as { before?: string; after?: string; chapterTitle?: string; error?: string };
+      if (msg.error) throw new Error(msg.error);
+      return { before: msg.before ?? "", after: msg.after ?? "", chapterTitle: msg.chapterTitle };
     });
   }
 

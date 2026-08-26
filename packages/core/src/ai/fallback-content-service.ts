@@ -42,6 +42,14 @@ export interface BookContentSearchProvider {
     bookId: string,
     href: string,
   ): Promise<{ chapterTitle: string; content: string }>;
+  /** Text around a CFI anchor — the user's actual reading position, not the
+   *  chapter start. Returns the text before/after the anchor within its
+   *  section (bounded), so "what am I reading right now" answers are anchored
+   *  where the user actually is. */
+  getContextAroundCfi(
+    bookId: string,
+    cfi: string,
+  ): Promise<{ before: string; after: string; chapterTitle?: string }>;
 }
 
 export interface BookContentSearchMatch {

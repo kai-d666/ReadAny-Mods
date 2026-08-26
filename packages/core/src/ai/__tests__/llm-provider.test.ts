@@ -23,7 +23,7 @@ function makeToolCall(extraContent?: Record<string, unknown>) {
     id: "call_1",
     type: "function",
     function: {
-      name: "getCurrentChapter",
+      name: "getSurroundingContext",
       arguments: "{}",
     },
     ...(extraContent ? { extra_content: extraContent } : {}),

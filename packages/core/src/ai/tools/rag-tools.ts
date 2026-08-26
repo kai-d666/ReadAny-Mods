@@ -116,7 +116,7 @@ export function createRagSearchTool(bookId: string): ToolDefinition {
   return {
     name: "ragSearch",
     description:
-      "For finding WHERE a topic/keyword appears in the book (semantic similarity, e.g. '主角叫什么' or '哪个情节提到猫'). NOT for locating a specific chapter — if the user mentions a chapter number or title (e.g. '第八章', 'Salamander'), call resolveChapterReference first, then ragContext to read that chapter. Returns results with 'cfi' field for precise location. CRITICAL: When you cite content from search results, you MUST extract and pass the 'cfi' field to addCitation - this enables users to jump to the exact location in the book.",
+      "For finding WHERE a topic/keyword appears in the book (semantic similarity, e.g. '主角叫什么' or '哪个情节提到猫'). NOT for locating a specific chapter — if the user mentions a chapter number or title (e.g. '第八章', 'Salamander'), call resolveChapterReference first, then ragContext to read that chapter. IMPORTANT: If getSurroundingContext (or ragContext) already returned the chapter's content, ANSWER FROM THAT — do not ragSearch the same chapter again; the whole chapter is already in context. Only ragSearch for details NOT in the returned chapter (other locations, cross-chapter themes). Returns results with 'cfi' field for precise location. CRITICAL: When you cite content from search results, you MUST extract and pass the 'cfi' field to addCitation - this enables users to jump to the exact location in the book.",
     parameters: {
       query: {
         type: "string",

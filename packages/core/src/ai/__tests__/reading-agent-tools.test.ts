@@ -409,7 +409,7 @@ describe("streamReadingAgent tool registration", () => {
             event: "on_chat_model_end",
             data: {
               output: {
-                tool_calls: [{ name: "getCurrentChapter", args: {} }],
+                tool_calls: [{ name: "getSurroundingContext", args: {} }],
               },
             },
           };
@@ -439,7 +439,7 @@ describe("streamReadingAgent tool registration", () => {
           type: "reasoning",
           content: "I should inspect the current chapter first.",
         }),
-        expect.objectContaining({ type: "tool_call", name: "getCurrentChapter" }),
+        expect.objectContaining({ type: "tool_call", name: "getSurroundingContext" }),
       ]),
     );
   });
@@ -606,7 +606,6 @@ describe("streamReadingAgent tool registration", () => {
     }
 
     const toolNames = capturedTools.map((tool) => tool.name);
-    expect(toolNames).toContain("getCurrentChapter");
     expect(toolNames).toContain("getSurroundingContext");
     expect(toolNames).toContain("getReadingProgress");
     expect(toolNames).toContain("ragSearch");
@@ -647,8 +646,8 @@ describe("streamReadingAgent tool registration", () => {
     expect(toolNames).toContain("ragSearch");
     expect(toolNames).toContain("ragContext");
     expect(toolNames).toContain("summarize");
-    expect(toolNames).toContain("getCurrentChapter");
-    expect(toolNames.indexOf("ragSearch")).toBeLessThan(toolNames.indexOf("getCurrentChapter"));
+    expect(toolNames).toContain("getSurroundingContext");
+    expect(toolNames.indexOf("ragSearch")).toBeLessThan(toolNames.indexOf("getSurroundingContext"));
   });
 
   it("keeps indexed search and toc fallbacks for specific chapter requests", async () => {

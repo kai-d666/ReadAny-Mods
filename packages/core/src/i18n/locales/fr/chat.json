@@ -86,7 +86,6 @@
     "getAnnotations": "Récupération des annotations",
     "addCitation": "Enregistrement de la citation",
     "compareSections": "Comparaison des sections",
-    "getCurrentChapter": "Récupération du chapitre actuel",
     "getSelection": "Récupération de la sélection",
     "getReadingProgress": "Récupération de la progression",
     "getRecentHighlights": "Récupération des surlignages récents",

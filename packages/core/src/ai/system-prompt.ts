@@ -34,13 +34,17 @@ interface PromptContext {
   allowedToolNames?: string[];
   /** Text currently selected in the reader (from ReadingContext snapshot — not on SemanticContext). */
   selectionText?: string;
+  /** Current chapter from ReadingContext snapshot (mobile reader relocate event). */
+  currentChapter?: { index: number; title: string };
+  /** Current reading position from ReadingContext snapshot. */
+  currentPosition?: { cfi: string; percentage: number };
 }
 
 /** Build the full system prompt from context */
 export function buildSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildRoleSection(),
-    buildBookContextSection(ctx.book),
+    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText),
     buildMemorySection(ctx.memorySummary),
     buildSemanticSection(ctx.semanticContext),
     buildRouteSection(ctx.questionCategory, ctx.selectionActive, ctx.routeHint),
@@ -76,17 +80,30 @@ function buildRoleSection(): string {
 **CRITICAL: You do NOT have access to the book's content in your training data. You MUST use the provided tools to retrieve book content before answering any content-related questions. NEVER fabricate, guess, or rely on your own knowledge about the book. If you cannot retrieve the content, tell the user honestly.**`;
 }
 
-function buildBookContextSection(book: Book | null): string {
+function buildBookContextSection(
+  book: Book | null,
+  currentChapter?: { index: number; title: string },
+  currentPosition?: { cfi: string; percentage: number },
+  selectionText?: string,
+): string {
   if (!book) return "";
-  return [
+  const lines = [
     "## Current Book",
     `- Title: ${book.meta.title}`,
     `- Author: ${book.meta.author}`,
     book.meta.language ? `- Language: ${book.meta.language}` : "",
     `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+    currentChapter?.title ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})` : "",
+    currentPosition?.percentage != null
+      ? `- Reading Position: ${currentPosition.percentage.toFixed(2)}%`
+      : "",
+  ];
+  // Selected text is the user's current attention anchor — surface it (both
+  // modes) so the model answers from it when present, without a tool round-trip.
+  if (selectionText?.trim()) {
+    lines.push(`- Selected Text:\n> ${compactText(selectionText, 2000)}`);
+  }
+  return lines.filter(Boolean).join("\n");
 }
 
 function compactText(value: string, maxLength: number): string {
@@ -196,10 +213,6 @@ function buildToolsSection(
 
   if (hasBookContext) {
     const contextStartIndex = tools.length;
-    pushTool(
-      "getCurrentChapter",
-      "- **getCurrentChapter**: Get current chapter title, index, and reading position",
-    );
     pushTool("getSelection", "- **getSelection**: Get the text the user has currently selected");
     pushTool(
       "getReadingProgress",
@@ -211,7 +224,7 @@ function buildToolsSection(
     );
     pushTool(
       "getSurroundingContext",
-      "- **getSurroundingContext**: Get the text visible on the current page (params: includeSelection)",
+      "- **getSurroundingContext**: Get the user's current reading position (chapter + location) and the text AROUND it, anchored at their selection or reading position (params: includeSelection)",
     );
     if (tools.length > contextStartIndex) {
       tools.splice(contextStartIndex, 0, "", "### Reading Context Tools");
@@ -340,7 +353,6 @@ function buildWorkflowSection(
   ].filter(canUse);
   const contentToolNames = [
     "getSelection",
-    "getCurrentChapter",
     "getReadingProgress",
     "getSurroundingContext",
     "resolveChapterReference",
@@ -435,7 +447,6 @@ function buildWorkflowSection(
       "ragContext",
       ...analysisTools,
       "getSurroundingContext",
-      "getCurrentChapter",
     ].filter(canUse);
     steps.push("## CRITICAL: Citation Requirements");
     steps.push("");
@@ -678,7 +689,7 @@ function buildConstraintsSection(
 export function buildFastSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildRoleSection(),
-    buildBookContextSection(ctx.book),
+    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText),
     buildMemorySection(ctx.memorySummary),
     buildLiteSemanticSection(ctx.semanticContext, ctx.selectionText),
     buildLiteToolsSection(ctx.allowedToolNames),

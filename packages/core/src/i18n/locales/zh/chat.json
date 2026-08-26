@@ -90,7 +90,6 @@
     "getAnnotations": "获取标注",
     "addCitation": "登记引用",
     "compareSections": "对比章节",
-    "getCurrentChapter": "获取当前章节",
     "getSelection": "获取选中内容",
     "getReadingProgress": "获取阅读进度",
     "getRecentHighlights": "获取最近标注",

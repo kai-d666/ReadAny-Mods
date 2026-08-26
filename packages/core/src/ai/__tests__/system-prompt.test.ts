@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Book } from "../../types";
-import { buildSystemPrompt } from "../system-prompt";
+import { buildFastSystemPrompt, buildSystemPrompt } from "../system-prompt";
 
 function makeBook(): Book {
   return {
@@ -85,12 +85,12 @@ describe("buildSystemPrompt citations", () => {
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
-      allowedToolNames: ["getCurrentChapter", "getSurroundingContext", "addCitation"],
+      allowedToolNames: ["getSurroundingContext", "getReadingProgress", "addCitation"],
     });
 
     expect(prompt).toContain("## Turn-Available Tools");
-    expect(prompt).toContain("- getCurrentChapter");
     expect(prompt).toContain("- getSurroundingContext");
+    expect(prompt).toContain("- getReadingProgress");
     expect(prompt).toContain("- addCitation");
   });
 
@@ -101,10 +101,10 @@ describe("buildSystemPrompt citations", () => {
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
-      allowedToolNames: ["getCurrentChapter", "addCitation"],
+      allowedToolNames: ["getSurroundingContext", "addCitation"],
     });
 
-    expect(prompt).toContain("- getCurrentChapter");
+    expect(prompt).toContain("- getSurroundingContext");
     expect(prompt).toContain("- addCitation");
     expect(prompt).not.toContain("- getReadingProgress");
     expect(prompt).not.toContain("Get overall reading progress");
@@ -132,5 +132,48 @@ describe("buildSystemPrompt citations", () => {
     expect(prompt).not.toContain("fallbackSearch");
     expect(prompt).not.toContain("addCitation");
     expect(prompt).not.toContain("mindmap");
+  });
+
+  it("injects current chapter and reading position into the standard prompt", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+      currentChapter: { index: 9, title: "4. Launch" },
+      currentPosition: { cfi: "epubcfi(/6/20!/4/26)", percentage: 12.12 },
+    });
+
+    expect(prompt).toContain("Current Chapter: 4. Launch (index 9)");
+    expect(prompt).toContain("Reading Position: 12.12%");
+  });
+
+  it("injects current chapter and reading position into the lite prompt", () => {
+    const prompt = buildFastSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+      currentChapter: { index: 9, title: "4. Launch" },
+      currentPosition: { cfi: "epubcfi(/6/20!/4/26)", percentage: 12.12 },
+    });
+
+    expect(prompt).toContain("Current Chapter: 4. Launch (index 9)");
+    expect(prompt).toContain("Reading Position: 12.12%");
+  });
+
+  it("omits position lines when no reading snapshot is available", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+    });
+
+    expect(prompt).not.toContain("Current Chapter:");
+    expect(prompt).not.toContain("Reading Position:");
   });
 });

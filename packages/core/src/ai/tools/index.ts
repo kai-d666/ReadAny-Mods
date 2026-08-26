@@ -10,7 +10,7 @@
  *   tagBooks, manageBookTags, updateBookMetadata, manageBookGroups
  * - Skill Tools: getSkills, skillToTool
  * - Mindmap Tools: mindmap
- * - Context Tools: getCurrentChapter, getSelection, getReadingProgress, getRecentHighlights, getSurroundingContext
+ * - Context Tools: getSurroundingContext, getSelection, getReadingProgress, getRecentHighlights
  */
 import type { Skill } from "../../types";
 import {
@@ -62,9 +62,8 @@ export { getContextTools } from "./context-tools";
  * RAG/analysis tools are intentionally excluded (heavy, vectorization-dependent).
  */
 export const LITE_DEFAULT_TOOLS = [
-  "getCurrentChapter",
-  "getSelection",
   "getSurroundingContext",
+  "getSelection",
   "getReadingProgress",
   "getRecentHighlights",
   // Both retrieval families are allowed: the active one depends on isVectorized —

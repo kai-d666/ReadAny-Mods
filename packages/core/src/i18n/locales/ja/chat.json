@@ -86,7 +86,6 @@
     "getAnnotations": "注釈を取得中",
     "addCitation": "引用を登録中",
     "compareSections": "セクションを比較中",
-    "getCurrentChapter": "現在の章を取得中",
     "getSelection": "選択テキストを取得中",
     "getReadingProgress": "読書進捗を取得中",
     "getRecentHighlights": "最近のハイライトを取得中",

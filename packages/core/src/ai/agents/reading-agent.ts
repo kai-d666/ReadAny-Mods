@@ -36,7 +36,6 @@ const REPEATED_TOOL_CALL_LIMIT = 2;
 const LITE_RECURSION_LIMIT = 16;
 const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   getSelection: 5_000,
-  getCurrentChapter: 5_000,
   getReadingProgress: 5_000,
   getSurroundingContext: 8_000,
   getRecentHighlights: 8_000,
@@ -102,7 +101,6 @@ const CHAPTER_LOOKUP_STOP_TOOL_NAMES = new Set([
   "fallbackSearch",
   "fallbackToc",
   "fallbackChapterContext",
-  "getCurrentChapter",
   "getSurroundingContext",
 ]);
 
@@ -153,7 +151,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
   current_selection: [
     "getSelection",
     "getSurroundingContext",
-    "getCurrentChapter",
     "ragSearch",
     "ragContext",
     "fallbackSearch",
@@ -162,7 +159,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
   ],
   current_page_context: [
     "getSurroundingContext",
-    "getCurrentChapter",
     "getReadingProgress",
     "ragSearch",
     "ragContext",
@@ -171,7 +167,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
     "addCitation",
   ],
   current_chapter_context: [
-    "getCurrentChapter",
     "getSurroundingContext",
     "getReadingProgress",
     "resolveChapterReference",
@@ -210,7 +205,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
     "fallbackSearch",
     "fallbackToc",
     "fallbackChapterContext",
-    "getCurrentChapter",
     "getSurroundingContext",
     "getReadingProgress",
     "getRecentHighlights",
@@ -307,7 +301,6 @@ function getFocusedToolNames(
           ? [
               "getSelection",
               "getSurroundingContext",
-              "getCurrentChapter",
               "ragSearch",
               "ragContext",
               "addCitation",
@@ -315,7 +308,6 @@ function getFocusedToolNames(
           : [
               "getSelection",
               "getSurroundingContext",
-              "getCurrentChapter",
               "fallbackSearch",
               "fallbackChapterContext",
               "addCitation",
@@ -325,7 +317,6 @@ function getFocusedToolNames(
       return new Set(
         isVectorized
           ? [
-              "getCurrentChapter",
               "getSurroundingContext",
               "getReadingProgress",
               "ragSearch",
@@ -333,7 +324,6 @@ function getFocusedToolNames(
               "addCitation",
             ]
           : [
-              "getCurrentChapter",
               "getSurroundingContext",
               "getReadingProgress",
               "fallbackSearch",
@@ -345,7 +335,6 @@ function getFocusedToolNames(
       return new Set(
         isVectorized
           ? [
-              "getCurrentChapter",
               "getSurroundingContext",
               "getReadingProgress",
               "resolveChapterReference",
@@ -356,7 +345,6 @@ function getFocusedToolNames(
               "addCitation",
             ]
           : [
-              "getCurrentChapter",
               "getSurroundingContext",
               "getReadingProgress",
               "fallbackChapterContext",
@@ -841,6 +829,19 @@ export async function* streamReadingAgent(
   const isAborted = () => signal?.aborted ?? false;
   const readingContextSnapshot = getReadingContextSnapshot();
   const selectionActive = !!readingContextSnapshot?.selection?.text?.trim();
+  // Current chapter reference with a title filled in. The relocate event's
+  // tocItem label can be empty (some books/spines) — fall back to the persisted
+  // TOC title, mirroring getCurrentChapter's resolution. Exclude title-less
+  // records entirely so the prompt does not show an empty "- Current Chapter:".
+  const currentChapter = (() => {
+    const chapter = readingContextSnapshot?.currentChapter;
+    if (!chapter) return undefined;
+    const title =
+      chapter.title ||
+      readingContextSnapshot?.toc?.find((item) => item.index === chapter.index)?.title;
+    return title ? { index: chapter.index, title } : undefined;
+  })();
+  const currentPosition = readingContextSnapshot?.currentPosition;
   const effectiveBookId = book?.id || bookId || null;
   const questionCategory = detectQuestionCategory({
     userInput,
@@ -937,6 +938,8 @@ export async function* streamReadingAgent(
           spoilerFree,
           memorySummary,
           selectionText: readingContextSnapshot?.selection?.text || "",
+          currentChapter,
+          currentPosition,
           allowedToolNames: tools.map((tool) => tool.name),
         })
       : buildSystemPrompt({
@@ -951,6 +954,9 @@ export async function* streamReadingAgent(
           questionCategory,
           selectionActive,
           routeHint: buildRouteHint(questionCategory, selectionActive, isVectorized),
+          selectionText: readingContextSnapshot?.selection?.text || "",
+          currentChapter,
+          currentPosition,
           allowedToolNames: tools.map((tool) => tool.name),
         });
 
