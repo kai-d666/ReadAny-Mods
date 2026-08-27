@@ -93,6 +93,47 @@ describe("streamReadingAgent tool registration", () => {
     expect(createReactAgentMock).not.toHaveBeenCalled();
   });
 
+  it("Knowledge-Only mode streams directly — no agent graph, zero tools", async () => {
+    const llmStreamMock = vi.fn(async function* () {
+      yield { content: "From my knowledge: Orson Scott Card." };
+    });
+    const { createChatModel } = await import("../llm-provider");
+    (createChatModel as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      stream: llmStreamMock,
+    });
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        chatMode: "knowledge",
+        getAvailableTools,
+      },
+      "Who wrote this book?",
+    )) {
+      events.push(event);
+    }
+
+    // Zero tools → direct `model.stream()` path: no LangGraph agent anywhere.
+    expect(llmStreamMock).toHaveBeenCalledTimes(1);
+    expect(createReactAgentMock).not.toHaveBeenCalled();
+    expect(events.some((e) => e.type === "token" && e.content.includes("knowledge"))).toBe(true);
+
+    // The system message is the Knowledge-Only prompt, not the standard one.
+    const firstCall = (llmStreamMock.mock.calls as unknown[][])[0] ?? [];
+    const messages = firstCall[0] as Array<{ content?: unknown }>;
+    const systemContent = messages
+      .map((m) => (typeof m?.content === "string" ? m.content : ""))
+      .join("\n");
+    expect(systemContent).toContain("Knowledge-Only");
+    expect(systemContent).not.toContain("ragSearch");
+  });
+
   it("registers fallback tools when only bookId is available", async () => {
     createReactAgentMock.mockReturnValue({
       streamEvents: vi.fn(() => ({

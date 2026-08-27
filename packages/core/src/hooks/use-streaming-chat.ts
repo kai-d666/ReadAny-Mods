@@ -270,18 +270,21 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         const stream = new StreamingChat();
         activeStreams.set(sessionKey, stream);
 
-        const chatMode = aiConfigOverride?.chatMode ?? aiConfig.chatMode ?? "standard";
-        const isLite = chatMode === "lite";
+        const chatMode = aiConfigOverride?.chatMode ?? aiConfig.chatMode ?? "knowledge";
+        // Lite and Knowledge-Only both take the fast path: no skill loading
+        // (nothing to inject), no memory compression (no extra LLM round-trip
+        // before the first token).
+        const isFastPath = chatMode === "lite" || chatMode === "knowledge";
 
         // Lite mode skips the heavy pre-steps: no skill loading (nothing to inject),
         // no memory compression (no extra LLM round-trip before the first token).
-        const enabledSkills = isLite ? [] : await loadEnabledSkills();
+        const enabledSkills = isFastPath ? [] : await loadEnabledSkills();
 
         const updatedThread: Thread = {
           ...thread,
           messages: [...thread.messages, userMessage as any],
         };
-        const threadForStream = isLite
+        const threadForStream = isFastPath
           ? updatedThread
           : await maybeCompressThreadMemory(
               updatedThread,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Book } from "../../types";
-import { buildFastSystemPrompt, buildSystemPrompt } from "../system-prompt";
+import {
+  buildFastSystemPrompt,
+  buildKnowledgeSystemPrompt,
+  buildSystemPrompt,
+} from "../system-prompt";
 
 function makeBook(metaOverride?: Partial<Book["meta"]>): Book {
   return {
@@ -216,5 +220,90 @@ describe("buildSystemPrompt citations", () => {
     expect(prompt).not.toContain("- Language:");
     expect(prompt).toContain("Query guidance");
     expect(prompt).toContain("language is unknown");
+  });
+});
+
+describe("buildKnowledgeSystemPrompt", () => {
+  it("injects book metadata, description, subjects and reading position", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook({
+        description: "A sci-fi classic about a boy trained for war.",
+        subjects: ["Science Fiction", "War"],
+      }),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "zh",
+      currentChapter: { index: 9, title: "4. Launch" },
+      currentPosition: { cfi: "epubcfi(/6/20!/4/26)", percentage: 12.12 },
+    });
+
+    expect(prompt).toContain("Knowledge-Only");
+    expect(prompt).toContain("- Title: Test Book");
+    expect(prompt).toContain("- Author: Test Author");
+    expect(prompt).toContain("- Language: en");
+    expect(prompt).toContain("- Description:");
+    expect(prompt).toContain("A sci-fi classic about a boy trained for war.");
+    expect(prompt).toContain("- Subjects: Science Fiction, War");
+    expect(prompt).toContain("- Reading Progress:");
+    expect(prompt).toContain("- Current Chapter: 4. Launch (index 9)");
+    expect(prompt).toContain("- Reading Position: 12.12%");
+  });
+
+  it("never mentions retrieval tools or semantic reading content", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook({ description: "desc" }),
+      semanticContext: {
+        currentChapter: "4. Launch",
+        currentPosition: "12%",
+        surroundingText: "Some surrounding text from the book",
+        recentHighlights: ["a highlight"],
+        operationType: "reading",
+      },
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+    });
+
+    expect(prompt).not.toContain("ragSearch");
+    expect(prompt).not.toContain("fallbackSearch");
+    expect(prompt).not.toContain("getSurroundingContext");
+    expect(prompt).not.toContain("## Reading Context");
+    expect(prompt).not.toContain("Surrounding Text");
+    expect(prompt).not.toContain("Query guidance");
+    expect(prompt).not.toContain("## Available Tools");
+  });
+
+  it("omits description/subjects lines when absent and stays usable without a book", () => {
+    const noDesc = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+    });
+    expect(noDesc).not.toContain("- Description:");
+    expect(noDesc).not.toContain("- Subjects:");
+
+    const noBook = buildKnowledgeSystemPrompt({
+      book: null,
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+    });
+    expect(noBook).toContain("Knowledge-Only");
+    expect(noBook).not.toContain("## Current Book");
+  });
+
+  it("forces the response language to the user's language", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+    });
+    expect(prompt).toContain("You MUST respond in en");
   });
 });

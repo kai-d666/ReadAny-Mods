@@ -174,13 +174,14 @@ export interface AIConfig {
   slidingWindowSize: number;
   /** "Spoiler-free" toggle per chat context (general chat vs in-book chat), persisted. */
   spoilerFree: { general: boolean; book: boolean };
-  /** Chat pipeline mode: "standard" (routing + full toolset) or "lite" (fast direct chat). */
+  /** Chat pipeline mode: "standard" (routing + full toolset), "lite" (fast direct chat with
+   *  retrieval) or "knowledge" (Knowledge-Only: answers from the model's own knowledge, zero tools). */
   chatMode?: AIChatMode;
   /** Lite-mode custom tool whitelist; undefined → LITE_DEFAULT_TOOLS. */
   liteToolIds?: string[];
 }
 
-export type AIChatMode = "standard" | "lite";
+export type AIChatMode = "standard" | "lite" | "knowledge";
 
 export type AIModel = string;
 

@@ -17,7 +17,11 @@ import { estimateTokens } from "../../rag/chunker";
 import type { AIChatMode, AIConfig, Book, SemanticContext, Skill } from "../../types";
 import { createChatModel } from "../llm-provider";
 import { getReadingContextSnapshot } from "../reading-context-service";
-import { buildFastSystemPrompt, buildSystemPrompt } from "../system-prompt";
+import {
+  buildFastSystemPrompt,
+  buildKnowledgeSystemPrompt,
+  buildSystemPrompt,
+} from "../system-prompt";
 import { ThinkTagStreamParser } from "../think-tag-parser";
 import { LITE_DEFAULT_TOOLS, LITE_FORBIDDEN_TOOLS } from "../tools";
 import type { ToolDefinition, ToolParameter } from "../tools/tool-types";
@@ -825,6 +829,7 @@ export async function* streamReadingAgent(
   } = options;
 
   const isLite = chatMode === "lite";
+  const isKnowledge = chatMode === "knowledge";
 
   // Helper to check if aborted
   const isAborted = () => signal?.aborted ?? false;
@@ -895,21 +900,25 @@ export async function* streamReadingAgent(
     // Register tools via injected getAvailableTools, then narrow obvious chapter tasks.
     // Lite mode: whitelist only (default LITE_DEFAULT_TOOLS or user liteToolIds);
     // forbidden RAG/analysis tools are stripped regardless of user config.
+    // Knowledge mode: zero tools — no registration at all (direct-stream path below).
     const liteWhitelist = new Set(
       (liteToolIds && liteToolIds.length > 0 ? liteToolIds : LITE_DEFAULT_TOOLS).filter(
         (name) => !LITE_FORBIDDEN_TOOLS.has(name),
       ),
     );
-    const allAvailable = getAvailableTools({
-      bookId: effectiveBookId,
-      bookLanguage: effectiveBookLanguage,
-      isVectorized,
-      enabledSkills: isLite ? [] : enabledSkills,
-    });
+    const allAvailable = isKnowledge
+      ? []
+      : getAvailableTools({
+          bookId: effectiveBookId,
+          bookLanguage: effectiveBookLanguage,
+          isVectorized,
+          enabledSkills: isLite ? [] : enabledSkills,
+        });
     console.log(
       "[ReadingAgent] lite-diag",
       JSON.stringify({
         isLite,
+        isKnowledge,
         chatMode,
         isVectorized,
         liteToolIds: liteToolIds ?? null,
@@ -920,11 +929,13 @@ export async function* streamReadingAgent(
     );
     const tools = isLite
       ? allAvailable.filter((tool) => liteWhitelist.has(tool.name))
-      : filterToolsForQuestion({
-          tools: allAvailable,
-          category: questionCategory,
-          isVectorized,
-        });
+      : isKnowledge
+        ? []
+        : filterToolsForQuestion({
+            tools: allAvailable,
+            category: questionCategory,
+            isVectorized,
+          });
     console.log(
       "[ReadingAgent] tools",
       JSON.stringify({
@@ -935,23 +946,35 @@ export async function* streamReadingAgent(
     );
 
     // Build system prompt
-    const systemPrompt = isLite
-      ? buildFastSystemPrompt({
+    const systemPrompt = isKnowledge
+      ? buildKnowledgeSystemPrompt({
           book,
           bookId: effectiveBookId,
           semanticContext,
-          enabledSkills: [], // skills excluded in lite mode
+          enabledSkills: [],
           isVectorized,
           userLanguage: i18n.language || "en",
-          spoilerFree,
-          memorySummary,
-          selectionText: readingContextSnapshot?.selection?.text || "",
           currentChapter,
           currentPosition,
           effectiveLanguage: effectiveBookLanguage,
-          allowedToolNames: tools.map((tool) => tool.name),
         })
-      : buildSystemPrompt({
+      : isLite
+        ? buildFastSystemPrompt({
+            book,
+            bookId: effectiveBookId,
+            semanticContext,
+            enabledSkills: [], // skills excluded in lite mode
+            isVectorized,
+            userLanguage: i18n.language || "en",
+            spoilerFree,
+            memorySummary,
+            selectionText: readingContextSnapshot?.selection?.text || "",
+            currentChapter,
+            currentPosition,
+            effectiveLanguage: effectiveBookLanguage,
+            allowedToolNames: tools.map((tool) => tool.name),
+          })
+        : buildSystemPrompt({
           book,
           bookId: effectiveBookId,
           semanticContext,

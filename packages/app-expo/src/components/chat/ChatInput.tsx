@@ -11,7 +11,7 @@ import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
 import { useSettingsStore } from "@/stores/settings-store";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
-import type { AttachedQuote } from "@readany/core/types";
+import type { AIChatMode, AttachedQuote } from "@readany/core/types";
 /**
  * ChatInput — touch-optimized chat input matching app-mobile MobileChatInput.
  * Rounded container with textarea on top, action bar (deep thinking + send) below.
@@ -49,6 +49,8 @@ interface ChatInputProps {
 const SINGLE_LINE_INPUT_HEIGHT = 46;
 const MAX_INPUT_HEIGHT = 112;
 const INPUT_PADDING_VERTICAL = 16;
+/** Tri-state chat mode cycle — starts on Knowledge-Only (K-O), the default mode. */
+const CHAT_MODE_CYCLE: AIChatMode[] = ["knowledge", "standard", "lite"];
 
 export function ChatInput({
   onSend,
@@ -88,7 +90,16 @@ export function ChatInput({
   const aiConfig = useSettingsStore((st) => st.aiConfig);
   const updateAIConfig = useSettingsStore((st) => st.updateAIConfig);
   const spoilerFree = aiConfig.spoilerFree[variant];
-  const chatMode = aiConfig.chatMode ?? "standard";
+  const chatMode = aiConfig.chatMode ?? "knowledge";
+  // The mode button shows the CURRENT mode (tri-state cycle). K-O and Lite get the
+  // active highlight; Standard stays plain, matching the previous default look.
+  const chatModeActive = chatMode !== "standard";
+  const chatModeLabel =
+    chatMode === "knowledge"
+      ? t("chatModeKnowledge", "K-O")
+      : chatMode === "lite"
+        ? t("chatModeLite", "Lite")
+        : t("chatModeStandard", "Standard");
 
   const handleToggleSpoilerFree = useCallback(() => {
     updateAIConfig({
@@ -97,7 +108,8 @@ export function ChatInput({
   }, [aiConfig.spoilerFree, variant, updateAIConfig]);
 
   const handleToggleChatMode = useCallback(() => {
-    updateAIConfig({ chatMode: chatMode === "lite" ? "standard" : "lite" });
+    const next = CHAT_MODE_CYCLE[(CHAT_MODE_CYCLE.indexOf(chatMode) + 1) % CHAT_MODE_CYCLE.length];
+    updateAIConfig({ chatMode: next });
   }, [chatMode, updateAIConfig]);
 
   const handleSend = useCallback(() => {
@@ -193,17 +205,17 @@ export function ChatInput({
         <View style={s.actionBar}>
           <View style={s.toggleRow}>
             <TouchableOpacity
-              style={[s.deepThinkBtn, chatMode === "lite" && s.deepThinkBtnActive]}
+              style={[s.deepThinkBtn, chatModeActive && s.deepThinkBtnActive]}
               onPress={handleToggleChatMode}
               activeOpacity={0.7}
-              accessibilityLabel={t("chat.chatModeLite", "Lite")}
+              accessibilityLabel={chatModeLabel}
             >
               <SparklesIcon
                 size={13}
-                color={chatMode === "lite" ? colors.primary : colors.mutedForeground}
+                color={chatModeActive ? colors.primary : colors.mutedForeground}
               />
-              <Text style={[s.deepThinkText, chatMode === "lite" && s.deepThinkTextActive]}>
-                {t("chat.chatModeLite", "Lite")}
+              <Text style={[s.deepThinkText, chatModeActive && s.deepThinkTextActive]}>
+                {chatModeLabel}
               </Text>
             </TouchableOpacity>
 
@@ -272,9 +284,13 @@ export function ChatInput({
           {t("chat.spoilerFreeHint", "AI 将避免透露当前阅读进度之后的内容")}
         </Text>
       )}
-      {chatMode === "lite" && (
-        <Text style={s.deepThinkHint}>{t("chat.chatModeLiteHint", "快速直连模式")}</Text>
-      )}
+      {chatMode === "knowledge" ? (
+        <Text style={s.deepThinkHint}>
+          {t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")}
+        </Text>
+      ) : chatMode === "lite" ? (
+        <Text style={s.deepThinkHint}>{t("chatModeLiteHint", "快速直连模式")}</Text>
+      ) : null}
     </View>
   );
 }

@@ -118,7 +118,9 @@
     "hint": "Double-tap to zoom · scroll to zoom · drag to pan"
   },
   "chatMode": "Chat mode",
-  "chatModeStandard": "Standard (full)",
+  "chatModeStandard": "Standard",
   "chatModeLite": "Lite",
-  "chatModeLiteHint": "Fast direct mode: quicker responses, best for current-chapter Q&A and summaries"
+  "chatModeLiteHint": "Fast direct mode: quicker responses, best for current-chapter Q&A and summaries",
+  "chatModeKnowledge": "K-O",
+  "chatModeKnowledgeHint": "Knowledge-Only: answers from the model's own knowledge, no book retrieval"
 }

@@ -712,6 +712,70 @@ export function buildFastSystemPrompt(ctx: PromptContext): string {
   return sections.filter(Boolean).join("\n\n---\n\n");
 }
 
+/**
+ * Knowledge-Only (K-O) system prompt — zero-tool quick-answer variant.
+ * The model answers from its own knowledge about the book (author background,
+ * series, genre, general overview); it does NOT retrieve, read, or cite the
+ * book's text. Keeps only book metadata + reading position — no semantic
+ * context, no tools, no memory.
+ */
+export function buildKnowledgeSystemPrompt(ctx: PromptContext): string {
+  const sections: string[] = [
+    buildKnowledgeRoleSection(),
+    buildKnowledgeBookSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.effectiveLanguage),
+    buildKnowledgeConstraintsSection(ctx.userLanguage),
+  ];
+
+  return sections.filter(Boolean).join("\n\n---\n\n");
+}
+
+function buildKnowledgeRoleSection(): string {
+  return `You are ReadAny AI in Knowledge-Only mode (K-O), an intelligent reading assistant. You answer questions about the current book and its author from your own knowledge — author background, publication and series information, genre and style, general overview, and related books.
+
+**CRITICAL: You have NO tools and do NOT read or search the book's text.** Answer from your own knowledge only. Never claim to have verified anything against the actual text, and never cite the book — you cannot verify quotes or page-level details.`;
+}
+
+function buildKnowledgeBookSection(
+  book: Book | null,
+  currentChapter?: { index: number; title: string },
+  currentPosition?: { cfi: string; percentage: number },
+  effectiveLanguage?: string,
+): string {
+  if (!book) return "";
+  const lang = effectiveLanguage || book.meta.language;
+  const lines = [
+    "## Current Book",
+    `- Title: ${book.meta.title}`,
+    `- Author: ${book.meta.author}`,
+    lang ? `- Language: ${lang}` : "",
+    // Description/subjects are metadata (not book text) — they carry the
+    // publisher's blurb, which helps a lot for "what is this book about".
+    book.meta.description?.trim()
+      ? `- Description:\n> ${compactText(book.meta.description, 500)}`
+      : "",
+    book.meta.subjects?.length ? `- Subjects: ${book.meta.subjects.join(", ")}` : "",
+    `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
+    currentChapter?.title
+      ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})`
+      : "",
+    currentPosition?.percentage != null
+      ? `- Reading Position: ${currentPosition.percentage.toFixed(2)}%`
+      : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+function buildKnowledgeConstraintsSection(language: string): string {
+  return [
+    "## Knowledge-Only Guidelines",
+    "- Answer from your own knowledge about this book and its author. You do NOT search, retrieve, or cite the book's text.",
+    "- If you are unsure — or if the right answer depends on the book's actual text (e.g. exact plot details) — state your uncertainty honestly. NEVER fabricate.",
+    "- Best for: author background, publication and series info, genre and style, general overview, related books. For the book's actual content, suggest switching to Standard mode.",
+    `- **IMPORTANT: You MUST respond in ${language || "English"}. This is non-negotiable regardless of the book's language.**`,
+    "- Keep responses concise. Use markdown formatting for readability.",
+  ].join("\n");
+}
+
 function buildLiteSemanticSection(
   ctx: SemanticContext | null,
   selectionText?: string,
