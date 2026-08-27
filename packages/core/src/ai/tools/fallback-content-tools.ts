@@ -8,6 +8,7 @@ import {
 } from "../fallback-source-resolver";
 import { resolveChapterReference } from "../chapter-reference-resolver";
 import type { ToolDefinition } from "./tool-types";
+import { bookLanguageHint } from "./book-language-hint";
 
 const SEARCH_TOKEN_BUDGET = 3600;
 const CHAPTER_TOKEN_BUDGET = 3200;
@@ -65,11 +66,11 @@ function buildMatchSnippet(match: {
   return [pre, m ? `「${m}」` : "", post].filter(Boolean).join(" ");
 }
 
-export function createFallbackTocTool(bookId: string): ToolDefinition {
+export function createFallbackTocTool(bookId: string, bookLanguage?: string): ToolDefinition {
   return {
     name: "fallbackToc",
     description:
-      "Get the chapter list from the original book file. Call with NO query — receive the full list (each entry has a title and href), pick the entry matching what the user asked (e.g. 'Chapter 09' for '第九章'), then call fallbackChapterContext with that href. Do not use query to guess a chapter — it returns empty for zero-padded or non-English references; fetch the full list instead.",
+      "Get the chapter list from the original book file. Call with NO query — receive the full list (each entry has a title and href), pick the entry matching what the user asked (e.g. 'Chapter 09' for '第九章'), then call fallbackChapterContext with that href. Do not use query to guess a chapter — it returns empty for zero-padded or non-English references; fetch the full list instead." + bookLanguageHint(bookLanguage),
     parameters: {
       query: {
         type: "string",
@@ -188,11 +189,11 @@ export function createFallbackTocTool(bookId: string): ToolDefinition {
   };
 }
 
-export function createFallbackResolveChapterReferenceTool(bookId: string): ToolDefinition {
+export function createFallbackResolveChapterReferenceTool(bookId: string, bookLanguage?: string): ToolDefinition {
   return {
     name: "resolveChapterReference",
     description:
-      "Resolve a user-mentioned chapter number or fuzzy chapter title to the internal chapterIndex. Use before fallbackChapterContext when the user asks about a specific chapter.",
+      "Resolve a user-mentioned chapter number or fuzzy chapter title to the internal chapterIndex. Use before fallbackChapterContext when the user asks about a specific chapter." + bookLanguageHint(bookLanguage),
     parameters: {
       query: {
         type: "string",
@@ -245,11 +246,11 @@ export function createFallbackResolveChapterReferenceTool(bookId: string): ToolD
   };
 }
 
-export function createFallbackSearchTool(bookId: string): ToolDefinition {
+export function createFallbackSearchTool(bookId: string, bookLanguage?: string): ToolDefinition {
   return {
     name: "fallbackSearch",
     description:
-      "Keyword search the original book file without a vector index. Slower and less semantic than RAG, but useful when the book has not been vectorized. Returns a CFI only when the match can be mapped to a concrete reader text segment.",
+      "Keyword search the original book file without a vector index. Slower and less semantic than RAG, but useful when the book has not been vectorized. Returns a CFI only when the match can be mapped to a concrete reader text segment." + bookLanguageHint(bookLanguage),
     parameters: {
       query: { type: "string", description: "Keywords or phrase to search for", required: true },
       topK: { type: "number", description: "Number of chapters/snippets to return (default: 5)" },
@@ -346,11 +347,11 @@ export function createFallbackSearchTool(bookId: string): ToolDefinition {
   };
 }
 
-export function createFallbackChapterContextTool(bookId: string): ToolDefinition {
+export function createFallbackChapterContextTool(bookId: string, bookLanguage?: string): ToolDefinition {
   return {
     name: "fallbackChapterContext",
     description:
-      "Read a chapter from the original book file without vectorization. Use it after fallbackToc or when the user asks about a known chapter.",
+      "Read a chapter from the original book file without vectorization. Use it after fallbackToc or when the user asks about a known chapter." + bookLanguageHint(bookLanguage),
     parameters: {
       chapterIndex: {
         type: "number",

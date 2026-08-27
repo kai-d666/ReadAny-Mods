@@ -112,6 +112,7 @@ function getGeneralTools(): ToolDefinition[] {
 /** Get available tools based on current state */
 export function getAvailableTools(options: {
   bookId?: string | null;
+  bookLanguage?: string;
   isVectorized: boolean;
   enabledSkills: Skill[];
 }): ToolDefinition[] {
@@ -127,10 +128,10 @@ export function getAvailableTools(options: {
     // RAG tools (require vectorization)
     if (options.isVectorized) {
       tools.push(
-        createResolveChapterReferenceTool(options.bookId),
-        createRagSearchTool(options.bookId),
-        createRagTocTool(options.bookId),
-        createRagContextTool(options.bookId),
+        createResolveChapterReferenceTool(options.bookId, options.bookLanguage),
+        createRagSearchTool(options.bookId, options.bookLanguage),
+        createRagTocTool(options.bookId, options.bookLanguage),
+        createRagContextTool(options.bookId, options.bookLanguage),
       );
 
       // Content analysis tools (require chunks from vectorization)
@@ -143,10 +144,10 @@ export function getAvailableTools(options: {
       );
     } else {
       tools.push(
-        createFallbackResolveChapterReferenceTool(options.bookId),
-        createFallbackTocTool(options.bookId),
-        createFallbackSearchTool(options.bookId),
-        createFallbackChapterContextTool(options.bookId),
+        createFallbackResolveChapterReferenceTool(options.bookId, options.bookLanguage),
+        createFallbackTocTool(options.bookId, options.bookLanguage),
+        createFallbackSearchTool(options.bookId, options.bookLanguage),
+        createFallbackChapterContextTool(options.bookId, options.bookLanguage),
       );
     }
 

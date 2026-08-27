@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Book } from "../../types";
 import { buildFastSystemPrompt, buildSystemPrompt } from "../system-prompt";
 
-function makeBook(): Book {
+function makeBook(metaOverride?: Partial<Book["meta"]>): Book {
   return {
     id: "book-1",
     filePath: "book.epub",
@@ -13,6 +13,7 @@ function makeBook(): Book {
       description: "",
       subjects: [],
       language: "en",
+      ...metaOverride,
     },
     progress: 0,
     isVectorized: false,
@@ -175,5 +176,44 @@ describe("buildSystemPrompt citations", () => {
 
     expect(prompt).not.toContain("Current Chapter:");
     expect(prompt).not.toContain("Reading Position:");
+  });
+
+  it("injects query guidance when book language differs from user language", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook({ language: "en" }),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "zh",
+    });
+
+    expect(prompt).toContain("- Language: en");
+    expect(prompt).toContain("Query guidance: the book is in en but the user asks in zh");
+  });
+
+  it("omits query guidance when book and user languages match", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook({ language: "en" }),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+    });
+
+    expect(prompt).toContain("- Language: en");
+    expect(prompt).not.toContain("Query guidance:");
+  });
+
+  it("omits query guidance when book language is missing", () => {
+    const prompt = buildSystemPrompt({
+      book: makeBook({ language: undefined }),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "zh",
+    });
+
+    expect(prompt).not.toContain("Language:");
+    expect(prompt).not.toContain("Query guidance:");
   });
 });

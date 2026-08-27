@@ -44,7 +44,7 @@ interface PromptContext {
 export function buildSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildRoleSection(),
-    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText),
+    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage),
     buildMemorySection(ctx.memorySummary),
     buildSemanticSection(ctx.semanticContext),
     buildRouteSection(ctx.questionCategory, ctx.selectionActive, ctx.routeHint),
@@ -85,6 +85,7 @@ function buildBookContextSection(
   currentChapter?: { index: number; title: string },
   currentPosition?: { cfi: string; percentage: number },
   selectionText?: string,
+  userLanguage?: string,
 ): string {
   if (!book) return "";
   const lines = [
@@ -92,6 +93,9 @@ function buildBookContextSection(
     `- Title: ${book.meta.title}`,
     `- Author: ${book.meta.author}`,
     book.meta.language ? `- Language: ${book.meta.language}` : "",
+    book.meta.language && userLanguage && book.meta.language !== userLanguage
+      ? `- Query guidance: the book is in ${book.meta.language} but the user asks in ${userLanguage}. When constructing retrieval queries, use ${book.meta.language} terms for proper nouns and key concepts, keeping the user's language for question intent.`
+      : "",
     `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
     currentChapter?.title ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})` : "",
     currentPosition?.percentage != null
@@ -689,7 +693,7 @@ function buildConstraintsSection(
 export function buildFastSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildRoleSection(),
-    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText),
+    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage),
     buildMemorySection(ctx.memorySummary),
     buildLiteSemanticSection(ctx.semanticContext, ctx.selectionText),
     buildLiteToolsSection(ctx.allowedToolNames),

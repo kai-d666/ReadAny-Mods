@@ -587,6 +587,7 @@ export interface ReadingAgentOptions {
   /** Injected tool provider — returns available tools for the agent */
   getAvailableTools: (options: {
     bookId: string | null;
+    bookLanguage?: string;
     isVectorized: boolean;
     enabledSkills: Skill[];
   }) => ToolDefinition[];
@@ -895,6 +896,7 @@ export async function* streamReadingAgent(
     );
     const allAvailable = getAvailableTools({
       bookId: effectiveBookId,
+      bookLanguage: book?.meta?.language,
       isVectorized,
       enabledSkills: isLite ? [] : enabledSkills,
     });
