@@ -829,6 +829,12 @@ export async function* streamReadingAgent(
   // Helper to check if aborted
   const isAborted = () => signal?.aborted ?? false;
   const readingContextSnapshot = getReadingContextSnapshot();
+
+  // 语言推断:meta.language 缺失时从章节标题/正文采样确定性推断(拉丁语系/中文),
+  // 供 prompt Query guidance 与工具描述注入使用
+  const effectiveBookLanguage =
+    book?.meta?.language ??
+    inferBookLanguageFromContext(readingContextSnapshot);
   const selectionActive = !!readingContextSnapshot?.selection?.text?.trim();
   // Current chapter reference with a title filled in. The relocate event's
   // tocItem label can be empty (some books/spines) — fall back to the persisted
@@ -896,7 +902,7 @@ export async function* streamReadingAgent(
     );
     const allAvailable = getAvailableTools({
       bookId: effectiveBookId,
-      bookLanguage: book?.meta?.language,
+      bookLanguage: effectiveBookLanguage,
       isVectorized,
       enabledSkills: isLite ? [] : enabledSkills,
     });
@@ -942,6 +948,7 @@ export async function* streamReadingAgent(
           selectionText: readingContextSnapshot?.selection?.text || "",
           currentChapter,
           currentPosition,
+          effectiveLanguage: effectiveBookLanguage,
           allowedToolNames: tools.map((tool) => tool.name),
         })
       : buildSystemPrompt({
@@ -959,6 +966,7 @@ export async function* streamReadingAgent(
           selectionText: readingContextSnapshot?.selection?.text || "",
           currentChapter,
           currentPosition,
+          effectiveLanguage: effectiveBookLanguage,
           allowedToolNames: tools.map((tool) => tool.name),
         });
 
@@ -1533,3 +1541,22 @@ export async function* streamReadingAgent(
 // --- Legacy exports for compatibility ---
 
 export { buildSystemPrompt };
+
+/**
+ * 确定性语言推断(仅 meta.language 缺失时):采样当前章标题+正文片段。
+ * 含 CJK → "zh";全 ASCII(拉丁文本)→ "latin"(拉丁语系原文术语对语义检索有效);
+ * 无法判定 → undefined(交给 unknown 引导)。
+ */
+function inferBookLanguageFromContext(
+  snapshot: { currentChapter?: { title?: string }; surroundingText?: string } | null | undefined,
+): string | undefined {
+  const text = [snapshot?.currentChapter?.title, snapshot?.surroundingText?.slice(0, 300)]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (!text) return undefined;
+  if (/[一-鿿぀-ヿ가-힯]/.test(text)) return "zh";
+  if (/^[ -~]*$/.test(text)) return "latin";
+  return undefined;
+}
+

@@ -38,13 +38,15 @@ interface PromptContext {
   currentChapter?: { index: number; title: string };
   /** Current reading position from ReadingContext snapshot. */
   currentPosition?: { cfi: string; percentage: number };
+  /** 语言(meta.language 或推断值 latin/zh)——为空时走 unknown 引导 */
+  effectiveLanguage?: string;
 }
 
 /** Build the full system prompt from context */
 export function buildSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildRoleSection(),
-    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage),
+    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage, ctx.effectiveLanguage),
     buildMemorySection(ctx.memorySummary),
     buildSemanticSection(ctx.semanticContext),
     buildRouteSection(ctx.questionCategory, ctx.selectionActive, ctx.routeHint),
@@ -86,18 +88,23 @@ function buildBookContextSection(
   currentPosition?: { cfi: string; percentage: number },
   selectionText?: string,
   userLanguage?: string,
+  effectiveLanguage?: string,
 ): string {
   if (!book) return "";
+  // effectiveLanguage(meta 缺失时由 agent 推断)优先,否则回退 book.meta.language
+  const lang = effectiveLanguage || book.meta.language;
   const lines = [
     "## Current Book",
     `- Title: ${book.meta.title}`,
     `- Author: ${book.meta.author}`,
-    book.meta.language ? `- Language: ${book.meta.language}` : "",
-    book.meta.language && userLanguage && book.meta.language !== userLanguage
-      ? `- Query guidance: the book is in ${book.meta.language} but the user asks in ${userLanguage}. When constructing retrieval queries, use ${book.meta.language} terms for proper nouns and key concepts, keeping the user's language for question intent.`
-      : !book.meta.language && userLanguage
-        ? `- Query guidance: the book's language is unknown — infer it from chapter titles and content snippets (e.g. '4. Launch' suggests English). When constructing retrieval queries, use the inferred book language for proper nouns and key concepts, keeping the user's language for question intent.`
-        : "",
+    lang ? `- Language: ${lang}` : "",
+    lang && userLanguage && lang !== userLanguage && lang !== "latin"
+      ? `- Query guidance: the book is in ${lang} but the user asks in ${userLanguage}. When constructing retrieval queries, use ${lang} terms for proper nouns and key concepts, keeping the user's language for question intent.`
+      : lang === "latin" && userLanguage && userLanguage !== "en"
+        ? `- Query guidance: the book's text is in a Latin-script language (likely English) but the user asks in ${userLanguage}. When constructing retrieval queries, use Latin-script terms for proper nouns and key concepts, keeping the user's language for question intent.`
+        : !lang && userLanguage
+          ? `- Query guidance: the book's language is unknown — infer it from chapter titles and content snippets (e.g. '4. Launch' suggests English). When constructing retrieval queries, use the inferred book language for proper nouns and key concepts, keeping the user's language for question intent.`
+          : "",
     `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
     currentChapter?.title ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})` : "",
     currentPosition?.percentage != null
@@ -695,7 +702,7 @@ function buildConstraintsSection(
 export function buildFastSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildRoleSection(),
-    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage),
+    buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage, ctx.effectiveLanguage),
     buildMemorySection(ctx.memorySummary),
     buildLiteSemanticSection(ctx.semanticContext, ctx.selectionText),
     buildLiteToolsSection(ctx.allowedToolNames),
