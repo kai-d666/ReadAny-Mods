@@ -1145,6 +1145,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           let title = fileName.replace(/\.\w+$/i, "") || "Untitled";
           let author = "";
           let coverUrl: string | undefined;
+          // language 提取在 try 内(meta 不可用到构造处),先声明、try 内搬运
+          let language: string | undefined;
 
           try {
             console.log(`[importBooks] Extracting metadata for format=${format}...`);
@@ -1159,6 +1161,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             );
             if (meta.title) title = meta.title;
             if (meta.author) author = meta.author;
+            language = (meta as { language?: string }).language;
 
             // Save cover image to app data
             if (meta.coverBytes && meta.coverBytes.length > 0) {
@@ -1192,6 +1195,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               ...(deletedMatch?.meta ?? {}),
               title,
               author,
+              // language 由提取器填充(EPUB dc:language),不可丢弃
+              language,
               coverUrl: coverUrl || deletedMatch?.meta.coverUrl,
             },
             groupId: deletedMatch?.groupId,

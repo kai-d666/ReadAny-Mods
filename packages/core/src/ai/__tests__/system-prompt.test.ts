@@ -204,7 +204,7 @@ describe("buildSystemPrompt citations", () => {
     expect(prompt).not.toContain("Query guidance:");
   });
 
-  it("omits query guidance when book language is missing", () => {
+  it("injects unknown-language guidance when book language is missing", () => {
     const prompt = buildSystemPrompt({
       book: makeBook({ language: undefined }),
       semanticContext: null,
@@ -213,7 +213,8 @@ describe("buildSystemPrompt citations", () => {
       userLanguage: "zh",
     });
 
-    expect(prompt).not.toContain("Language:");
-    expect(prompt).not.toContain("Query guidance:");
+    expect(prompt).not.toContain("- Language:");
+    expect(prompt).toContain("Query guidance");
+    expect(prompt).toContain("language is unknown");
   });
 });
