@@ -99,11 +99,11 @@ function buildBookContextSection(
     `- Author: ${book.meta.author}`,
     lang ? `- Language: ${lang}` : "",
     lang && userLanguage && lang !== userLanguage && lang !== "latin"
-      ? `- Query guidance: the book is in ${lang} but the user asks in ${userLanguage}. When constructing retrieval queries, use ${lang} terms for proper nouns and key concepts, keeping the user's language for question intent.`
+      ? `- Query guidance: the book is in ${lang} but the user asks in ${userLanguage}. When constructing retrieval queries, use ${lang} terms ONLY — do not mix the user's language words into the query.`
       : lang === "latin" && userLanguage && userLanguage !== "en"
-        ? `- Query guidance: the book's text is in a Latin-script language (likely English) but the user asks in ${userLanguage}. When constructing retrieval queries, use Latin-script terms for proper nouns and key concepts, keeping the user's language for question intent.`
+        ? `- Query guidance: the book's text is in a Latin-script language (likely English) but the user asks in ${userLanguage}. When constructing retrieval queries, use Latin-script terms ONLY — do not mix the user's language words into the query.`
         : !lang && userLanguage
-          ? `- Query guidance: the book's language is unknown — infer it from chapter titles and content snippets (e.g. '4. Launch' suggests English). When constructing retrieval queries, use the inferred book language for proper nouns and key concepts, keeping the user's language for question intent.`
+          ? `- Query guidance: the book's language is unknown — infer it from chapter titles and content snippets (e.g. '4. Launch' suggests English). When constructing retrieval queries, use the inferred book language ONLY — do not mix the user's language words into the query.`
           : "",
     `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
     currentChapter?.title ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})` : "",
