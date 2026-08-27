@@ -121,7 +121,7 @@ export function createRagSearchTool(bookId: string, bookLanguage?: string): Tool
     parameters: {
       query: {
         type: "string",
-        description: "The search query describing what to find",
+        description: "Retrieval keywords — 2-5 COMPACT terms/proper nouns, in the book's language. NOT a sentence: for '主角叫什么' use 'Ender protagonist' — junk words (名字/叫什么) only dilute results.",
         required: true,
       },
       mode: {

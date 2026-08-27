@@ -252,7 +252,7 @@ export function createFallbackSearchTool(bookId: string, bookLanguage?: string):
     description:
       "Keyword search the original book file without a vector index. Slower and less semantic than RAG, but useful when the book has not been vectorized. Returns a CFI only when the match can be mapped to a concrete reader text segment." + bookLanguageHint(bookLanguage),
     parameters: {
-      query: { type: "string", description: "Keywords or phrase to search for", required: true },
+      query: { type: "string", description: "Retrieval keywords — 2-5 COMPACT terms, in the book's language. NOT a sentence: for '主角叫什么' use 'Ender protagonist' — junk words dilute results.", required: true },
       topK: { type: "number", description: "Number of chapters/snippets to return (default: 5)" },
     },
     execute: async (args) => {
