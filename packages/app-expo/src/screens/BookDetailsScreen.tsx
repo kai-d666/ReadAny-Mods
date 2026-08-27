@@ -109,6 +109,19 @@ const LANGUAGE_PRESETS = [
   { value: "pt", label: "Português" },
   { value: "ru", label: "Русский" },
 ];
+
+/** 取语言基码(ISO 639-1 前 2 字母,兼容 "zh-CN"/"zh_CN"/"ZH-HANS"/裸码) */
+function languageBase(code: string): string {
+  return code.toLowerCase().split(/[-_]/)[0];
+}
+
+/** 语言码 → 可精确匹配预设的 value(PickerInfoRow 按原始值匹配;裸码/变体归一,未知码回退) */
+function normalizeLanguageCode(code: string): string {
+  if (!code) return "";
+  const base = languageBase(code);
+  const preset = LANGUAGE_PRESETS.find((p) => languageBase(p.value) === base);
+  return preset?.value ?? code;
+}
 const DATE_PRECISIONS = ["year", "month", "day"] as const;
 type DatePrecision = (typeof DATE_PRECISIONS)[number];
 const YEAR_OPTIONS = Array.from({ length: 220 }, (_, index) =>
@@ -659,7 +672,7 @@ export function BookDetailsScreen({ route }: Props) {
                 />
                 <PickerInfoRow
                   label={t("library.detailsLanguage", "语言")}
-                  value={values.language}
+                  value={normalizeLanguageCode(values.language)}
                   placeholder="—"
                   options={LANGUAGE_PRESETS}
                   onPress={() =>
