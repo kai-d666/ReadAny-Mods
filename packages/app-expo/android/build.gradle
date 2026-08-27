@@ -9,7 +9,7 @@ buildscript {
     mavenCentral()
   }
   dependencies {
-    classpath('com.android.tools.build:gradle')
+    classpath('com.android.tools.build:gradle:8.10.1')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
   }
@@ -17,6 +17,8 @@ buildscript {
 
 allprojects {
   repositories {
+    // 本地源码 Maven 优先:ReactAndroid 源码 AAR 已发布到 ~/.m2(坐标/版本同官方 0.81.5)
+    mavenLocal()
     maven { url 'https://maven.aliyun.com/repository/google' }
     maven { url 'https://maven.aliyun.com/repository/central' }
     google()
@@ -27,3 +29,4 @@ allprojects {
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
