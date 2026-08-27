@@ -1670,6 +1670,7 @@ export function ReaderScreen({ route, navigation }: Props) {
               bookId,
               selectedText,
               chapterTitle: chapter,
+              selectionCfi: selectionPopoverSelection.cfi,
             });
           }}
           onDictionary={(text) => {

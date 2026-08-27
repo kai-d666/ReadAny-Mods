@@ -76,7 +76,7 @@ const THINK_DARK_PNG = require("../../assets/think-dark.png");
 type Props = NativeStackScreenProps<RootStackParamList, "BookChat">;
 
 export function BookChatScreen({ route, navigation }: Props) {
-  const { bookId, selectedText, chapterTitle } = route.params;
+  const { bookId, selectedText, chapterTitle, selectionCfi } = route.params;
   const { t } = useTranslation();
   const colors = useColors();
   const { isDark } = useTheme();
@@ -110,10 +110,11 @@ export function BookChatScreen({ route, navigation }: Props) {
           id: `quote-${Date.now()}`,
           text: selectedText,
           source: chapterTitle || undefined,
+          cfi: selectionCfi,
         },
       ]);
     }
-  }, [selectedText, chapterTitle, quotes.length]);
+  }, [selectedText, chapterTitle, selectionCfi, quotes.length]);
 
   const handleRemoveQuote = useCallback((id: string) => {
     setQuotes((prev) => prev.filter((q) => q.id !== id));

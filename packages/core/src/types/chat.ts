@@ -9,6 +9,9 @@ export interface AttachedQuote {
   text: string;
   /** Optional source info, e.g. chapter title */
   source?: string;
+  /** Optional exact reading position (epubcfi) — the model can anchor
+   *  getSurroundingContext on it instead of searching for the quote. */
+  cfi?: string;
 }
 
 export type MessageRole = "user" | "assistant" | "system";

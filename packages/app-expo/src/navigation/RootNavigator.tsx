@@ -31,7 +31,7 @@ export type RootStackParamList = {
   Tabs: undefined;
   Reader: { bookId: string; cfi?: string; highlight?: boolean; openTTS?: boolean };
   BookDetails: { bookId: string };
-  BookChat: { bookId: string; selectedText?: string; chapterTitle?: string };
+  BookChat: { bookId: string; selectedText?: string; chapterTitle?: string; selectionCfi?: string };
   Stats: undefined;
   Badges: undefined;
   Skills: undefined;

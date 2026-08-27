@@ -215,7 +215,11 @@ export function useStreamingChat(options?: StreamingChatOptions) {
 
         let aiPrompt = content.trim();
         if (quotes && quotes.length > 0) {
-          const quotesText = quotes.map((q) => `> ${q.text.slice(0, 300)}`).join("\n\n");
+          const quoteLines = quotes.map((q) => {
+            const anchor = q.cfi ? ` (读到这里: ${q.cfi})` : "";
+            return `> ${q.text.slice(0, 300)}${anchor}`;
+          });
+          const quotesText = quoteLines.join("\n\n");
           aiPrompt = content.trim()
             ? `关于以下文本：\n${quotesText}\n\n${content.trim()}`
             : `关于以下文本：\n${quotesText}\n\n请帮我分析这段文本。`;
