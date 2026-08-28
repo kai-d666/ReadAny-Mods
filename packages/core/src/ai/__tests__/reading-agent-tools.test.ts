@@ -134,6 +134,74 @@ describe("streamReadingAgent tool registration", () => {
     expect(systemContent).not.toContain("ragSearch");
   });
 
+  it("registers only the always-on tools in lite by default (choice items off)", async () => {
+    // rag*/fallback* are mutually exclusive registration families (by isVectorized).
+    const cases = [
+      {
+        isVectorized: true,
+        expectTools: [
+          "getSurroundingContext",
+          "ragSearch",
+          "ragContext",
+          "resolveChapterReference",
+        ],
+      },
+      {
+        isVectorized: false,
+        expectTools: [
+          "getSurroundingContext",
+          "fallbackSearch",
+          "fallbackChapterContext",
+          "resolveChapterReference",
+        ],
+      },
+    ];
+    const OFF_BY_DEFAULT = [
+      "getSelection",
+      "getReadingProgress",
+      "getRecentHighlights",
+      "ragToc",
+      "fallbackToc",
+      "mindmap",
+    ];
+
+    for (const c of cases) {
+      let capturedTools: ToolDefinition[] = [];
+      createReactAgentMock.mockImplementation((config: { tools: ToolDefinition[] }) => {
+        capturedTools = config.tools;
+        return {
+          streamEvents: vi.fn(() => ({
+            [Symbol.asyncIterator]: async function* () {
+              // no-op stream
+            },
+          })),
+        };
+      });
+
+      for await (const event of streamReadingAgent(
+        {
+          aiConfig: makeAIConfig(),
+          chatMode: "lite",
+          book: null,
+          bookId: "book-1",
+          semanticContext: null,
+          enabledSkills: [],
+          isVectorized: c.isVectorized,
+          getAvailableTools,
+        },
+        "介绍一下这本书",
+      )) {
+        void event;
+      }
+
+      const toolNames = capturedTools.map((tool) => tool.name);
+      expect(toolNames.sort()).toEqual([...c.expectTools].sort());
+      for (const off of OFF_BY_DEFAULT) {
+        expect(toolNames).not.toContain(off);
+      }
+    }
+  });
+
   it("registers fallback tools when only bookId is available", async () => {
     createReactAgentMock.mockReturnValue({
       streamEvents: vi.fn(() => ({

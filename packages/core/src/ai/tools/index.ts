@@ -54,35 +54,30 @@ export type { ToolDefinition, ToolParameter } from "./tool-types";
 export { getContextTools } from "./context-tools";
 
 /**
- * Lite-mode default tool whitelist — all tools here are "no vectorization
- * required + millisecond direct read / keyword search":
- *  - Context (5): current reading position
- *  - Fallback (4): keyword search for non-vectorized books
- *  - General (1): mindmap
- * RAG/analysis tools are intentionally excluded (heavy, vectorization-dependent).
+ * Lite-mode default tool whitelist — the 6 always-on tools per the three-mode
+ * decision table (docs/三模式-工具与注入总表.md, lite 列 1 必开):
+ *  - getSurroundingContext: current page/selection context (millisecond direct read)
+ *  - Retrieval family: rag* for vectorized books, fallback* for non-vectorized ones
+ *  - resolveChapterReference: "第N章" → internal index (both families)
+ * Choice items (getSelection/getReadingProgress/getRecentHighlights/ragToc/fallbackToc/
+ * mindmap) are OFF by default in lite; user toggles arrive in batch 3
+ * (see docs/三模式-选项决策.md「选择项机制」).
  */
 export const LITE_DEFAULT_TOOLS = [
   "getSurroundingContext",
-  "getSelection",
-  "getReadingProgress",
-  "getRecentHighlights",
   // Both retrieval families are allowed: the active one depends on isVectorized —
   // vectorized books get rag* (seconds, CFI-carrying), non-vectorized get fallback*.
   "ragSearch",
-  "ragToc",
   "ragContext",
   "fallbackSearch",
-  "fallbackToc",
   "fallbackChapterContext",
   "resolveChapterReference",
-  "mindmap",
 ];
 
 /**
  * Named tools lite mode must never expose, regardless of user config.
- * Only heavyweight analysis tools — basic retrieval stays available:
- * - Vectorized books: ragSearch/ragToc/ragContext (fast, CFI-carrying, seconds)
- * - Non-vectorized books: fallbackSearch/fallbackToc/fallbackChapterContext
+ * Only heavyweight analysis tools — the whitelist above (LITE_DEFAULT_TOOLS or
+ * user liteToolIds) controls what stays available.
  */
 export const LITE_FORBIDDEN_TOOLS = new Set([
   "summarize",
