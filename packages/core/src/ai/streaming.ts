@@ -4,7 +4,7 @@ import i18n from "i18next";
  * Uses LangGraph reading agent for unified model support with tool calling.
  * Supports OpenAI-compatible, Anthropic Claude, and Google Gemini providers.
  */
-import type { AIChatMode, AIConfig, Book, SemanticContext, Skill, Thread } from "../types";
+import type { AIChatMode, AIConfig, Book, Skill, Thread } from "../types";
 import { streamReadingAgent } from "./agents/reading-agent";
 import { processMessages } from "./message-pipeline";
 import { getToolResultError } from "./tool-result";
@@ -14,7 +14,6 @@ export interface StreamingOptions {
   thread: Thread;
   book: Book | null;
   bookId?: string | null;
-  semanticContext: SemanticContext | null;
   enabledSkills: Skill[];
   isVectorized: boolean;
   aiConfig: AIConfig;
@@ -82,7 +81,6 @@ export class StreamingChat {
       {
         book: options.book,
         bookId: options.book?.id || options.bookId || options.thread.bookId || null,
-        semanticContext: options.semanticContext,
         enabledSkills: options.enabledSkills,
         isVectorized: options.isVectorized,
         userLanguage: i18n.language || options.book?.meta.language || "en",
@@ -114,7 +112,6 @@ export class StreamingChat {
           aiConfig: options.aiConfig,
           book: options.book,
           bookId: options.book?.id || options.bookId || options.thread.bookId || null,
-          semanticContext: options.semanticContext,
           enabledSkills: options.enabledSkills,
           isVectorized: options.isVectorized,
           deepThinking: options.deepThinking,

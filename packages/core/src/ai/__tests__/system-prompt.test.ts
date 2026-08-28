@@ -35,7 +35,6 @@ describe("buildSystemPrompt citations", () => {
   it("allows fallback citations only when a returned CFI can be validated", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: false,
       userLanguage: "en",
@@ -53,7 +52,6 @@ describe("buildSystemPrompt citations", () => {
   it("keeps clickable citation instructions for indexed content", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -68,7 +66,6 @@ describe("buildSystemPrompt citations", () => {
   it("includes turn-focus routing hints when provided", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -87,7 +84,6 @@ describe("buildSystemPrompt citations", () => {
   it("lists the actually allowed tools for the current turn when provided", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -103,7 +99,6 @@ describe("buildSystemPrompt citations", () => {
   it("does not describe tools that are unavailable in the current turn", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -123,7 +118,6 @@ describe("buildSystemPrompt citations", () => {
   it("keeps workflow instructions aligned with library-only tools", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -143,7 +137,6 @@ describe("buildSystemPrompt citations", () => {
   it("injects current chapter and reading position into the standard prompt", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -158,7 +151,6 @@ describe("buildSystemPrompt citations", () => {
   it("injects current chapter and reading position into the lite prompt", () => {
     const prompt = buildFastSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -173,7 +165,6 @@ describe("buildSystemPrompt citations", () => {
   it("omits position lines when no reading snapshot is available", () => {
     const prompt = buildSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -186,7 +177,6 @@ describe("buildSystemPrompt citations", () => {
   it("injects query guidance when book language differs from user language", () => {
     const prompt = buildSystemPrompt({
       book: makeBook({ language: "en" }),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "zh",
@@ -198,7 +188,6 @@ describe("buildSystemPrompt citations", () => {
   it("omits query guidance when book and user languages match", () => {
     const prompt = buildSystemPrompt({
       book: makeBook({ language: "en" }),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -213,7 +202,6 @@ describe("buildSystemPrompt citations", () => {
   it("injects unknown-language guidance when book language is missing", () => {
     const prompt = buildSystemPrompt({
       book: makeBook({ language: undefined }),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "zh",
@@ -232,7 +220,6 @@ describe("buildKnowledgeSystemPrompt", () => {
         description: "A sci-fi classic about a boy trained for war.",
         subjects: ["Science Fiction", "War"],
       }),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "zh",
@@ -256,13 +243,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("never mentions retrieval tools or semantic reading content", () => {
     const prompt = buildKnowledgeSystemPrompt({
       book: makeBook({ description: "desc" }),
-      semanticContext: {
-        currentChapter: "4. Launch",
-        currentPosition: "12%",
-        surroundingText: "Some surrounding text from the book",
-        recentHighlights: ["a highlight"],
-        operationType: "reading",
-      },
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -280,7 +260,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("stays usable without a book", () => {
     const noBook = buildKnowledgeSystemPrompt({
       book: null,
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: false,
       userLanguage: "en",
@@ -292,7 +271,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("announces disabled optional tools so the model can guide the user", () => {
     const prompt = buildKnowledgeSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: false,
       userLanguage: "en",
@@ -306,7 +284,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("lists enabled tools AND the still-off choice items when some are on", () => {
     const prompt = buildKnowledgeSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: false,
       userLanguage: "en",
@@ -323,7 +300,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("forces the response language to the user's language", () => {
     const prompt = buildKnowledgeSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -334,7 +310,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("injects the spoiler-free boundary when enabled", () => {
     const prompt = buildKnowledgeSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "zh",
@@ -351,7 +326,6 @@ describe("buildKnowledgeSystemPrompt", () => {
   it("omits the spoiler block when disabled or without a book", () => {
     const off = buildKnowledgeSystemPrompt({
       book: makeBook(),
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
@@ -360,7 +334,6 @@ describe("buildKnowledgeSystemPrompt", () => {
 
     const noBook = buildKnowledgeSystemPrompt({
       book: null,
-      semanticContext: null,
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",

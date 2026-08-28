@@ -14,7 +14,7 @@ import { estimateTokens } from "../../rag/chunker";
  * 4. Real streaming via streamEvents API
  * 5. System prompt from system-prompt.ts
  */
-import type { AIChatMode, AIConfig, Book, SemanticContext, Skill } from "../../types";
+import type { AIChatMode, AIConfig, Book, Skill } from "../../types";
 import { createChatModel } from "../llm-provider";
 import { getReadingContextSnapshot } from "../reading-context-service";
 import {
@@ -578,7 +578,6 @@ export interface ReadingAgentOptions {
   aiConfig: AIConfig;
   book: Book | null;
   bookId?: string | null;
-  semanticContext: SemanticContext | null;
   enabledSkills: Skill[];
   isVectorized: boolean;
   deepThinking?: boolean;
@@ -819,7 +818,6 @@ export async function* streamReadingAgent(
     aiConfig,
     book,
     bookId,
-    semanticContext,
     enabledSkills,
     isVectorized,
     deepThinking,
@@ -966,7 +964,6 @@ export async function* streamReadingAgent(
       ? buildKnowledgeSystemPrompt({
           book,
           bookId: effectiveBookId,
-          semanticContext,
           enabledSkills: [],
           isVectorized,
           userLanguage: i18n.language || "en",
@@ -980,7 +977,6 @@ export async function* streamReadingAgent(
         ? buildFastSystemPrompt({
             book,
             bookId: effectiveBookId,
-            semanticContext,
             enabledSkills: [], // skills excluded in lite mode
             isVectorized,
             userLanguage: i18n.language || "en",
@@ -995,7 +991,6 @@ export async function* streamReadingAgent(
         : buildSystemPrompt({
           book,
           bookId: effectiveBookId,
-          semanticContext,
           enabledSkills,
           isVectorized,
           userLanguage: i18n.language || "en",
@@ -1058,7 +1053,31 @@ export async function* streamReadingAgent(
       const stream = await model.stream(allMessages);
       const thinkTagParser = new ThinkTagStreamParser();
       const emittedGeminiThoughtSummaries = new Set<string>();
+      let lastUsage: {
+        promptTokens?: number;
+        completionTokens?: number;
+      } | null = null;
       for await (const chunk of stream) {
+        // Streaming usage arrives on the final chunk — LangChain normalizes to
+        // usage_metadata; raw providers expose usage / usageMetadata.
+        const streamChunk = chunk as unknown as {
+          usage_metadata?: { input_tokens?: number; output_tokens?: number };
+          additional_kwargs?: {
+            usage?: { prompt_tokens?: number; completion_tokens?: number };
+            usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+          };
+        };
+        const chunkUsage =
+          streamChunk.usage_metadata ??
+          streamChunk.additional_kwargs?.usage ??
+          streamChunk.additional_kwargs?.usageMetadata;
+        if (chunkUsage) {
+          const u = chunkUsage as Record<string, number | undefined>;
+          lastUsage = {
+            promptTokens: u.prompt_tokens ?? u.input_tokens ?? u.promptTokenCount,
+            completionTokens: u.completion_tokens ?? u.output_tokens ?? u.candidatesTokenCount,
+          };
+        }
         for (const summary of extractGeminiThoughtSummariesFromRaw(
           chunk.additional_kwargs?.__raw_response,
         )) {
@@ -1108,6 +1127,17 @@ export async function* streamReadingAgent(
         } else {
           yield { type: "reasoning", content: event.content, stepType: "thinking" };
         }
+      }
+      // Direct-path usage: mirror the agent-path llm_usage event so the UI
+      // token sum works for plain-text turns too.
+      if (lastUsage) {
+        const promptTokens = lastUsage.promptTokens ?? 0;
+        const completionTokens = lastUsage.completionTokens ?? 0;
+        yield {
+          type: "llm_usage",
+          totalTokens: promptTokens + completionTokens,
+          toolCalls: 0,
+        };
       }
       return;
     }

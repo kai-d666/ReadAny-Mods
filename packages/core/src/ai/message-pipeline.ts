@@ -4,7 +4,7 @@
  * - 8-message sliding window
  * - Context assembly
  */
-import type { Message, SemanticContext, Thread } from "../types";
+import type { Message, Thread } from "../types";
 import type { Book, Skill } from "../types";
 import { buildSystemPrompt } from "./system-prompt";
 
@@ -15,7 +15,6 @@ interface PipelineConfig {
 interface PipelineContext {
   book: Book | null;
   bookId?: string | null;
-  semanticContext: SemanticContext | null;
   enabledSkills: Skill[];
   isVectorized: boolean;
   userLanguage: string;

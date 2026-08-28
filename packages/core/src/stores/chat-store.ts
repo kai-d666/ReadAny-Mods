@@ -15,7 +15,7 @@ import {
  * - Each book has its own active thread; general chat has its own.
  * - All threads are persisted to SQLite via core db module
  */
-import type { Message, MessageV2, ReasoningStep, SemanticContext, Thread, ToolCall } from "../types";
+import type { Message, MessageV2, ReasoningStep, Thread, ToolCall } from "../types";
 
 export type ChatStreamingStep = "thinking" | "tool_calling" | "responding" | "idle";
 
@@ -45,13 +45,13 @@ export interface ChatState {
   toolCalls: ToolCall[];
   reasoning: ReasoningStep[];
   currentStep: ChatStreamingStep;
-  semanticContext: SemanticContext | null;
   initialized: boolean;
 
   loadThreads: (bookId?: string) => Promise<void>;
   loadAllThreads: () => Promise<void>;
   createThread: (bookId?: string, title?: string) => Promise<Thread>;
   removeThread: (threadId: string) => Promise<void>;
+  clearAllThreads: () => Promise<void>;
   setGeneralActiveThread: (threadId: string | null) => void;
   setBookActiveThread: (bookId: string, threadId: string | null) => void;
   getActiveThreadId: (bookId?: string) => string | null;
@@ -79,7 +79,6 @@ export interface ChatState {
   setReasoning: (reasoning: ReasoningStep[]) => void;
   addReasoningStep: (step: ReasoningStep) => void;
   setCurrentStep: (step: ChatStreamingStep) => void;
-  setSemanticContext: (ctx: SemanticContext | null) => void;
   resetStreamingState: () => void;
 }
 
@@ -93,7 +92,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   toolCalls: [],
   reasoning: [],
   currentStep: "idle",
-  semanticContext: null,
   initialized: false,
 
   loadThreads: async (bookId?: string) => {
@@ -188,6 +186,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       return updates as ChatState;
     });
+  },
+
+  clearAllThreads: async () => {
+    const { threads } = get();
+    for (const thread of threads) {
+      try {
+        await dbDeleteThread(thread.id);
+      } catch (err) {
+        console.error("[chat-store] Failed to delete thread on clear-all:", err);
+      }
+    }
+    set({ threads: [], generalActiveThreadId: null, bookActiveThreadIds: {} });
   },
 
   setGeneralActiveThread: (threadId) => set({ generalActiveThreadId: threadId }),
@@ -311,8 +321,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   addReasoningStep: (step) => set((state) => ({ reasoning: [...state.reasoning, step] })),
 
   setCurrentStep: (step) => set({ currentStep: step }),
-
-  setSemanticContext: (ctx) => set({ semanticContext: ctx }),
 
   resetStreamingState: () =>
     set({

@@ -42,7 +42,6 @@ function book(): Book {
 const context = {
   book: book(),
   bookId: "book-1",
-  semanticContext: null,
   enabledSkills: [],
   isVectorized: false,
   userLanguage: "en",

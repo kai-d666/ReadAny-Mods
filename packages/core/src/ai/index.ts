@@ -11,8 +11,6 @@ export type { LLMOptions } from "./llm-provider";
 export { processMessages } from "./message-pipeline";
 export type { ProcessedMessage } from "./message-pipeline";
 
-export { generateSemanticContext, detectOperationType } from "./semantic-context";
-export type { OperationType } from "./semantic-context";
 
 export { StreamingChat, createMessageId, createThreadId } from "./streaming";
 export type { StreamingOptions } from "./streaming";

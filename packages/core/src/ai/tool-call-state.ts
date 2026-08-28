@@ -97,7 +97,9 @@ export function attachTokenUsageToParts(
 ) {
   for (let i = fromIndex; i < parts.length; i++) {
     const part = parts[i];
-    if (part.type === "tool_call" || part.type === "reasoning") {
+    // Tool/reasoning cards show the badge inline; text parts carry the usage
+    // too so the footer "sum" also covers plain-text-only turns (no tools).
+    if (part.type === "tool_call" || part.type === "reasoning" || part.type === "text") {
       part.tokens = tokens;
       part.updatedAt = now;
     }

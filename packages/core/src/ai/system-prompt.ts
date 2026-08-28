@@ -7,7 +7,7 @@
  * 5. Core workflow & strict tool-use rules
  * 6. Response constraints
  */
-import type { Book, SemanticContext, Skill } from "../types";
+import type { Book, Skill } from "../types";
 import { KNOWLEDGE_CHOICE_TOOLS, LITE_CHOICE_TOOLS } from "./tools";
 import { getBookProgressPercent } from "../utils/book-progress";
 
@@ -23,8 +23,6 @@ type ReadingQuestionCategory =
 interface PromptContext {
   book: Book | null;
   bookId?: string | null;
-  /** @deprecated 死路:生产恒为 null(无人传递),对应注入段已删除(2026-08-28);类型链列入待办移除 */
-  semanticContext: SemanticContext | null;
   enabledSkills: Skill[];
   isVectorized: boolean;
   userLanguage: string;
@@ -34,7 +32,7 @@ interface PromptContext {
   selectionActive?: boolean;
   routeHint?: string;
   allowedToolNames?: string[];
-  /** Text currently selected in the reader (from ReadingContext snapshot — not on SemanticContext). */
+  /** Text currently selected in the reader (from ReadingContext snapshot). */
   selectionText?: string;
   /** Current chapter from ReadingContext snapshot (mobile reader relocate event). */
   currentChapter?: { index: number; title: string };
@@ -64,7 +62,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       ctx.isVectorized,
       ctx.spoilerFree,
       ctx.book,
-      ctx.semanticContext,
+      ctx.currentChapter?.title,
       ctx.allowedToolNames,
     ),
   ];
@@ -609,7 +607,7 @@ function buildConstraintsSection(
   isVectorized: boolean,
   spoilerFree?: boolean,
   book?: Book | null,
-  semanticContext?: SemanticContext | null,
+  currentChapterTitle?: string,
   allowedToolNames?: string[],
 ): string {
   const allowed = allowedToolNames ? new Set(allowedToolNames) : null;
@@ -649,7 +647,7 @@ function buildConstraintsSection(
 
   if (spoilerFree && book) {
     const progress = getBookProgressPercent(book.progress);
-    const chapter = semanticContext?.currentChapter || "unknown";
+    const chapter = currentChapterTitle || "unknown";
     lines.push("");
     lines.push("### Spoiler-Free Mode (ACTIVE)");
     lines.push(

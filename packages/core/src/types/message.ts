@@ -18,6 +18,9 @@ export interface BasePart {
 export interface TextPart extends BasePart {
   type: "text";
   text: string;
+  /** LLM-call token usage attached retroactively (plain-text turns) — used
+   *  by the assistant footer "sum" badge; not rendered inline. */
+  tokens?: number;
 }
 
 export interface ReasoningPart extends BasePart {

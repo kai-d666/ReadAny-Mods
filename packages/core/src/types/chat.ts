@@ -120,14 +120,6 @@ export interface ReadingContext {
   timestamp: number;
 }
 
-export interface SemanticContext {
-  currentChapter: string;
-  currentPosition: string;
-  surroundingText: string;
-  recentHighlights: string[];
-  operationType: "reading" | "highlighting" | "searching" | "navigating";
-}
-
 export type AIProviderType =
   | "openai"
   | "atlascloud"

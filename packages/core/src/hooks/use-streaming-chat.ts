@@ -25,7 +25,6 @@ import type {
   Part,
   QuotePart,
   ReasoningPart,
-  SemanticContext,
   Skill,
   TextPart,
   Thread,
@@ -91,7 +90,6 @@ function isMindmapResult(
 
 export interface StreamingChatOptions {
   book?: Book | null;
-  semanticContext?: SemanticContext | null;
   bookId?: string;
 }
 
@@ -442,7 +440,6 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           thread: threadForStream,
           book: streamBook,
           bookId,
-          semanticContext: options?.semanticContext || null,
           enabledSkills,
           isVectorized: streamIsVectorized,
           aiConfig: aiConfigOverride || aiConfig,
@@ -718,7 +715,6 @@ export function useStreamingChat(options?: StreamingChatOptions) {
       loadEnabledSkills,
       options?.book,
       options?.bookId,
-      options?.semanticContext,
     ],
   );
 

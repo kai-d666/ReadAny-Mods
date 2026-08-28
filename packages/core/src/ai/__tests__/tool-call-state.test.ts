@@ -66,7 +66,7 @@ describe("tool call state helpers", () => {
       expect(reasoning.tokens).toBe(5300);
       expect(toolA.tokens).toBe(5300);
       expect(toolB.tokens).toBe(5300);
-      expect(text).not.toHaveProperty("tokens"); // text parts never get usage
+      expect(text.tokens).toBe(5300); // text parts carry usage for the footer sum
       expect(reasoning.updatedAt).toBe(42);
       expect(toolA.updatedAt).toBe(42);
     });

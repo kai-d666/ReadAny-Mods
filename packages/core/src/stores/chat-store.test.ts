@@ -23,7 +23,6 @@ function resetChatStore() {
     toolCalls: [],
     reasoning: [],
     currentStep: "idle",
-    semanticContext: null,
     initialized: false,
   });
 }
