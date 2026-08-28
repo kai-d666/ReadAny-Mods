@@ -809,7 +809,11 @@ function extractGeminiThoughtSummariesFromRaw(rawResponse: unknown): string[] {
 export async function* streamReadingAgent(
   options: ReadingAgentOptions,
   userInput: string,
-  history: Array<{ role: "user" | "assistant"; content: string; reasoning?: string }> = [],
+  history: Array<{
+    role: "user" | "assistant" | "system";
+    content: string;
+    reasoning?: string;
+  }> = [],
 ): AsyncGenerator<AgentStreamEvent> {
   const {
     aiConfig,
@@ -1004,27 +1008,40 @@ export async function* streamReadingAgent(
       aiConfig.activeModel?.toLowerCase().includes("deepseek") ||
       aiConfig.activeModel?.toLowerCase().includes("reasoner");
 
+    // Static first-turn book info is stored in history as system messages —
+    // merge it into the system prompt prefix so the LLM sees ONE system message
+    // (provider-safe) and the input message list stays free of system role.
+    const staticContent = history
+      .filter((h) => h.role === "system")
+      .map((h) => h.content)
+      .join("\n\n---\n\n");
+    const fullPrompt = staticContent
+      ? `${systemPrompt}\n\n---\n\n${staticContent}`
+      : systemPrompt;
+
     const inputMessages: BaseMessage[] = [
-      ...history.map((h) => {
-        if (h.role === "user") {
-          return new HumanMessage(h.content);
-        }
-        // For DeepSeek, include reasoning_content in additional_kwargs
-        if (isDeepSeek && h.reasoning) {
-          return new AIMessage({
-            content: h.content,
-            additional_kwargs: { reasoning_content: h.reasoning },
-          });
-        }
-        return new AIMessage(h.content);
-      }),
+      ...history
+        .filter((h) => h.role !== "system")
+        .map((h) => {
+          if (h.role === "user") {
+            return new HumanMessage(h.content);
+          }
+          // For DeepSeek, include reasoning_content in additional_kwargs
+          if (isDeepSeek && h.reasoning) {
+            return new AIMessage({
+              content: h.content,
+              additional_kwargs: { reasoning_content: h.reasoning },
+            });
+          }
+          return new AIMessage(h.content);
+        }),
       new HumanMessage(userInput),
     ];
 
     // If no tools available, stream directly without agent graph
     if (tools.length === 0) {
       const { SystemMessage } = await import("@langchain/core/messages");
-      const allMessages = [new SystemMessage(systemPrompt), ...inputMessages];
+      const allMessages = [new SystemMessage(fullPrompt), ...inputMessages];
       const stream = await model.stream(allMessages);
       const thinkTagParser = new ThinkTagStreamParser();
       const emittedGeminiThoughtSummaries = new Set<string>();
@@ -1208,7 +1225,7 @@ export async function* streamReadingAgent(
     const agent = createReactAgent({
       llm: model,
       tools: langChainTools,
-      prompt: systemPrompt,
+      prompt: fullPrompt,
     });
 
     // Stream events from the agent graph.

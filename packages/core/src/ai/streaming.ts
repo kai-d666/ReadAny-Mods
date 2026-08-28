@@ -93,7 +93,9 @@ export class StreamingChat {
 
     const userInput = messages[messages.length - 1]?.content || "";
     const history = messages.slice(0, -1).map((m) => ({
-      role: m.role as "user" | "assistant",
+      // system messages (first-turn book info) pass through to the agent,
+      // which merges them into the system prompt prefix.
+      role: m.role,
       content: m.content,
       reasoning: m.reasoning,
     }));

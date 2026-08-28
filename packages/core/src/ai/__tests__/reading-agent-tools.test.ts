@@ -134,6 +134,87 @@ describe("streamReadingAgent tool registration", () => {
     expect(systemContent).not.toContain("ragSearch");
   });
 
+  it("merges first-turn system (book info) into a single system prompt (direct path)", async () => {
+    const llmStreamMock = vi.fn(async function* () {
+      yield { content: "OK" };
+    });
+    const { createChatModel } = await import("../llm-provider");
+    (createChatModel as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      stream: llmStreamMock,
+    });
+
+    const staticInfo = "## Current Book\n- Title: Test Book\n- Author: Test Author";
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        chatMode: "knowledge",
+        getAvailableTools,
+      },
+      "Who wrote it?",
+      [
+        { role: "system", content: staticInfo },
+        { role: "user", content: "Hi" },
+        { role: "assistant", content: "Hello" },
+      ],
+    )) {
+      events.push(event);
+    }
+
+    expect(createReactAgentMock).not.toHaveBeenCalled();
+    const messages = (llmStreamMock.mock.calls as unknown[][])[0]?.[0] as Array<{
+      content?: unknown;
+    }>;
+    // One merged system message + history (system excluded) + new user input
+    expect(messages).toHaveLength(4);
+    const systemContent = messages
+      .map((m) => (typeof m?.content === "string" ? m.content : ""))
+      .join("\n");
+    expect(systemContent).toContain("Knowledge-Only");
+    expect(systemContent).toContain("- Title: Test Book");
+    expect(systemContent).toContain("- Author: Test Author");
+  });
+
+  it("merges first-turn system (book info) into the agent prompt (tool path)", async () => {
+    let capturedPrompt = "";
+    createReactAgentMock.mockImplementation((config: { prompt: string }) => {
+      capturedPrompt = config.prompt;
+      return {
+        streamEvents: vi.fn(() => ({
+          [Symbol.asyncIterator]: async function* () {
+            // no-op stream
+          },
+        })),
+      };
+    });
+
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+      },
+      "介绍一下这本书",
+      [{ role: "system", content: "## Current Book\n- Title: Test Book" }],
+    )) {
+      void event;
+    }
+
+    expect(capturedPrompt).toContain("You are ReadAny AI");
+    expect(capturedPrompt).toContain("## Current Book");
+    expect(capturedPrompt).toContain("- Title: Test Book");
+  });
+
   it("registers only the always-on tools in lite by default (choice items off)", async () => {
     // rag*/fallback* are mutually exclusive registration families (by isVectorized).
     const cases = [

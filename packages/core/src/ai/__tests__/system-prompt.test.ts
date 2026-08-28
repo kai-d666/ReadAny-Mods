@@ -3,6 +3,7 @@ import type { Book } from "../../types";
 import {
   buildFastSystemPrompt,
   buildKnowledgeSystemPrompt,
+  buildStaticBookInfoSection,
   buildSystemPrompt,
 } from "../system-prompt";
 
@@ -191,7 +192,6 @@ describe("buildSystemPrompt citations", () => {
       userLanguage: "zh",
     });
 
-    expect(prompt).toContain("- Language: en");
     expect(prompt).toContain("Query guidance: the book is in en but the user asks in zh");
   });
 
@@ -204,7 +204,9 @@ describe("buildSystemPrompt citations", () => {
       userLanguage: "en",
     });
 
-    expect(prompt).toContain("- Language: en");
+    // Static book info (title/language) moved out of the per-turn prompt —
+    // only query guidance (language pairing) remains, and only when languages differ.
+    expect(prompt).not.toContain("- Language:");
     expect(prompt).not.toContain("Query guidance:");
   });
 
@@ -239,12 +241,13 @@ describe("buildKnowledgeSystemPrompt", () => {
     });
 
     expect(prompt).toContain("Knowledge-Only");
-    expect(prompt).toContain("- Title: Test Book");
-    expect(prompt).toContain("- Author: Test Author");
-    expect(prompt).toContain("- Language: en");
-    expect(prompt).toContain("- Description:");
-    expect(prompt).toContain("A sci-fi classic about a boy trained for war.");
-    expect(prompt).toContain("- Subjects: Science Fiction, War");
+    // Static book info (title/author/language/description/subjects) moved to
+    // the first-turn system message (buildStaticBookInfoSection) — the per-turn
+    // prompt keeps only dynamic reading position.
+    expect(prompt).not.toContain("- Title: Test Book");
+    expect(prompt).not.toContain("- Author: Test Author");
+    expect(prompt).not.toContain("- Description:");
+    expect(prompt).toContain("## Reading Progress");
     expect(prompt).toContain("- Reading Progress:");
     expect(prompt).toContain("- Current Chapter: 4. Launch (index 9)");
     expect(prompt).toContain("- Reading Position: 12.12%");
@@ -274,17 +277,7 @@ describe("buildKnowledgeSystemPrompt", () => {
     expect(prompt).not.toContain("## Available Tools");
   });
 
-  it("omits description/subjects lines when absent and stays usable without a book", () => {
-    const noDesc = buildKnowledgeSystemPrompt({
-      book: makeBook(),
-      semanticContext: null,
-      enabledSkills: [],
-      isVectorized: false,
-      userLanguage: "en",
-    });
-    expect(noDesc).not.toContain("- Description:");
-    expect(noDesc).not.toContain("- Subjects:");
-
+  it("stays usable without a book", () => {
     const noBook = buildKnowledgeSystemPrompt({
       book: null,
       semanticContext: null,
@@ -343,5 +336,31 @@ describe("buildKnowledgeSystemPrompt", () => {
       spoilerFree: true,
     });
     expect(noBook).not.toContain("Spoiler-Free");
+  });
+});
+
+describe("buildStaticBookInfoSection", () => {
+  it("includes title/author/language/description/subjects when present", () => {
+    const info = buildStaticBookInfoSection(
+      makeBook({
+        description: "A sci-fi classic about a boy trained for war.",
+        subjects: ["Science Fiction", "War"],
+      }),
+    );
+    expect(info).toContain("## Current Book");
+    expect(info).toContain("- Title: Test Book");
+    expect(info).toContain("- Author: Test Author");
+    expect(info).toContain("- Language: en");
+    expect(info).toContain("- Description:");
+    expect(info).toContain("A sci-fi classic about a boy trained for war.");
+    expect(info).toContain("- Subjects: Science Fiction, War");
+  });
+
+  it("omits description/subjects lines when absent and returns empty without a book", () => {
+    const noDesc = buildStaticBookInfoSection(makeBook());
+    expect(noDesc).not.toContain("- Description:");
+    expect(noDesc).not.toContain("- Subjects:");
+
+    expect(buildStaticBookInfoSection(null)).toBe("");
   });
 });

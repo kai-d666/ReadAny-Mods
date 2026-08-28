@@ -82,6 +82,29 @@ function buildRoleSection(): string {
 **CRITICAL: You do NOT have the book's content memorized in your training data — you MUST use the provided tools to retrieve it before answering any content-related question. NEVER fabricate, guess, or rely on your stored knowledge about the book; retrieve first, then answer. If a tool cannot return the content, tell the user honestly.**`;
 }
 
+/**
+ * Static book info (first-turn injection — persisted as the thread's first
+ * system message, replayed with history after that; NOT built per-turn).
+ * Title/Author/Language/Description/Subjects are metadata, not book text.
+ */
+export function buildStaticBookInfoSection(book: Book | null, effectiveLanguage?: string): string {
+  if (!book) return "";
+  const lang = effectiveLanguage || book.meta.language;
+  const lines = [
+    "## Current Book",
+    `- Title: ${book.meta.title}`,
+    `- Author: ${book.meta.author}`,
+    lang ? `- Language: ${lang}` : "",
+    // Description/subjects are metadata (not book text) — they carry the
+    // publisher's blurb, which helps a lot for "what is this book about".
+    book.meta.description?.trim()
+      ? `- Description:\n> ${compactText(book.meta.description, 500)}`
+      : "",
+    book.meta.subjects?.length ? `- Subjects: ${book.meta.subjects.join(", ")}` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
 function buildBookContextSection(
   book: Book | null,
   currentChapter?: { index: number; title: string },
@@ -91,13 +114,12 @@ function buildBookContextSection(
   effectiveLanguage?: string,
 ): string {
   if (!book) return "";
-  // effectiveLanguage(meta 缺失时由 agent 推断)优先,否则回退 book.meta.language
+  // Per-turn dynamic position only; static book info comes from the thread's
+  // first system message (buildStaticBookInfoSection). effectiveLanguage
+  // (inferred when meta is missing) still feeds Query guidance logic here.
   const lang = effectiveLanguage || book.meta.language;
   const lines = [
-    "## Current Book",
-    `- Title: ${book.meta.title}`,
-    `- Author: ${book.meta.author}`,
-    lang ? `- Language: ${lang}` : "",
+    "## Reading Context",
     lang && userLanguage && lang !== userLanguage && lang !== "latin"
       ? `- Query guidance: the book is in ${lang} but the user asks in ${userLanguage}. When constructing retrieval queries, use ${lang} terms ONLY — do not mix the user's language words into the query.`
       : lang === "latin" && userLanguage && userLanguage !== "en"
@@ -703,7 +725,7 @@ export function buildFastSystemPrompt(ctx: PromptContext): string {
 export function buildKnowledgeSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildKnowledgeRoleSection(),
-    buildKnowledgeBookSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.effectiveLanguage),
+    buildKnowledgeBookSection(ctx.book, ctx.currentChapter, ctx.currentPosition),
     buildKnowledgeConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book),
   ];
 
@@ -720,21 +742,12 @@ function buildKnowledgeBookSection(
   book: Book | null,
   currentChapter?: { index: number; title: string },
   currentPosition?: { cfi: string; percentage: number },
-  effectiveLanguage?: string,
 ): string {
   if (!book) return "";
-  const lang = effectiveLanguage || book.meta.language;
+  // Per-turn dynamic position only; static book info (title/author/language/
+  // description/subjects) is the thread's first system message.
   const lines = [
-    "## Current Book",
-    `- Title: ${book.meta.title}`,
-    `- Author: ${book.meta.author}`,
-    lang ? `- Language: ${lang}` : "",
-    // Description/subjects are metadata (not book text) — they carry the
-    // publisher's blurb, which helps a lot for "what is this book about".
-    book.meta.description?.trim()
-      ? `- Description:\n> ${compactText(book.meta.description, 500)}`
-      : "",
-    book.meta.subjects?.length ? `- Subjects: ${book.meta.subjects.join(", ")}` : "",
+    "## Reading Progress",
     `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
     currentChapter?.title
       ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})`

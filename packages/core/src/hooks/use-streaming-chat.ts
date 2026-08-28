@@ -8,6 +8,7 @@ import {
   markRunningToolCallPartsAsError,
   toolCallPartToMessageToolCall,
 } from "../ai/tool-call-state";
+import { buildStaticBookInfoSection } from "../ai/system-prompt";
 import { getAvailableTools } from "../ai/tools";
 import { getBook, getSkills as getDbSkills } from "../db/database";
 import i18n from "../i18n";
@@ -18,6 +19,7 @@ import type {
   AttachedQuote,
   Book,
   CitationPart,
+  Message,
   MessageV2,
   Part,
   ReasoningPart,
@@ -107,6 +109,40 @@ async function resolveFreshBook(
     console.warn("[AI] Failed to refresh book state before streaming:", err);
     return fallback ?? null;
   }
+}
+
+/**
+ * First-turn injection: build the static book info section (title/author/
+ * language/description/subjects) ONCE and persist it as the thread's first
+ * system message; afterwards it replays with history (never rebuilt per turn).
+ * General chats (no book) get no such message. Old threads upgrade lazily on
+ * their first send.
+ */
+async function ensureBookInfoMessage(thread: Thread, book: Book | null): Promise<void> {
+  if (!book || thread.messages.some((m) => m.role === "system")) return;
+  const content = buildStaticBookInfoSection(book);
+  if (!content) return;
+  const infoMessage: Message = {
+    id: createMessageId(),
+    threadId: thread.id,
+    role: "system",
+    content,
+    // Earliest timestamp so DB reads (ORDER BY created_at ASC) keep it first.
+    createdAt: Math.min(thread.createdAt, ...thread.messages.map((m) => m.createdAt)) - 1,
+  };
+  await useChatStore.getState().addMessage(thread.id, infoMessage);
+  // addMessage appends — swap to head of the in-memory list too.
+  useChatStore.setState((state) => ({
+    threads: state.threads.map((t) =>
+      t.id === thread.id
+        ? {
+            ...t,
+            messages: [infoMessage, ...t.messages.filter((m) => m.id !== infoMessage.id)],
+            updatedAt: Date.now(),
+          }
+        : t,
+    ),
+  }));
 }
 
 export function useStreamingChat(options?: StreamingChatOptions) {
@@ -213,6 +249,11 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           await updateThreadTitle(thread.id, content.slice(0, 50));
         }
 
+        // First-turn injection: static book info persists as the thread's first
+        // system message (generated once; replays with history afterwards).
+        const streamBook = await resolveFreshBook(bookId, options?.book);
+        await ensureBookInfoMessage(thread, streamBook);
+
         let aiPrompt = content.trim();
         if (quotes && quotes.length > 0) {
           const quoteLines = quotes.map((q) => {
@@ -280,9 +321,13 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         // no memory compression (no extra LLM round-trip before the first token).
         const enabledSkills = isFastPath ? [] : await loadEnabledSkills();
 
+        // Re-read from store: ensureBookInfoMessage may have prepended the
+        // first-turn system message to this thread.
+        const freshThread =
+          useChatStore.getState().threads.find((t) => t.id === thread.id) ?? thread;
         const updatedThread: Thread = {
-          ...thread,
-          messages: [...thread.messages, userMessage as any],
+          ...freshThread,
+          messages: [...freshThread.messages, userMessage as any],
         };
         const threadForStream = isFastPath
           ? updatedThread
@@ -372,7 +417,6 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           finishStreamingSession(sessionKey);
         };
 
-        const streamBook = await resolveFreshBook(bookId, options?.book);
         const streamIsVectorized = streamBook?.isVectorized ?? false;
 
         await stream.stream({

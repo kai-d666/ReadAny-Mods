@@ -285,6 +285,7 @@ function MessageBubble({
   onCitationClick,
   onLongPress,
 }: MessageBubbleProps) {
+  const { t } = useTranslation();
   const s = makeStyles(colors);
 
   // Extract citations from message parts
@@ -308,6 +309,20 @@ function MessageBubble({
     () => message.parts.reduce((sum, p) => sum + ((p as { tokens?: number }).tokens ?? 0), 0) || 0,
     [message.parts],
   );
+
+  // First-turn book info (static title/author/language/description/subjects).
+  // Rendered as a context card, not a chat bubble.
+  if (message.role === "system") {
+    const text = message.parts.find((p) => p.type === "text") as TextPart | undefined;
+    return (
+      <View style={s.systemRow}>
+        <View style={s.systemCard}>
+          <Text style={s.systemCardLabel}>{t("chatThreadContext", "会话上下文")}</Text>
+          <Text style={s.systemCardText}>{text?.text ?? ""}</Text>
+        </View>
+      </View>
+    );
+  }
 
   if (message.role === "user") {
     const quoteParts = message.parts.filter((p) => p.type === "quote") as QuotePart[];
@@ -535,6 +550,28 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1 },
     listContent: { paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
+    systemRow: {
+      marginTop: 16,
+    },
+    systemCard: {
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: radius.md,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.primary,
+      backgroundColor: withOpacity(colors.muted, 0.72),
+    },
+    systemCardLabel: {
+      fontSize: fs.xs,
+      fontWeight: "600",
+      color: colors.primary,
+      marginBottom: 3,
+    },
+    systemCardText: {
+      fontSize: fs.sm,
+      lineHeight: 19,
+      color: colors.foreground,
+    },
     userRow: {
       flexDirection: "row",
       justifyContent: "flex-end",
