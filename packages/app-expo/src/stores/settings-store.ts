@@ -30,7 +30,7 @@ export interface SettingsState {
     updates: Partial<
       Pick<
         AIConfig,
-        "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree" | "chatMode" | "liteToolIds"
+        "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree" | "chatMode" | "toolPrefs"
       >
     >,
   ) => void;

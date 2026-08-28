@@ -5,10 +5,12 @@ import {
   SendIcon,
   SparklesIcon,
   StopCircleIcon,
+  WrenchIcon,
   XIcon,
 } from "@/components/ui/Icon";
 import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
 import { useSettingsStore } from "@/stores/settings-store";
+import { ToolPrefsMenu } from "./ToolPrefsMenu";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { AIChatMode, AttachedQuote } from "@readany/core/types";
@@ -229,6 +231,8 @@ export function ChatInput({
                 {t("chat.deepThinking", "深度思考")}
               </Text>
             </TouchableOpacity>
+
+            <ToolPrefsMenu chatMode={chatMode} />
 
             <TouchableOpacity
               style={[s.deepThinkBtn, spoilerFree && s.deepThinkBtnActive]}

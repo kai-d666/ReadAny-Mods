@@ -124,6 +124,9 @@
   "chatModeLite": "Lite",
   "chatModeLiteHint": "快速直连模式:响应更快,适合当前章节问答与摘要",
   "chatModeKnowledge": "K-O",
+  "toolPrefs": "工具",
+  "toolPrefsTitle": "工具开关",
+  "toolPrefsSubtitle": "仅列出当前模式可选的工具",
   "chatThreadContext": "会话上下文",
   "chatModeKnowledgeHint": "Knowledge-Only: 基于模型知识回答,不检索原文"
 }

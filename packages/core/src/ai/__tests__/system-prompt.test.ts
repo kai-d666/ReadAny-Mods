@@ -289,6 +289,37 @@ describe("buildKnowledgeSystemPrompt", () => {
     expect(noBook).not.toContain("## Current Book");
   });
 
+  it("announces disabled optional tools so the model can guide the user", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+    });
+    expect(prompt).toContain("## Optional Tools (currently OFF)");
+    expect(prompt).toContain("mindmap");
+    expect(prompt).toContain("disabled");
+    expect(prompt).not.toContain("ragSearch");
+  });
+
+  it("lists enabled tools AND the still-off choice items when some are on", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: false,
+      userLanguage: "en",
+      allowedToolNames: ["mindmap"],
+    });
+    expect(prompt).toContain("## Turn-Available Tools");
+    expect(prompt).toContain("- mindmap");
+    // Off list excludes the enabled one but keeps the others visible
+    expect(prompt).toContain("## Optional Tools (currently OFF)");
+    expect(prompt).not.toContain("These basic tools exist but are disabled: mindmap");
+    expect(prompt).toContain("getAnnotations");
+  });
+
   it("forces the response language to the user's language", () => {
     const prompt = buildKnowledgeSystemPrompt({
       book: makeBook(),

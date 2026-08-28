@@ -181,6 +181,44 @@ describe("streamReadingAgent tool registration", () => {
     expect(systemContent).toContain("- Author: Test Author");
   });
 
+  it("knowledge with user-enabled choice item registers tools (agent path)", async () => {
+    let capturedPrompt = "";
+    let capturedTools: ToolDefinition[] = [];
+    createReactAgentMock.mockImplementation((config: { prompt: string; tools: ToolDefinition[] }) => {
+      capturedPrompt = config.prompt;
+      capturedTools = config.tools;
+      return {
+        streamEvents: vi.fn(() => ({
+          [Symbol.asyncIterator]: async function* () {
+            // no-op stream
+          },
+        })),
+      };
+    });
+
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        semanticContext: null,
+        enabledSkills: [],
+        isVectorized: false,
+        chatMode: "knowledge",
+        toolPrefs: { knowledge: ["mindmap"] },
+        getAvailableTools,
+      },
+      "帮我画个导图",
+    )) {
+      void event;
+    }
+
+    expect(capturedTools.map((t) => t.name)).toContain("mindmap");
+    expect(capturedPrompt).toContain("Knowledge-Only");
+    expect(capturedPrompt).toContain("Turn-Available Tools");
+    expect(capturedPrompt).toContain("- mindmap");
+  });
+
   it("merges first-turn system (book info) into the agent prompt (tool path)", async () => {
     let capturedPrompt = "";
     createReactAgentMock.mockImplementation((config: { prompt: string }) => {

@@ -8,6 +8,7 @@
  * 6. Response constraints
  */
 import type { Book, SemanticContext, Skill } from "../types";
+import { KNOWLEDGE_CHOICE_TOOLS, LITE_CHOICE_TOOLS } from "./tools";
 import { getBookProgressPercent } from "../utils/book-progress";
 
 type ReadingQuestionCategory =
@@ -710,6 +711,7 @@ export function buildFastSystemPrompt(ctx: PromptContext): string {
     buildMemorySection(ctx.memorySummary),
     buildLiteToolsSection(ctx.allowedToolNames),
     buildLiteConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book),
+    buildOptionalToolsSection(LITE_CHOICE_TOOLS, ctx.allowedToolNames ?? []),
   ];
 
   return sections.filter(Boolean).join("\n\n---\n\n");
@@ -723,19 +725,42 @@ export function buildFastSystemPrompt(ctx: PromptContext): string {
  * context, no tools, no memory.
  */
 export function buildKnowledgeSystemPrompt(ctx: PromptContext): string {
+  const hasTools = !!ctx.allowedToolNames?.length;
   const sections: string[] = [
-    buildKnowledgeRoleSection(),
+    buildKnowledgeRoleSection(hasTools),
     buildKnowledgeBookSection(ctx.book, ctx.currentChapter, ctx.currentPosition),
-    buildKnowledgeConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book),
+    buildKnowledgeConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book, hasTools),
   ];
+  // Optional user-enabled tools: always list enabled tools (Turn-Available)
+  // AND the choice items still OFF, so the model can guide the user to enable
+  // them instead of silently answering without them — in every tool state.
+  if (hasTools) {
+    sections.push(buildTurnAvailableToolsSection(ctx.allowedToolNames));
+  }
+  sections.push(buildOptionalToolsSection(KNOWLEDGE_CHOICE_TOOLS, ctx.allowedToolNames ?? []));
 
   return sections.filter(Boolean).join("\n\n---\n\n");
 }
 
-function buildKnowledgeRoleSection(): string {
+/** Announce disabled choice items so the model can offer to enable them. */
+function buildOptionalToolsSection(choiceTools: string[], enabledNames: string[]): string {
+  const off = choiceTools.filter((name) => !enabledNames.includes(name));
+  if (off.length === 0) return "";
+  return [
+    "## Optional Tools (currently OFF)",
+    `These basic tools exist but are disabled: ${off.join(", ")}.`,
+    "- If the user asks for one of these capabilities, tell them it is disabled and how to enable it (the 工具 button in the input bar).",
+    "- If the user asks for something this mode does NOT support at all (e.g. verifying quotes or full-text search in Knowledge-Only, heavy analysis in Lite), explain it needs another mode and suggest switching. Do not fake the result.",
+  ].join("\n");
+}
+
+function buildKnowledgeRoleSection(hasTools: boolean): string {
+  const toolsLine = hasTools
+    ? `You have a small set of OPTIONAL basic tools (listed in Turn-Available Tools) that the user enabled — use them only for basic reads (highlights, notes, library stats, mindmap, skills). You still must NOT search or cite the book's text.`
+    : `Your basic tools are currently OFF (the Optional Tools section below lists what can be enabled). Do NOT call any tool now — and still answer from your own knowledge: you must NOT search, retrieve, or cite the book's text.`;
   return `You are ReadAny AI in Knowledge-Only mode (K-O), an intelligent reading assistant. You answer questions about the current book and its author from your own knowledge — author background, publication and series information, genre and style, general overview, and related books.
 
-**CRITICAL: You have NO tools and do NOT read or search the book's text.** Answer from your own knowledge only. Never claim to have verified anything against the actual text, and never cite the book — you cannot verify quotes or page-level details.`;
+${toolsLine} Answer from your own knowledge (and any basic tool output you were given). Never claim to have verified anything against the actual text, and never cite the book — you cannot verify quotes or page-level details.`;
 }
 
 function buildKnowledgeBookSection(
@@ -763,10 +788,13 @@ function buildKnowledgeConstraintsSection(
   language: string,
   spoilerFree?: boolean,
   book?: Book | null,
+  hasTools?: boolean,
 ): string {
   const lines = [
     "## Knowledge-Only Guidelines",
-    "- Answer from your own knowledge about this book and its author. You do NOT search, retrieve, or cite the book's text.",
+    hasTools
+      ? "- Answer from your own knowledge (and the basic tool output listed above). You must NOT search, retrieve, or cite the book's text."
+      : "- Answer from your own knowledge about this book and its author. You do NOT search, retrieve, or cite the book's text.",
     "- If you are unsure — or if the right answer depends on the book's actual text (e.g. exact plot details) — state your uncertainty honestly. NEVER fabricate.",
     "- Best for: author background, publication and series info, genre and style, general overview, related books. For the book's actual content, suggest switching to Standard mode.",
     `- **IMPORTANT: You MUST respond in ${language || "English"}. This is non-negotiable regardless of the book's language.**`,

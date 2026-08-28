@@ -77,7 +77,7 @@ export const LITE_DEFAULT_TOOLS = [
 /**
  * Named tools lite mode must never expose, regardless of user config.
  * Only heavyweight analysis tools — the whitelist above (LITE_DEFAULT_TOOLS or
- * user liteToolIds) controls what stays available.
+ * user-enabled choice items) controls what stays available.
  */
 export const LITE_FORBIDDEN_TOOLS = new Set([
   "summarize",
@@ -85,7 +85,111 @@ export const LITE_FORBIDDEN_TOOLS = new Set([
   "analyzeArguments",
   "findQuotes",
   "compareSections",
+  "getSelection",
+  "addCitation",
 ]);
+
+/**
+ * Choice items (3 = default off) per mode — mirrors 三模式-工具与注入总表.md.
+ * These are the ONLY tools a user can enable via toolPrefs; always-on and
+ * forbidden tools never appear in the settings UI list.
+ */
+export const LITE_CHOICE_TOOLS = [
+  "getReadingProgress",
+  "getRecentHighlights",
+  "ragToc",
+  "fallbackToc",
+  "getAnnotations",
+  "listBooks",
+  "searchAllHighlights",
+  "searchAllNotes",
+  "getReadingStats",
+  "mindmap",
+  "getSkills",
+  "tagBooks",
+  "manageBookTags",
+  "updateBookMetadata",
+  "manageBookGroups",
+  "classifyBooks",
+];
+
+export const KNOWLEDGE_CHOICE_TOOLS = [
+  "getReadingProgress",
+  "getRecentHighlights",
+  "getAnnotations",
+  "listBooks",
+  "searchAllHighlights",
+  "searchAllNotes",
+  "getReadingStats",
+  "mindmap",
+  "getSkills",
+];
+
+/** Tools Knowledge-Only must never expose — search/citation/analysis families
+ *  and library-write tools (knowledge mode allows basic reads only). */
+export const KNOWLEDGE_FORBIDDEN_TOOLS = new Set([
+  "ragSearch",
+  "ragContext",
+  "ragToc",
+  "fallbackSearch",
+  "fallbackChapterContext",
+  "fallbackToc",
+  "resolveChapterReference",
+  "addCitation",
+  "getSelection",
+  "getSurroundingContext",
+  "summarize",
+  "extractEntities",
+  "analyzeArguments",
+  "findQuotes",
+  "compareSections",
+  "tagBooks",
+  "manageBookTags",
+  "updateBookMetadata",
+  "manageBookGroups",
+  "classifyBooks",
+]);
+
+/** Choice-item list for a mode (settings UI source). */
+export function getModeChoiceTools(mode: "lite" | "knowledge"): string[] {
+  return mode === "lite" ? LITE_CHOICE_TOOLS : KNOWLEDGE_CHOICE_TOOLS;
+}
+
+/**
+ * Resolve the final tool set for a mode:
+ *   lite      = (always-on ∪ userEnabled) − forbidden, ∩ candidates
+ *   knowledge = (userEnabled − forbidden) ∩ candidates ∪ skillTools
+ * skillToolNames pass through when the user enabled getSkills (K-O may then
+ * run skills like standard mode).
+ */
+export function resolveModeTools(
+  mode: "lite" | "knowledge",
+  userEnabled: string[],
+  candidateNames: string[],
+  skillToolNames: string[],
+): Set<string> {
+  const candidates = new Set(candidateNames);
+  const enabled = new Set(userEnabled);
+  const result = new Set<string>();
+
+  if (mode === "lite") {
+    for (const name of [...LITE_DEFAULT_TOOLS, ...enabled]) {
+      if (!LITE_FORBIDDEN_TOOLS.has(name) && candidates.has(name)) result.add(name);
+    }
+  } else {
+    for (const name of enabled) {
+      if (!KNOWLEDGE_FORBIDDEN_TOOLS.has(name) && candidates.has(name)) result.add(name);
+    }
+  }
+
+  // getSkills enabled → skill tools (one per enabled skill) pass through.
+  if (enabled.has("getSkills")) {
+    for (const name of skillToolNames) {
+      if (candidates.has(name)) result.add(name);
+    }
+  }
+  return result;
+}
 
 /** Get general (non-book-specific) tools */
 function getGeneralTools(): ToolDefinition[] {

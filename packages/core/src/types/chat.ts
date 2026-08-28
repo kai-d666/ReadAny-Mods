@@ -177,8 +177,9 @@ export interface AIConfig {
   /** Chat pipeline mode: "standard" (routing + full toolset), "lite" (fast direct chat with
    *  retrieval) or "knowledge" (Knowledge-Only: answers from the model's own knowledge, zero tools). */
   chatMode?: AIChatMode;
-  /** Lite-mode custom tool whitelist; undefined → LITE_DEFAULT_TOOLS. */
-  liteToolIds?: string[];
+  /** User-enabled choice items per mode (choice items are OFF by default).
+   *  Final toolset = always-on ∪ userEnabled − forbidden (resolveModeTools). */
+  toolPrefs?: { lite?: string[]; knowledge?: string[] };
 }
 
 export type AIChatMode = "standard" | "lite" | "knowledge";

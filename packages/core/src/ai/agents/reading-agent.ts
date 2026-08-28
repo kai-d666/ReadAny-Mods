@@ -23,7 +23,7 @@ import {
   buildSystemPrompt,
 } from "../system-prompt";
 import { ThinkTagStreamParser } from "../think-tag-parser";
-import { LITE_DEFAULT_TOOLS, LITE_FORBIDDEN_TOOLS } from "../tools";
+import { resolveModeTools } from "../tools";
 import type { ToolDefinition, ToolParameter } from "../tools/tool-types";
 
 const CHAPTER_REFERENCE_RE =
@@ -586,8 +586,8 @@ export interface ReadingAgentOptions {
   memorySummary?: string;
   /** Lite-mode flag: fast direct-chat path (no routing, limited toolset). */
   chatMode?: AIChatMode;
-  /** Lite-mode customizable tool whitelist; undefined → LITE_DEFAULT_TOOLS. */
-  liteToolIds?: string[];
+  /** User-enabled choice items per mode (see resolveModeTools in ai/tools). */
+  toolPrefs?: { lite?: string[]; knowledge?: string[] };
   /** Injected tool provider — returns available tools for the agent */
   getAvailableTools: (options: {
     bookId: string | null;
@@ -829,7 +829,7 @@ export async function* streamReadingAgent(
     signal,
     toolTimeoutMs = DEFAULT_TOOL_TIMEOUT_MS,
     chatMode = "standard",
-    liteToolIds,
+    toolPrefs,
   } = options;
 
   const isLite = chatMode === "lite";
@@ -902,22 +902,33 @@ export async function* streamReadingAgent(
     if (isAborted()) return;
 
     // Register tools via injected getAvailableTools, then narrow obvious chapter tasks.
-    // Lite mode: whitelist only (default LITE_DEFAULT_TOOLS or user liteToolIds);
-    // forbidden RAG/analysis tools are stripped regardless of user config.
-    // Knowledge mode: zero tools — no registration at all (direct-stream path below).
-    const liteWhitelist = new Set(
-      (liteToolIds && liteToolIds.length > 0 ? liteToolIds : LITE_DEFAULT_TOOLS).filter(
-        (name) => !LITE_FORBIDDEN_TOOLS.has(name),
-      ),
-    );
-    const allAvailable = isKnowledge
+    // Lite mode: always-on (LITE_DEFAULT_TOOLS) ∪ user-enabled choice items,
+    // forbidden tools stripped regardless of user config.
+    // Knowledge mode: zero tools by default (direct-stream path); when the user
+    // enabled choice items (toolPrefs.knowledge), register the matching tools
+    // (basic reads only — the search/citation families stay forbidden).
+    const modePrefs = toolPrefs ?? {};
+    const enabledNames = isLite
+      ? modePrefs.lite ?? []
+      : isKnowledge
+        ? modePrefs.knowledge ?? []
+        : [];
+    // Skill tools only exist when skills are loaded; loading happens in
+    // use-streaming-chat when getSkills is enabled (all modes).
+    const allAvailable = isKnowledge && enabledNames.length === 0
       ? []
       : getAvailableTools({
           bookId: effectiveBookId,
           bookLanguage: effectiveBookLanguage,
           isVectorized,
-          enabledSkills: isLite ? [] : enabledSkills,
+          enabledSkills,
         });
+    const skillToolNames = enabledSkills.map((s) => s.id);
+    const allowedTools = isLite
+      ? resolveModeTools("lite", enabledNames, allAvailable.map((t) => t.name), skillToolNames)
+      : isKnowledge
+        ? resolveModeTools("knowledge", enabledNames, allAvailable.map((t) => t.name), skillToolNames)
+        : null;
     console.log(
       "[ReadingAgent] lite-diag",
       JSON.stringify({
@@ -925,16 +936,17 @@ export async function* streamReadingAgent(
         isKnowledge,
         chatMode,
         isVectorized,
-        liteToolIds: liteToolIds ?? null,
-        liteWhitelist: [...liteWhitelist],
+        toolPrefs: modePrefs ?? null,
+        enabledNames,
+        allowedTools: allowedTools ? [...allowedTools] : null,
         allAvailableNames: allAvailable.map((t) => t.name),
         bookId: effectiveBookId,
       }),
     );
     const tools = isLite
-      ? allAvailable.filter((tool) => liteWhitelist.has(tool.name))
+      ? allAvailable.filter((tool) => allowedTools!.has(tool.name))
       : isKnowledge
-        ? []
+        ? allAvailable.filter((tool) => allowedTools!.has(tool.name))
         : filterToolsForQuestion({
             tools: allAvailable,
             category: questionCategory,
@@ -962,6 +974,7 @@ export async function* streamReadingAgent(
           currentChapter,
           currentPosition,
           effectiveLanguage: effectiveBookLanguage,
+          allowedToolNames: tools.map((tool) => tool.name),
         })
       : isLite
         ? buildFastSystemPrompt({

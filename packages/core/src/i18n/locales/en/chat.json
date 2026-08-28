@@ -122,6 +122,9 @@
   "chatModeLite": "Lite",
   "chatModeLiteHint": "Fast direct mode: quicker responses, best for current-chapter Q&A and summaries",
   "chatModeKnowledge": "K-O",
+  "toolPrefs": "Tools",
+  "toolPrefsTitle": "Tool switches",
+  "toolPrefsSubtitle": "Choice items available for the current mode",
   "chatThreadContext": "Session context",
   "chatModeKnowledgeHint": "Knowledge-Only: answers from the model's own knowledge, no book retrieval"
 }

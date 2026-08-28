@@ -330,14 +330,15 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         activeStreams.set(sessionKey, stream);
 
         const chatMode = aiConfigOverride?.chatMode ?? aiConfig.chatMode ?? "knowledge";
-        // Lite and Knowledge-Only both take the fast path: no skill loading
-        // (nothing to inject), no memory compression (no extra LLM round-trip
-        // before the first token).
+        const toolPrefs = aiConfigOverride?.toolPrefs ?? aiConfig.toolPrefs;
+        // Lite and Knowledge-Only both take the fast path: no memory compression
+        // (no extra LLM round-trip before the first token). Skill loading is
+        // skipped too UNLESS the user enabled the getSkills choice item for
+        // this mode (then the skill tools must be registered).
         const isFastPath = chatMode === "lite" || chatMode === "knowledge";
-
-        // Lite mode skips the heavy pre-steps: no skill loading (nothing to inject),
-        // no memory compression (no extra LLM round-trip before the first token).
-        const enabledSkills = isFastPath ? [] : await loadEnabledSkills();
+        const modePrefs = chatMode === "standard" ? null : toolPrefs?.[chatMode];
+        const wantsSkills = modePrefs?.includes("getSkills") ?? false;
+        const enabledSkills = isFastPath && !wantsSkills ? [] : await loadEnabledSkills();
 
         // Re-read from store: ensureBookInfoMessage may have prepended the
         // first-turn system message to this thread.
@@ -446,6 +447,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           isVectorized: streamIsVectorized,
           aiConfig: aiConfigOverride || aiConfig,
           chatMode,
+          toolPrefs,
           deepThinking,
           spoilerFree,
           getAvailableTools,

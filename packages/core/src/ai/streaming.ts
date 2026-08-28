@@ -22,8 +22,8 @@ export interface StreamingOptions {
   spoilerFree?: boolean;
   /** Lite-mode flag: fast direct-chat path (passed through to the reading agent). */
   chatMode?: AIChatMode;
-  /** Lite-mode customizable tool whitelist. */
-  liteToolIds?: string[];
+  /** User-enabled choice items per mode (resolveModeTools in ai/tools). */
+  toolPrefs?: { lite?: string[]; knowledge?: string[] };
   /** Injected tool provider */
   getAvailableTools: (options: {
     bookId: string | null;
@@ -121,7 +121,7 @@ export class StreamingChat {
           spoilerFree: options.spoilerFree,
           memorySummary: options.thread.memorySummary,
           chatMode: options.chatMode,
-          liteToolIds: options.liteToolIds,
+          toolPrefs: options.toolPrefs ?? options.aiConfig.toolPrefs,
           getAvailableTools: options.getAvailableTools,
           signal,
         },
