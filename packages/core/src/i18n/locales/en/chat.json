@@ -122,6 +122,8 @@
   "chatModeLite": "Lite",
   "chatModeLiteHint": "Fast direct mode: quicker responses, best for current-chapter Q&A and summaries",
   "chatModeKnowledge": "K-O",
+  "clearAllThreads": "Clear all",
+  "clearAllThreadsConfirm": "Delete all conversations? This cannot be undone.",
   "toolPrefs": "Tools",
   "toolPrefsTitle": "Tool switches",
   "toolPrefsSubtitle": "Choice items available for the current mode",

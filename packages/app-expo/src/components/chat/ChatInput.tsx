@@ -163,6 +163,24 @@ export function ChatInput({
           : { paddingBottom: bottomPadding },
       ]}
     >
+      {/* Mode hints above the input container (mode/thinking toggles apply here). */}
+      {deepThinking && (
+        <Text style={s.deepThinkHint}>
+          {t("chat.deepThinkingHint", "深度思考模式会使用更多 tokens")}
+        </Text>
+      )}
+      {spoilerFree && (
+        <Text style={s.deepThinkHint}>
+          {t("chat.spoilerFreeHint", "AI 将避免透露当前阅读进度之后的内容")}
+        </Text>
+      )}
+      {chatMode === "knowledge" ? (
+        <Text style={s.deepThinkHint}>
+          {t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")}
+        </Text>
+      ) : chatMode === "lite" ? (
+        <Text style={s.deepThinkHint}>{t("chatModeLiteHint", "快速直连模式")}</Text>
+      ) : null}
       <View style={s.container}>
         {/* Attached quotes chips */}
         {quotes.length > 0 && (
@@ -278,23 +296,6 @@ export function ChatInput({
           </View>
         </View>
       </View>
-      {deepThinking && (
-        <Text style={s.deepThinkHint}>
-          {t("chat.deepThinkingHint", "深度思考模式会使用更多 tokens")}
-        </Text>
-      )}
-      {spoilerFree && (
-        <Text style={s.deepThinkHint}>
-          {t("chat.spoilerFreeHint", "AI 将避免透露当前阅读进度之后的内容")}
-        </Text>
-      )}
-      {chatMode === "knowledge" ? (
-        <Text style={s.deepThinkHint}>
-          {t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")}
-        </Text>
-      ) : chatMode === "lite" ? (
-        <Text style={s.deepThinkHint}>{t("chatModeLiteHint", "快速直连模式")}</Text>
-      ) : null}
     </View>
   );
 }

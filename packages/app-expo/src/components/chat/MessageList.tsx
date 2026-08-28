@@ -23,7 +23,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { PartRenderer } from "./PartRenderer";
+import { PartRenderer, formatTotalTokens } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
 
 interface MessageListProps {
@@ -357,10 +357,10 @@ function MessageBubble({
     if (text) onLongPress(text);
   }, [message, onLongPress]);
 
-  // Sum of all LLM-call token counts in this message. Attached to the LAST
-  // part that has a token count, rendered as "1,123sum" left of its "tk".
-  // Must live with the other hooks (above any conditional return) — a hook
-  // after `return null` breaks the Rules of Hooks on re-render.
+  // Sum of all LLM-call token counts in this message — rendered bottom-right
+  // in the assistant footer ("1,123sum"). Must live with the other hooks
+  // (above any conditional return) — a hook after `return null` breaks the
+  // Rules of Hooks on re-render.
   const totalTokens = useMemo(
     () => message.parts.reduce((sum, p) => sum + ((p as { tokens?: number }).tokens ?? 0), 0) || 0,
     [message.parts],
@@ -441,16 +441,6 @@ function MessageBubble({
     !isLastPartActiveToolCall &&
     !isLastPartRunningReasoning;
 
-  // Sum of all LLM-call token counts in this message. Attached to the LAST
-  // part that has a token count, rendered as "1,123sum" left of its "tk".
-  let lastTokenPartId: string | null = null;
-  for (let i = message.parts.length - 1; i >= 0; i--) {
-    if ((message.parts[i] as { tokens?: number }).tokens != null) {
-      lastTokenPartId = message.parts[i].id;
-      break;
-    }
-  }
-
   return (
     <View style={s.assistantRow}>
       <Pressable onLongPress={triggerLongPress} delayLongPress={300}>
@@ -460,13 +450,17 @@ function MessageBubble({
             part={part}
             citations={citations}
             onCitationClick={onCitationClick}
-            totalTokens={totalTokens}
-            showTotalTokenUsage={part.id === lastTokenPartId}
           />
         ))}
       </Pressable>
       {showGapIndicator && <StreamingIndicator step="thinking" />}
-      {!isStreaming && <CopyButton onPress={copyText} colors={colors} />}
+      {/* Footer: copy button bottom-left, total token sum bottom-right. */}
+      <View style={s.assistantFooter}>
+        {!isStreaming && <CopyButton onPress={copyText} colors={colors} />}
+        {totalTokens > 0 && (
+          <Text style={s.totalTokensText}>{formatTotalTokens(totalTokens)}</Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -654,6 +648,17 @@ const makeStyles = (colors: ThemeColors) =>
     },
     assistantRow: {
       gap: 4,
+    },
+    assistantFooter: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginTop: 2,
+    },
+    totalTokensText: {
+      fontSize: fs.xs,
+      color: colors.mutedForeground,
+      fontVariant: ["tabular-nums"],
     },
     scrollDownWrap: {
       position: "absolute",

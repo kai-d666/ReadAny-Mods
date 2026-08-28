@@ -132,6 +132,7 @@ export function BookChatScreen({ route, navigation }: Props) {
   const setBookActiveThread = useChatStore((s) => s.setBookActiveThread);
   const createThread = useChatStore((s) => s.createThread);
   const removeThread = useChatStore((s) => s.removeThread);
+  const clearAllThreads = useChatStore((s) => s.clearAllThreads);
   const getThreadsForContext = useChatStore((s) => s.getThreadsForContext);
 
   useEffect(() => {
@@ -295,6 +296,24 @@ export function BookChatScreen({ route, navigation }: Props) {
     await createThread(bookId);
   }, [activeThread, bookId, createThread]);
 
+  const handleClearAllThreads = useCallback(() => {
+    Alert.alert(
+      t("chat.clearAllThreads", "清空全部"),
+      t("chat.clearAllThreadsConfirm", "确定要删除所有历史对话吗？此操作不可撤销。"),
+      [
+        { text: t("common.cancel", "取消"), style: "cancel" },
+        {
+          text: t("common.delete", "删除"),
+          style: "destructive",
+          onPress: () => {
+            void clearAllThreads();
+            closeSidebar();
+          },
+        },
+      ],
+    );
+  }, [closeSidebar, clearAllThreads, t]);
+
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportTitle = activeThread?.title || book?.meta?.title || t("chat.aiAssistant");
   const exportOpts = useMemo(
@@ -384,6 +403,15 @@ export function BookChatScreen({ route, navigation }: Props) {
       <>
         <View style={s.sidebarHeader}>
           <Text style={s.sidebarTitle}>{t("chat.history", "历史记录")}</Text>
+          {bookThreads.length > 0 && (
+            <TouchableOpacity
+              style={s.iconBtn}
+              onPress={handleClearAllThreads}
+              accessibilityLabel={t("chat.clearAllThreads", "清空全部")}
+            >
+              <Trash2Icon size={15} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
           {closable ? (
             <TouchableOpacity style={s.iconBtn} onPress={closeSidebar}>
               <XIcon size={16} color={colors.foreground} />
@@ -467,6 +495,7 @@ export function BookChatScreen({ route, navigation }: Props) {
       handleNewThread,
       handleSelectThread,
       removeThread,
+      handleClearAllThreads,
       s,
       t,
     ],

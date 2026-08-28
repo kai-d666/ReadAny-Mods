@@ -47,7 +47,7 @@ function formatTokens(n: number): string {
 }
 
 /** 4,321,456sum — total across all LLM calls of one assistant message. */
-function formatTotalTokens(n: number): string {
+export function formatTotalTokens(n: number): string {
   return `${formatNumber(n)}sum`;
 }
 

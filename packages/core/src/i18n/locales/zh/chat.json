@@ -124,6 +124,8 @@
   "chatModeLite": "Lite",
   "chatModeLiteHint": "快速直连模式:响应更快,适合当前章节问答与摘要",
   "chatModeKnowledge": "K-O",
+  "clearAllThreads": "清空全部",
+  "clearAllThreadsConfirm": "确定要删除所有历史对话吗？此操作不可撤销。",
   "toolPrefs": "工具",
   "toolPrefsTitle": "工具开关",
   "toolPrefsSubtitle": "仅列出当前模式可选的工具",

@@ -31,6 +31,7 @@ import {
   useSettingsStore,
   useTTSStore,
 } from "@/stores";
+import { useChatStore } from "@/stores/chat-store";
 import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
 import { useTheme } from "@/styles/ThemeContext";
 import { useColors, withOpacity } from "@/styles/theme";
@@ -1782,6 +1783,12 @@ export function ReaderScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={s.floatingToolBtn}
             onPress={() => navigation.navigate("BookChat", { bookId })}
+            onLongPress={async () => {
+              // Long-press = new thread for this book (enters empty chat).
+              await useChatStore.getState().createThread(bookId);
+              navigation.navigate("BookChat", { bookId });
+            }}
+            delayLongPress={400}
           >
             <BotIcon size={20} color="#fff" />
           </TouchableOpacity>

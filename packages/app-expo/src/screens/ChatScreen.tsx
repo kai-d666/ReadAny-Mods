@@ -159,6 +159,7 @@ export function ChatScreen() {
   const initialized = useChatStore((s) => s.initialized);
   const loadAllThreads = useChatStore((s) => s.loadAllThreads);
   const removeThread = useChatStore((s) => s.removeThread);
+  const clearAllThreads = useChatStore((s) => s.clearAllThreads);
   const setGeneralActiveThread = useChatStore((s) => s.setGeneralActiveThread);
   const getThreadsForContext = useChatStore((s) => s.getThreadsForContext);
 
@@ -212,6 +213,24 @@ export function ChatScreen() {
     setGeneralActiveThread(null);
     closeSidebar();
   }, [setGeneralActiveThread, closeSidebar]);
+
+  const handleClearAllThreads = useCallback(() => {
+    Alert.alert(
+      t("chat.clearAllThreads", "清空全部"),
+      t("chat.clearAllThreadsConfirm", "确定要删除所有历史对话吗？此操作不可撤销。"),
+      [
+        { text: t("common.cancel", "取消"), style: "cancel" },
+        {
+          text: t("common.delete", "删除"),
+          style: "destructive",
+          onPress: () => {
+            void clearAllThreads();
+            closeSidebar();
+          },
+        },
+      ],
+    );
+  }, [closeSidebar, clearAllThreads, t]);
 
   const handleSelectThread = useCallback(
     (threadId: string) => {
@@ -294,6 +313,15 @@ export function ChatScreen() {
       <>
         <View style={s.sidebarHeader}>
           <Text style={s.sidebarTitle}>{t("chat.history", "历史记录")}</Text>
+          {generalThreads.length > 0 && (
+            <TouchableOpacity
+              style={s.iconBtn}
+              onPress={handleClearAllThreads}
+              accessibilityLabel={t("chat.clearAllThreads", "清空全部")}
+            >
+              <Trash2Icon size={15} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
           {closable ? (
             <TouchableOpacity style={s.iconBtn} onPress={closeSidebar}>
               <XIcon size={16} color={colors.foreground} />
@@ -377,6 +405,7 @@ export function ChatScreen() {
       handleNewThread,
       handleSelectThread,
       removeThread,
+      handleClearAllThreads,
       s,
       t,
     ],
