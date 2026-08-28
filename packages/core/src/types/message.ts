@@ -57,6 +57,8 @@ export interface QuotePart extends BasePart {
   text: string;
   /** Optional source info, e.g. chapter title */
   source?: string;
+  /** epubcfi of the quoted text — enables tap-to-locate in the reader */
+  cfi?: string;
 }
 
 /** A mindmap visualization generated from content */
@@ -216,12 +218,13 @@ export function isMermaidPart(part: Part): part is MermaidPart {
   return part.type === "mermaid";
 }
 
-export function createQuotePart(text: string, source?: string): QuotePart {
+export function createQuotePart(text: string, source?: string, cfi?: string): QuotePart {
   return {
     id: `quote-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: "quote",
     text,
     source,
+    cfi,
     status: "completed",
     createdAt: Date.now(),
   };

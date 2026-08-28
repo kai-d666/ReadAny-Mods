@@ -8,6 +8,7 @@ import {
   markRunningToolCallPartsAsError,
   toolCallPartToMessageToolCall,
 } from "../ai/tool-call-state";
+import { buildQuoteContextSection } from "../ai/quote-context";
 import { buildStaticBookInfoSection } from "../ai/system-prompt";
 import { getAvailableTools } from "../ai/tools";
 import { getBook, getSkills as getDbSkills } from "../db/database";
@@ -22,6 +23,7 @@ import type {
   Message,
   MessageV2,
   Part,
+  QuotePart,
   ReasoningPart,
   SemanticContext,
   Skill,
@@ -48,6 +50,10 @@ function buildPartsOrder(parts: Part[]) {
     };
     if (p.type === "text") {
       return { ...base, text: (p as TextPart).text };
+    }
+    if (p.type === "quote") {
+      const q = p as QuotePart;
+      return { ...base, text: q.text, source: q.source, cfi: q.cfi };
     }
     if (p.type === "mindmap") {
       return {
@@ -257,20 +263,26 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         let aiPrompt = content.trim();
         if (quotes && quotes.length > 0) {
           const quoteLines = quotes.map((q) => {
-            const anchor = q.cfi ? ` (读到这里: ${q.cfi})` : "";
-            return `> ${q.text.slice(0, 300)}${anchor}`;
+            // No cfi suffix in the visible quote line — location info stays in
+            // the background-material block so the model never narrates it.
+            return `> ${q.text.slice(0, 300)}`;
           });
           const quotesText = quoteLines.join("\n\n");
           aiPrompt = content.trim()
             ? `关于以下文本：\n${quotesText}\n\n${content.trim()}`
             : `关于以下文本：\n${quotesText}\n\n请帮我分析这段文本。`;
+          // Quote-context prefetch (A plan): inject the text around each
+          // quote's CFI into this turn's user message — the only raw-text
+          // entry for Knowledge-Only. Fail-open (no provider/CFI → as before).
+          const contextSection = await buildQuoteContextSection(bookId ?? "", quotes);
+          if (contextSection) aiPrompt += contextSection;
         }
 
         const userMessageId = createMessageId();
         const userParts: Part[] = [];
         if (quotes && quotes.length > 0) {
           for (const q of quotes) {
-            userParts.push(createQuotePart(q.text, q.source));
+            userParts.push(createQuotePart(q.text, q.source, q.cfi));
           }
         }
         if (content.trim()) {
@@ -287,7 +299,13 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             type: p.type as "text" | "quote",
             id: p.id,
             ...(p.type === "text" ? { text: (p as TextPart).text } : {}),
-            ...(p.type === "quote" ? { text: (p as any).text, source: (p as any).source } : {}),
+            ...(p.type === "quote"
+              ? {
+                  text: (p as any).text,
+                  source: (p as any).source,
+                  cfi: (p as any).cfi,
+                }
+              : {}),
           })),
           createdAt: Date.now(),
         };

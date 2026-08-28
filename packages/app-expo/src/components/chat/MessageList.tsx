@@ -31,6 +31,8 @@ interface MessageListProps {
   isStreaming?: boolean;
   currentStep?: "thinking" | "tool_calling" | "responding" | "idle";
   onCitationClick?: (citation: CitationPart) => void;
+  /** Tap on a quoted text chip — jump to the quote's location in the reader. */
+  onQuoteClick?: (text: string, cfi?: string) => void;
 }
 
 const BOTTOM_THRESHOLD = 80;
@@ -54,6 +56,7 @@ export function MessageList({
   isStreaming,
   currentStep,
   onCitationClick,
+  onQuoteClick,
 }: MessageListProps) {
   const { t } = useTranslation();
   const colors = useColors();
@@ -150,11 +153,20 @@ export function MessageList({
           isStreaming={isLastMsgStreaming}
           currentStep={currentStep}
           onCitationClick={onCitationClick}
+          onQuoteClick={onQuoteClick}
           onLongPress={handleBubbleLongPress}
         />
       );
     },
-    [colors, messages.length, isStreaming, currentStep, onCitationClick, handleBubbleLongPress],
+    [
+      colors,
+      messages.length,
+      isStreaming,
+      currentStep,
+      onCitationClick,
+      onQuoteClick,
+      handleBubbleLongPress,
+    ],
   );
 
   // Show indicator when streaming but no assistant content yet
@@ -213,30 +225,64 @@ export function MessageList({
   );
 }
 
-function UserQuoteBlock({ part, colors }: { part: QuotePart; colors: ThemeColors }) {
-  return (
-    <View style={quoteStyles(colors).quoteBlock}>
-      <View style={{ flex: 1 }}>
-        <Text style={quoteStyles(colors).quoteText} numberOfLines={4}>
-          {part.text.length > 200 ? `${part.text.slice(0, 200)}...` : part.text}
+function UserQuoteBlock({
+  part,
+  colors,
+  onPress,
+}: {
+  part: QuotePart;
+  colors: ThemeColors;
+  onPress?: () => void;
+}) {
+  const styles = quoteStyles(colors);
+  const content = (
+    <>
+      {/* Intrinsic-width column: the bubble's maxWidth (85%) caps the card,
+          numberOfLines=1 truncates the tail — so the card follows window/
+          bubble width instead of being compressed to a sliver. */}
+      <View style={styles.quoteTextWrap}>
+        <Text style={styles.quoteText} numberOfLines={1} ellipsizeMode="tail">
+          {part.text}
         </Text>
-        {part.source && <Text style={quoteStyles(colors).quoteSource}>— {part.source}</Text>}
+        {part.source && <Text style={styles.quoteSource}>— {part.source}</Text>}
       </View>
-    </View>
+      {onPress && part.cfi && (
+        <Text style={styles.quoteJump} aria-label="跳转到原文">
+          ↗
+        </Text>
+      )}
+    </>
   );
+
+  // Tappable only when it can locate the quote in the reader (cfi present)
+  if (onPress && part.cfi) {
+    return (
+      <Pressable onPress={onPress} style={({ pressed }) => [styles.quoteBlock, pressed && styles.quoteBlockPressed]}>
+        {content}
+      </Pressable>
+    );
+  }
+  return <View style={styles.quoteBlock}>{content}</View>;
 }
 
 const quoteStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     quoteBlock: {
       flexDirection: "row",
+      alignItems: "center",
       gap: 6,
+      flexShrink: 1,
+      maxWidth: "100%",
       borderRadius: radius.md,
       backgroundColor: withOpacity(colors.primary, 0.05),
       borderWidth: 0.5,
       borderColor: withOpacity(colors.primary, 0.15),
       paddingHorizontal: 8,
       paddingVertical: 6,
+    },
+    quoteTextWrap: {
+      flexShrink: 1,
+      minWidth: 0,
     },
     quoteText: {
       fontSize: fs.xs,
@@ -249,6 +295,14 @@ const quoteStyles = (colors: ThemeColors) =>
       color: colors.mutedForeground,
       marginTop: 2,
     },
+    quoteJump: {
+      fontSize: fs.sm,
+      color: colors.primary,
+      alignSelf: "center",
+    },
+    quoteBlockPressed: {
+      opacity: 0.6,
+    },
   });
 
 interface MessageBubbleProps {
@@ -257,6 +311,7 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   currentStep?: "thinking" | "tool_calling" | "responding" | "idle";
   onCitationClick?: (citation: CitationPart) => void;
+  onQuoteClick?: (text: string, cfi?: string) => void;
   onLongPress?: (text: string) => void;
 }
 
@@ -283,6 +338,7 @@ function MessageBubble({
   isStreaming,
   currentStep,
   onCitationClick,
+  onQuoteClick,
   onLongPress,
 }: MessageBubbleProps) {
   const { t } = useTranslation();
@@ -334,7 +390,14 @@ function MessageBubble({
           {quoteParts.length > 0 && (
             <View style={{ gap: 4, marginBottom: textParts.length > 0 ? 6 : 0 }}>
               {quoteParts.map((q) => (
-                <UserQuoteBlock key={q.id} part={q} colors={colors} />
+                <UserQuoteBlock
+                  key={q.id}
+                  part={q}
+                  colors={colors}
+                  onPress={
+                    onQuoteClick ? () => onQuoteClick(q.text, q.cfi) : undefined
+                  }
+                />
               ))}
             </View>
           )}

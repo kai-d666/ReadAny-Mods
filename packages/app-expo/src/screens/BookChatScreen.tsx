@@ -100,11 +100,16 @@ export function BookChatScreen({ route, navigation }: Props) {
     NavigationBar.setVisibilityAsync("visible").catch(() => {});
   }, []);
 
-  // Initial quote from reader selection
+  // Initial quote from reader selection — consumed ONCE per mount. A ref
+  // (not params state) is the guard: clearing quotes on send must not let the
+  // effect re-inject the old selection (params may still carry it briefly).
+  const initialQuoteConsumedRef = useRef(false);
   const [quotes, setQuotes] = useState<AttachedQuote[]>([]);
 
   useEffect(() => {
-    if (selectedText && quotes.length === 0) {
+    if (initialQuoteConsumedRef.current) return;
+    if (selectedText) {
+      initialQuoteConsumedRef.current = true;
       setQuotes([
         {
           id: `quote-${Date.now()}`,
@@ -114,7 +119,8 @@ export function BookChatScreen({ route, navigation }: Props) {
         },
       ]);
     }
-  }, [selectedText, chapterTitle, selectionCfi, quotes.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedText, chapterTitle, selectionCfi]);
 
   const handleRemoveQuote = useCallback((id: string) => {
     setQuotes((prev) => prev.filter((q) => q.id !== id));
@@ -269,6 +275,16 @@ export function BookChatScreen({ route, navigation }: Props) {
         );
         return;
       }
+      // Clear the consumed quote chip BEFORE the streaming call — the chip
+      // must vanish immediately on send, not after the full reply completes.
+      // (quotes was already captured; the params clear keeps a re-render from
+      // re-injecting it, and the ref in the effect is the real guard.)
+      setQuotes([]);
+      navigation.setParams({
+        selectedText: undefined,
+        chapterTitle: undefined,
+        selectionCfi: undefined,
+      });
       await sendMessage(text, bookId, deepThinking, spoilerFree, quotes, resolvedAIConfig);
     },
     [bookId, navigation, sendMessage, t],
@@ -334,6 +350,14 @@ export function BookChatScreen({ route, navigation }: Props) {
           highlight: true,
         });
       }
+    },
+    [bookId, navigation, t],
+  );
+
+  const handleQuoteClick = useCallback(
+    (text: string, cfi?: string) => {
+      if (!cfi) return;
+      void openMobileBook({ bookId, navigation, t, cfi, highlight: true });
     },
     [bookId, navigation, t],
   );
@@ -550,6 +574,7 @@ export function BookChatScreen({ route, navigation }: Props) {
                   isStreaming={isStreaming}
                   currentStep={currentStep}
                   onCitationClick={handleCitationClick}
+                  onQuoteClick={handleQuoteClick}
                 />
               ) : (
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>

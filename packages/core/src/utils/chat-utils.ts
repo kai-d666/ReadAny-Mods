@@ -87,6 +87,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
               type: "quote",
               text: entry.text || "",
               source: entry.source,
+              cfi: entry.cfi,
               status: "completed",
               createdAt: m.createdAt,
             });

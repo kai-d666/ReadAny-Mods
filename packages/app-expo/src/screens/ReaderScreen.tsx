@@ -1342,7 +1342,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       let flashCount = 0;
       const doFlash = () => {
         if (flashCount >= 3) return;
-        bridge.flashHighlight(cfi, "orange", 500);
+        bridge.flashHighlight(cfi, "darkblue", 500);
         flashCount++;
         if (flashCount < 3) setTimeout(doFlash, 600);
       };
