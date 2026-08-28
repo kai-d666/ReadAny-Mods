@@ -306,4 +306,42 @@ describe("buildKnowledgeSystemPrompt", () => {
     });
     expect(prompt).toContain("You MUST respond in en");
   });
+
+  it("injects the spoiler-free boundary when enabled", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "zh",
+      spoilerFree: true,
+      currentPosition: { cfi: "epubcfi(/6/20!/4/26)", percentage: 12.12 },
+    });
+
+    expect(prompt).toContain("Spoiler-Free Mode (ACTIVE)");
+    expect(prompt).toContain("guard against it");
+    expect(prompt).toContain("one-line guarded overview");
+    expect(prompt).toContain("Still fine to discuss freely");
+  });
+
+  it("omits the spoiler block when disabled or without a book", () => {
+    const off = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+    });
+    expect(off).not.toContain("Spoiler-Free");
+
+    const noBook = buildKnowledgeSystemPrompt({
+      book: null,
+      semanticContext: null,
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "en",
+      spoilerFree: true,
+    });
+    expect(noBook).not.toContain("Spoiler-Free");
+  });
 });

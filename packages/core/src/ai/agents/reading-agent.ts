@@ -954,6 +954,7 @@ export async function* streamReadingAgent(
           enabledSkills: [],
           isVectorized,
           userLanguage: i18n.language || "en",
+          spoilerFree,
           currentChapter,
           currentPosition,
           effectiveLanguage: effectiveBookLanguage,

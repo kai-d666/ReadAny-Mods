@@ -22,6 +22,7 @@ type ReadingQuestionCategory =
 interface PromptContext {
   book: Book | null;
   bookId?: string | null;
+  /** @deprecated 死路:生产恒为 null(无人传递),对应注入段已删除(2026-08-28);类型链列入待办移除 */
   semanticContext: SemanticContext | null;
   enabledSkills: Skill[];
   isVectorized: boolean;
@@ -48,7 +49,6 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     buildRoleSection(),
     buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage, ctx.effectiveLanguage),
     buildMemorySection(ctx.memorySummary),
-    buildSemanticSection(ctx.semanticContext),
     buildRouteSection(ctx.questionCategory, ctx.selectionActive, ctx.routeHint),
     buildTurnAvailableToolsSection(ctx.allowedToolNames),
     buildToolsSection(
@@ -123,24 +123,6 @@ function compactText(value: string, maxLength: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, maxLength)}...`;
-}
-
-function buildSemanticSection(ctx: SemanticContext | null): string {
-  if (!ctx) return "";
-  return [
-    "## Reading Context",
-    `- Current Chapter: ${ctx.currentChapter}`,
-    `- Reader Activity: ${ctx.operationType}`,
-    ctx.surroundingText ? `- Surrounding Text:\n> ${compactText(ctx.surroundingText, 280)}` : "",
-    ctx.recentHighlights.length > 0
-      ? `- Recent Highlights:\n${ctx.recentHighlights
-          .slice(0, 3)
-          .map((h) => `  > ${compactText(h, 120)}`)
-          .join("\n")}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 function buildRouteSection(
@@ -704,7 +686,6 @@ export function buildFastSystemPrompt(ctx: PromptContext): string {
     buildRoleSection(),
     buildBookContextSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.selectionText, ctx.userLanguage, ctx.effectiveLanguage),
     buildMemorySection(ctx.memorySummary),
-    buildLiteSemanticSection(ctx.semanticContext, ctx.selectionText),
     buildLiteToolsSection(ctx.allowedToolNames),
     buildLiteConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book),
   ];
@@ -723,7 +704,7 @@ export function buildKnowledgeSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildKnowledgeRoleSection(),
     buildKnowledgeBookSection(ctx.book, ctx.currentChapter, ctx.currentPosition, ctx.effectiveLanguage),
-    buildKnowledgeConstraintsSection(ctx.userLanguage),
+    buildKnowledgeConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book),
   ];
 
   return sections.filter(Boolean).join("\n\n---\n\n");
@@ -765,43 +746,44 @@ function buildKnowledgeBookSection(
   return lines.filter(Boolean).join("\n");
 }
 
-function buildKnowledgeConstraintsSection(language: string): string {
-  return [
+function buildKnowledgeConstraintsSection(
+  language: string,
+  spoilerFree?: boolean,
+  book?: Book | null,
+): string {
+  const lines = [
     "## Knowledge-Only Guidelines",
     "- Answer from your own knowledge about this book and its author. You do NOT search, retrieve, or cite the book's text.",
     "- If you are unsure — or if the right answer depends on the book's actual text (e.g. exact plot details) — state your uncertainty honestly. NEVER fabricate.",
     "- Best for: author background, publication and series info, genre and style, general overview, related books. For the book's actual content, suggest switching to Standard mode.",
     `- **IMPORTANT: You MUST respond in ${language || "English"}. This is non-negotiable regardless of the book's language.**`,
     "- Keep responses concise. Use markdown formatting for readability.",
-  ].join("\n");
-}
-
-function buildLiteSemanticSection(
-  ctx: SemanticContext | null,
-  selectionText?: string,
-): string {
-  if (!ctx) return selectionText ? `## Reading Context\n- Selected Text:\n> ${compactText(selectionText, 2000)}` : "";
-  const lines = [
-    "## Reading Context",
-    `- Current Chapter: ${ctx.currentChapter}`,
-    `- Reader Activity: ${ctx.operationType}`,
   ];
-  // Lite gives the current chapter/selection directly in the prompt (no tool round-trip
-  // for the common "what am I reading" case); allow up to 2000 chars.
-  if (selectionText?.trim()) {
-    lines.push(`- Selected Text:\n> ${compactText(selectionText, 2000)}`);
-  }
-  if (ctx.surroundingText) {
-    lines.push(`- Surrounding Text:\n> ${compactText(ctx.surroundingText, 2000)}`);
-  }
-  if (ctx.recentHighlights.length > 0) {
+
+  // K-O has no retrieval tools — the only spoiler leak is the model's own
+  // stored knowledge of the book. The boundary is the reader's position
+  // (injected per-turn); behaviour = guarded one-line overview, not refusal.
+  if (spoilerFree && book) {
+    const progress = getBookProgressPercent(book.progress);
+    lines.push("");
+    lines.push("### Spoiler-Free Mode (ACTIVE)");
     lines.push(
-      `- Recent Highlights:\n${ctx.recentHighlights
-        .slice(0, 3)
-        .map((h) => `  > ${compactText(h, 120)}`)
-        .join("\n")}`,
+      `The reader is currently at **${progress}%** of the book. Everything after this position is FUTURE CONTENT.`,
+    );
+    lines.push(
+      "1. **NEVER reveal** plot events, character fates, twists, deaths, or any narrative developments after the reader's current position — even from your own knowledge. You have NO retrieval tools, so the only leak is your memory of the book: guard against it.",
+    );
+    lines.push(
+      '2. If the user asks about later content (e.g. "What happens in Chapter 5?", "How does the book end?"): give ONLY a one-line guarded overview, explicitly marked as potentially spoilery, and note you are not saying more to protect their reading experience.',
+    );
+    lines.push(
+      "3. **Still fine to discuss freely**: author background, publication/series facts, genre and style, literary themes and commentary, and the book's description/subjects — non-plot knowledge is NOT restricted.",
+    );
+    lines.push(
+      "4. **When in doubt** whether something would spoil, err on the side of caution.",
     );
   }
+
   return lines.join("\n");
 }
 
