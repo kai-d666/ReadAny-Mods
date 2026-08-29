@@ -7,7 +7,7 @@ import * as Clipboard from "expo-clipboard";
  * MessageList — FlatList message renderer matching app-mobile MessageList.
  * Scroll-to-bottom button, streaming gap indicator.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   FlatList,
@@ -191,10 +191,14 @@ export function MessageList({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-        removeClippedSubviews={false}
-        initialNumToRender={20}
-        maxToRenderPerBatch={10}
-        updateCellsBatchingPeriod={50}
+        // 首挂窗口调小:切入会话时一次性 mount 的原生节点数决定 completeRoot
+        // 时长(CDP 采样:切会话两大块 1.1s/0.6s)。initialNumToRender 只控
+        // 首批;windowSize 默认 21 仍会挂齐 21 条——必须一并收窄。
+        removeClippedSubviews
+        initialNumToRender={6}
+        maxToRenderPerBatch={4}
+        updateCellsBatchingPeriod={80}
+        windowSize={7}
         bounces={true}
         bouncesZoom={false}
         ListFooterComponent={
@@ -332,7 +336,9 @@ function extractPlainText(message: MessageV2): string {
   return parts.join("\n\n");
 }
 
-function MessageBubble({
+// memo:流式发布期间 FlatList 十个可见行都会重渲染,未变化消息(引用稳定,
+// 见 mergeMessagesWithStreaming)必须整体跳过,只有最后一条真正重建。
+const MessageBubble = memo(function MessageBubble({
   message,
   colors,
   isStreaming,
@@ -463,7 +469,7 @@ function MessageBubble({
       </View>
     </View>
   );
-}
+});
 
 function CopyButton({ onPress, colors }: { onPress: () => void; colors: ThemeColors }) {
   const [copied, setCopied] = useState(false);

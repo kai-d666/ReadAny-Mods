@@ -135,7 +135,13 @@ export function BookChatScreen({ route, navigation }: Props) {
   const clearAllThreads = useChatStore((s) => s.clearAllThreads);
   const getThreadsForContext = useChatStore((s) => s.getThreadsForContext);
 
+  // 守卫:只在首挂/bookId 变时加载一次。loadThreads 会把 store.threads
+  // 整体换成 DB 重建对象——若它每轮触发,threads 引用每轮变 → activeThread
+  // → messagesV2 → MessageBubble.memo 全链失效,整列表每轮全量重建(卡顿根因)。
+  const loadedBookIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    if (loadedBookIdRef.current === bookId) return;
+    loadedBookIdRef.current = bookId;
     loadThreads(bookId);
   }, [bookId, loadThreads]);
 
@@ -144,6 +150,7 @@ export function BookChatScreen({ route, navigation }: Props) {
     () => (activeThreadId ? threads.find((t) => t.id === activeThreadId) : null),
     [threads, activeThreadId],
   );
+
   const bookThreads = getThreadsForContext(bookId);
   const firstBookThreadId = bookThreads[0]?.id;
   useEffect(() => {
@@ -245,10 +252,13 @@ export function BookChatScreen({ route, navigation }: Props) {
   const { isStreaming, currentMessage, currentStep, error, sendMessage, stopStream } =
     useStreamingChat({ book, bookId });
 
+  // 依赖用身份键(threadId+条数)而非 activeThread 对象引用:store.threads
+  // 每轮被外部重写时,activeThread 对象会变,但消息内容没变的会话必须保持
+  // messageV2 引用稳定,否则 memo(MessageBubble) 失效、整列表每轮重建。
   const messagesV2: MessageV2[] = useMemo(() => {
     if (!activeThread) return [];
     return convertToMessageV2(activeThread.messages);
-  }, [activeThread]);
+  }, [activeThread?.id, activeThread?.messages.length]);
 
   const activeCurrentMessage =
     activeThread?.id === currentMessage?.threadId ? currentMessage : null;
@@ -256,6 +266,8 @@ export function BookChatScreen({ route, navigation }: Props) {
     () => mergeMessagesWithStreaming(messagesV2, activeCurrentMessage, isStreaming),
     [activeCurrentMessage, isStreaming, messagesV2],
   );
+
+  void messagesV2; void currentStep;
 
   const handleSend = useCallback(
     async (text: string, deepThinking: boolean, spoilerFree: boolean, quotes?: AttachedQuote[]) => {

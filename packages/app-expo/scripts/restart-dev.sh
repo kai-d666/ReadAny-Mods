@@ -22,7 +22,7 @@ if ! watchman version >/dev/null 2>&1; then
 fi
 
 APP_DIR="/d/MCU/7-Claude code/Project/ReadAny/readany-src/packages/app-expo"
-DEVICE="adb-3430047082003V2-E4wJpC (2)._adb-tls-connect._tcp"  # 无线调试 serial;变了就改这里
+DEVICE="adb-3430047082003V2-E4wJpC._adb-tls-connect._tcp"  # 无线调试 serial(无 "(2)",双配对时取权威序列号)
 PKG="com.readany.app.dev.debug"
 
 echo "==> Killing old Metro (node on :8081)..."

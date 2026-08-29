@@ -14,7 +14,7 @@ import type {
   TextPart,
   ToolCallPart,
 } from "@readany/core/types/message";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -98,6 +98,39 @@ function MermaidPartView({ part }: { part: MermaidPart }) {
   return <MermaidView chart={part.chart} title={part.title} />;
 }
 
+/** 流式文本分块(~1600 字/块,块边界=行边界):已完成块是静态 Text,React
+ *  跳过其更新 → 原生文本布局只重算最后一块,长回复流式不再整段重布局。
+ *  行边界切分保证视觉无缝(换行处本就有断行)。 */
+function splitStreamingBlocks(text: string): string[] {
+  const SIZE = 1600;
+  if (text.length <= SIZE) return [text];
+  const blocks: string[] = [];
+  let cur = "";
+  for (const line of text.split("\n")) {
+    const next = cur ? `${cur}\n${line}` : line;
+    if (cur && next.length >= SIZE) {
+      blocks.push(cur);
+      cur = line;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) blocks.push(cur);
+  // 极端兜底:单行超长(罕见)时硬切,保证每块布局成本有界
+  return blocks.flatMap((b) => (b.length <= SIZE ? [b] : b.match(/.{1,800}/gs) ?? [b]));
+}
+
+// —— 渐进富化(切会话卡顿的根治策略)——
+// md4c 每条富文本消息在原生线程做文本布局(几十-100ms);切入会话挂 N 条
+// 同时布局 = 600ms+ 原生大帧(实测 gfxinfo 600ms 帧 ×2)。解法:消息首帧
+// 以零布局的纯文本呈现("冷态"),随后【错峰】(每条间隔 100ms)富化——
+// 大帧被拆成 N 个 100ms 小帧,切会话体感顺滑。
+// - 已富化的 part 记入模块级 Set:滚出窗口再回来直接富化(无需再次冷启动)
+// - 流式期间保持纯文本(既有逻辑),结束后自然进入错峰富化队列
+const enrichedPartIds = new Set<string>();
+const ENRICH_INTERVAL_MS = 100;
+let lastEnrichAt = 0;
+
 function TextPartView({
   part,
   citations,
@@ -109,9 +142,45 @@ function TextPartView({
 }) {
   const throttledText = useThrottledValue(part.text, 100);
   const isStreaming = part.status === "running";
+  const colors = useColors();
+  const streamingBlocks = useMemo(() => splitStreamingBlocks(throttledText), [throttledText]);
+  const [enriched, setEnriched] = useState(!isStreaming && enrichedPartIds.has(part.id));
+
+  // 冷态完成消息 → 错峰富化(与相邻富化至少间隔 100ms,拆碎原生布局帧)
+  useEffect(() => {
+    if (isStreaming || enriched) return;
+    const delay = Math.max(0, lastEnrichAt + ENRICH_INTERVAL_MS - Date.now());
+    const timer = setTimeout(() => {
+      lastEnrichAt = Date.now();
+      enrichedPartIds.add(part.id);
+      setEnriched(true);
+    }, delay);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isStreaming, enriched, part.id]);
 
   if (!throttledText.trim()) {
     return null;
+  }
+
+  // 冷态(流式中 / 尚未富化):零解析零布局的纯文本。流式时按块切分
+  // (已完成块是静态 Text → 布局只重算最后一块,O(总) 降 O(尾));
+  // 冷态已完成消息直接整段单 Text(不变化,无布局成本)。
+  if (isStreaming || !enriched) {
+    const blocks = isStreaming ? streamingBlocks : [throttledText];
+    return (
+      <>
+        {blocks.map((block, i) => (
+          <Text
+            key={i}
+            style={{ fontSize: fs.sm, lineHeight: 20, color: colors.foreground }}
+          >
+            {block}
+          </Text>
+        ))}
+      </>
+    );
   }
 
   return (

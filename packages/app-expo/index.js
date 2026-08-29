@@ -7,6 +7,30 @@ import TrackPlayer from "react-native-track-player";
 import App from "./src/App";
 import { PlaybackService } from "./src/services/PlaybackService";
 
+
+// PERF-PROBE: Hermes CPU sampling profiler — 抓 JS 线程热函数 (90s 自动停止)。
+// stop() 后 logcat 输出保存路径(cpuprofile),pull 回来分析。
+globalThis.__perfSamplerStarted =
+  globalThis.__perfSamplerStarted ||
+  (function () {
+    try {
+      var Sampler = require("HermesSamplingProfiler");
+      Sampler.start();
+      console.log("[PERF] sampler started");
+      setTimeout(function () {
+        try {
+          Sampler.stop().then(function (result) {
+            console.log("[PERF] sampler stopped: " + JSON.stringify(result || {}).slice(0, 200));
+          });
+        } catch (e) {
+          console.log("[PERF] sampler stop err " + e);
+        }
+      }, 90000);
+    } catch (e) {
+      console.log("[PERF] sampler NOT available: " + e);
+    }
+  })();
+
 function bytesToString(bytes) {
   if (typeof TextDecoder !== "undefined") {
     return new TextDecoder().decode(bytes);
