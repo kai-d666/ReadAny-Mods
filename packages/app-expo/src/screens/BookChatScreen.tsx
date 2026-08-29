@@ -145,7 +145,12 @@ export function BookChatScreen({ route, navigation }: Props) {
     loadThreads(bookId);
   }, [bookId, loadThreads]);
 
-  const activeThreadId = getActiveThreadId(bookId);
+  // 订阅 bookActiveThreadIds 的本键值(primitive selector:仅本书的活跃线程
+  // 变化时触发渲染)——setBookActiveThread 后立即渲染,不等侧栏动画 finished。
+  // 旧实现 getActiveThreadId(bookId) 是 store action(引用稳定),不被该字段
+  // 订阅 → 内容更新被拖到 closeSidebar 动画完成回调,tap→内容 1 秒延迟。
+  const activeBookThreadId = useChatStore((s) => s.bookActiveThreadIds[bookId]);
+  const activeThreadId = activeBookThreadId || null;
   const activeThread = useMemo(
     () => (activeThreadId ? threads.find((t) => t.id === activeThreadId) : null),
     [threads, activeThreadId],

@@ -16,25 +16,25 @@
     }
   },
   "scripts": {
-    "start": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev",
-    "start:clear": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev --clear",
+    "start": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev",
+    "start:clear": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev --clear",
     "start:dev": "pnpm run start",
     "start:dev:clear": "pnpm run start:clear",
-    "preandroid": "pnpm run build:reader",
+    "preandroid": "pnpm run build:webassets",
     "android": "expo run:android",
-    "android:dev": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development expo run:android --device",
-    "preios": "pnpm run build:reader && node scripts/configure-native-variant.js",
+    "android:dev": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development expo run:android --device",
+    "preios": "pnpm run build:webassets && node scripts/configure-native-variant.js",
     "ios": "expo run:ios",
-    "ios:dev": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios --device",
-    "ios:simulator": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios",
-    "preprebuild": "pnpm run build:reader",
+    "ios:dev": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios --device",
+    "ios:simulator": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios",
+    "preprebuild": "pnpm run build:webassets",
     "prebuild": "expo prebuild",
     "build:reader": "node scripts/build-reader.js",
     "sync:native-variant": "node scripts/configure-native-variant.js",
     "lint": "biome check .",
     "test": "vitest run",
     "eas-build-pre-install": "bash scripts/eas-install-ios-build-tools.sh",
-    "eas-build-post-install": "pnpm run build:reader && node scripts/configure-native-variant.js",
+    "eas-build-post-install": "pnpm run build:webassets && node scripts/configure-native-variant.js",
     "eas:device:create": "pnpm exec eas device:create",
     "eas:build:android": "APP_VARIANT=production pnpm exec eas build --profile production --platform android",
     "eas:build:android:dev": "APP_VARIANT=development pnpm exec eas build --profile development --platform android",
@@ -42,7 +42,9 @@
     "eas:build:ios": "APP_VARIANT=production pnpm exec eas build --profile production --platform ios",
     "eas:build:ios:dev": "APP_VARIANT=development pnpm exec eas build --profile development --platform ios",
     "eas:build:ios:simulator": "APP_VARIANT=development pnpm exec eas build --profile development-simulator --platform ios",
-    "eas:build:ios:preview": "APP_VARIANT=preview pnpm exec eas build --profile preview --platform ios"
+    "eas:build:ios:preview": "APP_VARIANT=preview pnpm exec eas build --profile preview --platform ios",
+    "build:chat": "node scripts/build-chat.js",
+    "build:webassets": "pnpm run build:reader && pnpm run build:chat"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.712.0",
@@ -124,6 +126,7 @@
     "esbuild": "^0.27.3",
     "react-native-svg-transformer": "^1.5.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.2",
+    "marked": "^17.0.3"
   }
 }
