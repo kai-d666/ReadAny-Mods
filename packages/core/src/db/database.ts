@@ -95,9 +95,12 @@ export {
   getAllReadingSessions,
   getReadingSessions,
   getReadingSessionsByDateRange,
+  getReadingSessionsDaily,
+  getReadingSessionSummary,
   insertReadingSession,
   updateReadingSession,
 } from "./session-queries";
+export type { ReadingSessionDayRow, ReadingSessionSummary } from "./session-queries";
 
 export {
   getChunks,

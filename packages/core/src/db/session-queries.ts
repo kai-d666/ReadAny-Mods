@@ -54,11 +54,99 @@ export async function getReadingSessionsByDateRange(
   return rows.map(mapReadingSessionRow);
 }
 
+export interface ReadingSessionDayRow {
+  date: string; // UTC YYYY-MM-DD
+  totalActiveTimeMs: number;
+  pagesRead: number;
+  charactersRead: number;
+  sessionsCount: number;
+}
+
+/**
+ * 按 UTC 日期聚合的每日阅读行。原 getDailyStats 拉全部 session 行在 JS 侧分组
+ * (大 JSON 跨桥 + 逐行循环),GROUP BY 后每日一行,传输与循环成本降一个数量级。
+ */
+export async function getReadingSessionsDaily(
+  startAt: number,
+  endAt: number,
+): Promise<ReadingSessionDayRow[]> {
+  const database = await getDB();
+  const rows = await database.select<{
+    date: string;
+    t: number | null;
+    p: number | null;
+    ch: number | null;
+    c: number | null;
+  }>(
+    "SELECT strftime('%Y-%m-%d', started_at / 1000, 'unixepoch') AS date, SUM(total_active_time) AS t, SUM(pages_read) AS p, SUM(characters_read) AS ch, COUNT(*) AS c FROM reading_sessions WHERE started_at >= ? AND started_at <= ? GROUP BY date ORDER BY date ASC",
+    [startAt, endAt],
+  );
+  return rows.map((r) => ({
+    date: r.date,
+    totalActiveTimeMs: r.t ?? 0,
+    pagesRead: r.p ?? 0,
+    charactersRead: r.ch ?? 0,
+    sessionsCount: r.c ?? 0,
+  }));
+}
+
+export interface ReadingSessionSummary {
+  totalSessions: number;
+  totalActiveTimeMs: number;
+  totalPagesRead: number;
+  totalCharactersRead: number;
+  /** books.progress > 0 的书 ∪ 有 session 的书(与原 getOverallStats 逐本遍历语义一致,含软删) */
+  totalBooksStarted: number;
+  /** UTC 日期(YYYY-MM-DD),与原版 new Date(ms).toISOString().split("T")[0] 一致 */
+  readingDays: string[];
+}
+
+/**
+ * 聚合版整体统计。原 getOverallStats 逐本书 SELECT 是 N+1(实测 ~400ms),
+ * 此输出由 3 条 SQL 聚合,语义与逐本遍历版完全一致:
+ * - totalBooksStarted = sessions 的 DISTINCT book_id ∪ books.progress > 0
+ * - readingDays 用 strftime UTC 日期,与 UTC ISO 截断等价
+ */
+export async function getReadingSessionSummary(): Promise<ReadingSessionSummary> {
+  const database = await getDB();
+
+  const sums = await database.select<{
+    c: number | null;
+    t: number | null;
+    p: number | null;
+    ch: number | null;
+    b: number | null;
+  }>(
+    "SELECT COUNT(*) AS c, SUM(total_active_time) AS t, SUM(pages_read) AS p, SUM(characters_read) AS ch, COUNT(DISTINCT book_id) AS b FROM reading_sessions",
+  );
+  const s = sums[0] ?? { c: 0, t: 0, p: 0, ch: 0, b: 0 };
+
+  const bookCount = await database.select<{ c: number }>(
+    "SELECT (SELECT COUNT(DISTINCT book_id) FROM reading_sessions) + (SELECT COUNT(*) FROM books b WHERE b.progress > 0 AND NOT EXISTS (SELECT 1 FROM reading_sessions rs WHERE rs.book_id = b.id)) AS c",
+  );
+
+  const days = await database.select<{ date: string }>(
+    "SELECT DISTINCT strftime('%Y-%m-%d', started_at / 1000, 'unixepoch') AS date FROM reading_sessions ORDER BY date ASC",
+  );
+
+  return {
+    totalSessions: s.c ?? 0,
+    totalActiveTimeMs: s.t ?? 0,
+    totalPagesRead: s.p ?? 0,
+    totalCharactersRead: s.ch ?? 0,
+    totalBooksStarted: bookCount[0]?.c ?? 0,
+    readingDays: days.map((d) => d.date),
+  };
+}
+
 export async function insertReadingSession(session: ReadingSession): Promise<void> {
   const database = await getDB();
   const now = Date.now();
-  const deviceId = await getDeviceId();
-  const syncVersion = await nextSyncVersion(database, "reading_sessions");
+  // 并行取无依赖的写入元数据(各跨 JNI,串行时每次 focus 保存多 ~百 ms)
+  const [deviceId, syncVersion] = await Promise.all([
+    getDeviceId(),
+    nextSyncVersion(database, "reading_sessions"),
+  ]);
   // UPSERT: a session can be re-saved (e.g. saveCurrentSession racing stopSession)
   // with the same id — id is the PK. Conflict → update instead of failing.
   await database.execute(

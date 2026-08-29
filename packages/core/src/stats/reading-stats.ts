@@ -1,7 +1,13 @@
 /**
  * Reading Stats service — computes reading statistics from session data
  */
-import { getBooks, getReadingSessions, getReadingSessionsByDateRange } from "../db/database";
+import {
+  getBooks,
+  getReadingSessions,
+  getReadingSessionsByDateRange,
+  getReadingSessionsDaily,
+  getReadingSessionSummary,
+} from "../db/database";
 
 export interface DailyStats {
   date: string; // YYYY-MM-DD
@@ -51,41 +57,32 @@ export interface TrendPoint {
 export class ReadingStatsService {
   /** Get daily reading stats for a date range */
   async getDailyStats(startDate: Date, endDate: Date): Promise<DailyStats[]> {
-    const sessions = await getReadingSessionsByDateRange(startDate, endDate);
-
-    const grouped = new Map<string, DailyStats>();
-
-    for (const session of sessions) {
-      const date = new Date(session.startedAt).toISOString().split("T")[0];
-      const existing = grouped.get(date) || {
-        date,
-        totalTime: 0,
-        pagesRead: 0,
-        charactersRead: 0,
-        sessionsCount: 0,
-      };
-
-      existing.totalTime += session.totalActiveTime / 60000; // ms -> minutes
-      existing.pagesRead += session.pagesRead;
-      existing.charactersRead = (existing.charactersRead ?? 0) + (session.charactersRead ?? 0);
-      existing.sessionsCount += 1;
-
-      grouped.set(date, existing);
-    }
+    // SQL 端 GROUP BY 聚合:全量行 JSON 跨桥 → 每日一行(拉 365 天也才 ≤365 行)
+    const rows = await getReadingSessionsDaily(startDate.getTime(), endDate.getTime());
+    const byDate = new Map(rows.map((r) => [r.date, r]));
 
     // Fill in missing days with zeros
     const result: DailyStats[] = [];
     const current = new Date(startDate);
     while (current <= endDate) {
       const dateStr = current.toISOString().split("T")[0];
+      const g = byDate.get(dateStr);
       result.push(
-        grouped.get(dateStr) || {
-          date: dateStr,
-          totalTime: 0,
-          pagesRead: 0,
-          charactersRead: 0,
-          sessionsCount: 0,
-        },
+        g
+          ? {
+              date: g.date,
+              totalTime: g.totalActiveTimeMs / 60000,
+              pagesRead: g.pagesRead,
+              charactersRead: g.charactersRead,
+              sessionsCount: g.sessionsCount,
+            }
+          : {
+              date: dateStr,
+              totalTime: 0,
+              pagesRead: 0,
+              charactersRead: 0,
+              sessionsCount: 0,
+            },
       );
       current.setDate(current.getDate() + 1);
     }
@@ -114,44 +111,25 @@ export class ReadingStatsService {
 
   /** Get overall reading statistics */
   async getOverallStats(): Promise<OverallStats> {
-    const books = await getBooks({ includeDeleted: true });
-
-    let totalTime = 0;
-    let totalSessions = 0;
-    let totalPages = 0;
-    let totalCharactersRead = 0;
-    const readingDays = new Set<string>();
-    const readBookIds = new Set<string>();
-
-    for (const book of books) {
-      if (book.progress > 0) {
-        readBookIds.add(book.id);
-      }
-
-      const sessions = await getReadingSessions(book.id);
-      for (const session of sessions) {
-        totalTime += session.totalActiveTime;
-        totalSessions++;
-        totalPages += session.pagesRead;
-        totalCharactersRead += session.charactersRead ?? 0;
-        readingDays.add(new Date(session.startedAt).toISOString().split("T")[0]);
-        readBookIds.add(book.id);
-      }
-    }
+    // 单次聚合查询代替原 N+1 逐本遍历(每本书一次 SELECT,实测 ~400ms)
+    const summary = await getReadingSessionSummary();
 
     // Calculate streaks
-    const { longestStreak, currentStreak } = this.calculateStreaks(readingDays);
+    const { longestStreak, currentStreak } = this.calculateStreaks(new Set(summary.readingDays));
 
-    const daysCount = readingDays.size || 1;
+    const daysCount = summary.readingDays.length || 1;
 
     return {
-      totalBooks: readBookIds.size,
-      totalReadingTime: totalTime / 60000,
-      totalCharactersRead,
-      avgCharactersPerMinute: totalTime > 0 ? totalCharactersRead / (totalTime / 60000) : 0,
-      totalSessions,
-      totalReadingDays: readingDays.size,
-      avgDailyTime: totalTime / 60000 / daysCount,
+      totalBooks: summary.totalBooksStarted,
+      totalReadingTime: summary.totalActiveTimeMs / 60000,
+      totalCharactersRead: summary.totalCharactersRead,
+      avgCharactersPerMinute:
+        summary.totalActiveTimeMs > 0
+          ? summary.totalCharactersRead / (summary.totalActiveTimeMs / 60000)
+          : 0,
+      totalSessions: summary.totalSessions,
+      totalReadingDays: summary.readingDays.length,
+      avgDailyTime: summary.totalActiveTimeMs / 60000 / daysCount,
       longestStreak,
       currentStreak,
     };
