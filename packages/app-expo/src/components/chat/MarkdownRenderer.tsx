@@ -1,18 +1,13 @@
-// MarkdownRenderer — 原生 markdown 渲染(react-native-enriched-markdown 0.4.0)。
-// 与旧的 react-native-markdown-display 同接口(组件 props 不变,调用点零改动),
-// 但渲染管线换成 md4c 原生解析 + Fabric 原生文本渲染:
-// - JS 线程零解析/零组件树(消除长回复流式/切换会话的 JS 阻塞帧)
-// - 支持 GFM(表格/任务列表)、markdownStyle 全元素样式定制
-// 包装层补两件事(md4c 渲染器不支持嵌入自定义组件):
-// 1. ```mermaid 块剥离出来按原位置插入 MermaidView(段交替渲染)
-// 2. citations 的 [N] 标记转成 readany-cite://N 链接,onLinkPress 转发跳转
 import { MermaidView } from "@/components/common/MermaidView";
 import { fontSize as fs, radius, useColors } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { CitationPart } from "@readany/core/types/message";
-import { useCallback, useMemo } from "react";
-import { View } from "react-native";
-import { EnrichedMarkdownText, type MarkdownStyle } from "react-native-enriched-markdown";
+import * as Clipboard from "expo-clipboard";
+import { Fragment, type ReactNode, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { StyleProp, TextStyle } from "react-native";
+import Markdown, { type RenderRules, type ASTNode } from "react-native-markdown-display";
 
 interface MarkdownRendererProps {
   content: string;
@@ -22,189 +17,357 @@ interface MarkdownRendererProps {
   onCitationClick?: (citation: CitationPart) => void;
 }
 
-const CITE_PROTOCOL = "readany-cite://";
-
-interface RenderSegment {
-  /** 该段渲染的 markdown 文本 */
-  text: string;
-  /** mermaid 块的 markdown(有则该段是图表,不渲染文本) */
-  mermaid?: string;
-}
-
-/** 按 ``` 围栏分割内容为 [文本段/代码段/mermaid 段] 交替序列:
- *  文本段由 md4c 原生渲染;mermaid 段剥离出来由 MermaidView 原位渲染;
- *  代码段原样保留在文本段内(代码块的样式/复制由原始处理保持)。 */
-function splitSegments(content: string, citations?: CitationPart[]): RenderSegment[] {
-  const segments: RenderSegment[] = [];
-  let textBuf: string[] = [];
-  let inFence = false;
-
-  const flushText = () => {
-    if (textBuf.length) {
-      segments.push({ text: transformCitations(textBuf.join("```"), citations) });
-      textBuf = [];
-    }
-  };
-
-  for (const part of content.split("```")) {
-    if (!inFence) {
-      textBuf.push(part);
-    } else {
-      const firstLineEnd = part.indexOf("\n");
-      const firstLine = (firstLineEnd === -1 ? part : part.slice(0, firstLineEnd)).trim();
-      const body = firstLineEnd === -1 ? "" : part.slice(firstLineEnd + 1);
-      if (firstLine.toLowerCase() === "mermaid") {
-        flushText();
-        segments.push({ text: "", mermaid: body.trim() });
-      } else {
-        // 代码块:复原 fenced 文本,交给 md4c 原生渲染
-        textBuf.push("```" + part + "```");
-      }
-    }
-    inFence = !inFence;
-  }
-  flushText();
-  return segments;
-}
-
-/** citations 存在时,文本里的 [N] 转成 markdown 链接(点击转发给 onCitationClick)。 */
-function transformCitations(text: string, citations?: CitationPart[]): string {
-  if (!citations || citations.length === 0 || !/\[\d+\]/.test(text)) return text;
-  // 与旧实现(renderTextWithCitations)行为一致:全文本替换,代码块内的 [N]
-  // 不受影响(splitSegments 的文本段已排除 fence 代码块)。
-  return text.replace(/\[(\d+)\]/g, (match, num: string) => {
-    const n = Number.parseInt(num, 10);
-    const hit = citations.find((c) => c.citationIndex === n) ?? citations[n - 1];
-    return hit ? `[${num}](${CITE_PROTOCOL}${num})` : match;
-  });
-}
-
-export function MarkdownRenderer({
-  content,
-  citations,
-  onCitationClick,
-}: MarkdownRendererProps) {
-  const colors = useColors();
-  const segments = useMemo(() => splitSegments(content, citations), [content, citations]);
-  const markdownStyle = useMemo(() => buildMarkdownStyle(colors), [colors]);
-
-  const handleLinkPress = useCallback(
-    ({ url }: { url: string }) => {
-      const match = url?.match(new RegExp(`^${CITE_PROTOCOL.replace(/[/:$]/g, "\\$&")}(\\d+)`));
-      if (match && citations) {
-        const num = Number.parseInt(match[1], 10);
-        const citation = citations.find((c) => c.citationIndex === num) ?? citations[num - 1];
-        if (citation) onCitationClick?.(citation);
-        return;
-      }
-      // 其余链接:与旧实现一致,仅展示不打开
-    },
-    [citations, onCitationClick],
-  );
-
+function isUnsafeMarkdownTextColor(color: unknown): boolean {
+  if (typeof color !== "string") return true;
+  const normalized = color.replace(/\s+/g, "").toLowerCase();
   return (
-    <View>
-      {segments.map((seg, i) =>
-        seg.mermaid !== undefined ? (
-          <MermaidView key={`md-${i}`} chart={seg.mermaid} title="" />
-        ) : (
-          <EnrichedMarkdownText
-            key={`md-${i}`}
-            flavor="github"
-            markdown={seg.text}
-            markdownStyle={markdownStyle}
-            onLinkPress={handleLinkPress}
-          />
-        ),
-      )}
+    !normalized ||
+    normalized === "black" ||
+    normalized === "#000" ||
+    normalized === "#000000" ||
+    normalized === "rgb(0,0,0)" ||
+    normalized === "rgba(0,0,0,1)"
+  );
+}
+
+function getReadableTextColor(style: unknown, fallbackColor: string): string {
+  const flattened = StyleSheet.flatten(style as StyleProp<TextStyle>) as
+    | { color?: unknown }
+    | undefined;
+  return isUnsafeMarkdownTextColor(flattened?.color) ? fallbackColor : String(flattened?.color);
+}
+
+function CodeBlockWithCopy({
+  code,
+  style,
+  colors,
+}: { code: string; style: any; colors: ThemeColors }) {
+  const { t } = useTranslation();
+  return (
+    <View style={style}>
+      <TouchableOpacity
+        onPress={() => Clipboard.setStringAsync(code)}
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          padding: 4,
+          backgroundColor: colors.card,
+          borderRadius: 4,
+          zIndex: 10,
+        }}
+      >
+        <Text style={{ fontSize: 12, color: colors.mutedForeground }}>
+          {t("common.copy", "复制")}
+        </Text>
+      </TouchableOpacity>
+      <Text style={style}>{code}</Text>
     </View>
   );
 }
 
-/** 主题 → md4c markdownStyle 映射(键名与 0.4.0 类型一致,沿用旧视觉参数)。 */
-const buildMarkdownStyle = (colors: ThemeColors): MarkdownStyle => ({
-  paragraph: {
-    fontSize: fs.sm,
-    lineHeight: 20,
-    color: colors.foreground,
-    marginTop: 0,
-    marginBottom: 8,
-  },
-  h1: {
-    color: colors.foreground,
-    fontSize: fs.lg,
-    fontWeight: "700",
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  h2: {
-    color: colors.foreground,
-    fontSize: fs.md,
-    fontWeight: "700",
-    marginTop: 10,
-    marginBottom: 6,
-  },
-  h3: {
-    color: colors.foreground,
-    fontSize: fs.base,
-    fontWeight: "700",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  h4: {
-    color: colors.foreground,
-    fontSize: fs.base,
-    fontWeight: "700",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  h5: {
-    color: colors.foreground,
-    fontSize: fs.base,
-    fontWeight: "700",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  h6: {
-    color: colors.foreground,
-    fontSize: fs.base,
-    fontWeight: "700",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  blockquote: {
-    color: colors.mutedForeground,
-    borderColor: colors.border,
-    borderWidth: 3,
-    gapWidth: 12,
-    backgroundColor: "transparent",
-    marginTop: 6,
-    marginBottom: 6,
-  },
-  list: {
-    color: colors.foreground,
-    bulletColor: colors.mutedForeground,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  codeBlock: {
-    backgroundColor: colors.muted,
-    color: colors.foreground,
-    padding: 12,
-    borderRadius: radius.md,
-    marginTop: 6,
-    marginBottom: 6,
-  },
-  code: {
-    backgroundColor: colors.muted,
-    color: colors.foreground,
-    fontSize: fs.xs + 1,
-  },
-  link: { color: colors.blue, underline: false },
-  strong: { fontWeight: "bold" },
-  em: { fontStyle: "italic" },
-  strikethrough: { color: colors.foreground },
-  underline: { color: colors.foreground },
-  thematicBreak: { color: colors.border, height: 1, marginTop: 12, marginBottom: 12 },
-  image: { borderRadius: radius.md },
-});
+function getCodeLanguage(node: ASTNode): string {
+  if ((node as any).sourceInfo) {
+    return String((node as any).sourceInfo)
+      .toLowerCase()
+      .trim();
+  }
+
+  if (node.attributes?.lang) {
+    return String(node.attributes.lang).toLowerCase().trim();
+  }
+
+  if (node.attributes?.className) {
+    const className = node.attributes.className;
+    if (Array.isArray(className)) {
+      const langClass = className.find((c: string) => c.startsWith("language-"));
+      if (langClass) {
+        return langClass.replace("language-", "").toLowerCase().trim();
+      }
+    } else if (typeof className === "string") {
+      return className.replace("language-", "").toLowerCase().trim();
+    }
+  }
+
+  return "";
+}
+
+function CitationLink({
+  num,
+  citation,
+  onCitationClick,
+  colors,
+}: {
+  num: number;
+  citation: CitationPart;
+  onCitationClick?: (citation: CitationPart) => void;
+  colors: ThemeColors;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={() => onCitationClick?.(citation)}
+      activeOpacity={0.7}
+      style={{
+        flexDirection: "row",
+        alignItems: "baseline",
+        marginHorizontal: 1,
+      }}
+    >
+      <Text
+        style={{
+          color: colors.primary,
+          fontSize: fs.xs,
+          fontWeight: "600",
+          lineHeight: fs.sm * 1.4,
+        }}
+      >
+        [{num}]
+      </Text>
+      <Text
+        style={{
+          color: colors.primary,
+          fontSize: 8,
+          marginLeft: 1,
+          lineHeight: fs.sm * 1.4,
+        }}
+      >
+        ↗
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function renderTextWithCitations(
+  text: string,
+  citations: CitationPart[] | undefined,
+  onCitationClick: ((citation: CitationPart) => void) | undefined,
+  colors: ThemeColors,
+): React.ReactNode[] {
+  if (!citations || citations.length === 0) {
+    return [<Fragment key="0">{text}</Fragment>];
+  }
+
+  const parts = text.split(/(\[\d+\])/g);
+  const result: React.ReactNode[] = [];
+  let offset = 0;
+
+  for (const part of parts) {
+    const keyOffset = offset;
+    offset += part.length;
+    const match = part.match(/\[(\d+)\]/);
+    if (match) {
+      const num = Number.parseInt(match[1]);
+      const citation = citations.find((c) => c.citationIndex === num) ?? citations[num - 1];
+      if (citation) {
+        result.push(
+          <CitationLink
+            key={`citation-${keyOffset}-${num}`}
+            num={num}
+            citation={citation}
+            onCitationClick={onCitationClick}
+            colors={colors}
+          />,
+        );
+        continue;
+      }
+    }
+    if (part) {
+      result.push(<Fragment key={`text-${keyOffset}`}>{part}</Fragment>);
+    }
+  }
+
+  return result;
+}
+
+export function MarkdownRenderer({
+  content,
+  isStreaming,
+  styleOverrides,
+  citations,
+  onCitationClick,
+}: MarkdownRendererProps) {
+  const colors = useColors();
+  const baseStyles = makeMarkdownStyles(colors);
+  // When styleOverrides is provided, use it directly without merging with baseStyles
+  // This ensures custom styles (like tooltip dark background) are not overridden
+  const styles = styleOverrides || baseStyles;
+
+  const rules = useMemo<RenderRules>(
+    () => ({
+      fence: (node: ASTNode, children: ReactNode[], parentNodes: ASTNode[], style: any) => {
+        const code = node.content || "";
+        const lang = getCodeLanguage(node);
+
+        if (lang === "mermaid") {
+          return <MermaidView key={node.key} chart={code} />;
+        }
+
+        return <CodeBlockWithCopy key={node.key} code={code} style={style.fence} colors={colors} />;
+      },
+      code_block: (node: ASTNode, children: ReactNode[], parentNodes: ASTNode[], style: any) => {
+        const code = node.content || "";
+        const lang = getCodeLanguage(node);
+
+        if (lang === "mermaid") {
+          return <MermaidView key={node.key} chart={code} />;
+        }
+
+        return (
+          <CodeBlockWithCopy key={node.key} code={code} style={style.code_block} colors={colors} />
+        );
+      },
+      text: (node: ASTNode, children: ReactNode[], parentNodes: ASTNode[], style: any) => {
+        const text = node.content || "";
+        const readableStyle = [style, { color: getReadableTextColor(style, colors.foreground) }];
+        if (citations && citations.length > 0 && /\[\d+\]/.test(text)) {
+          return (
+            <Text key={node.key} style={readableStyle}>
+              {renderTextWithCitations(text, citations, onCitationClick, colors)}
+            </Text>
+          );
+        }
+        return (
+          <Text key={node.key} style={readableStyle}>
+            {text}
+          </Text>
+        );
+      },
+    }),
+    [colors, citations, onCitationClick],
+  );
+
+  return (
+    <View>
+      <Markdown style={styles} rules={rules} mergeStyle>
+        {content}
+      </Markdown>
+    </View>
+  );
+}
+
+const makeMarkdownStyles = (colors: ThemeColors) =>
+  ({
+    body: {
+      color: colors.foreground,
+      fontSize: fs.sm,
+      lineHeight: 20,
+    },
+    text: {
+      color: colors.foreground,
+    },
+    textgroup: {
+      color: colors.foreground,
+    },
+    heading1: {
+      color: colors.foreground,
+      fontSize: fs.lg,
+      fontWeight: "700",
+      marginBottom: 8,
+      marginTop: 12,
+    },
+    heading2: {
+      color: colors.foreground,
+      fontSize: fs.md,
+      fontWeight: "600",
+      marginBottom: 6,
+      marginTop: 10,
+    },
+    heading3: {
+      color: colors.foreground,
+      fontSize: fs.base,
+      fontWeight: "600",
+      marginBottom: 4,
+      marginTop: 8,
+    },
+    paragraph: {
+      color: colors.foreground,
+      fontSize: fs.sm,
+      lineHeight: 20,
+      marginBottom: 8,
+      marginTop: 0,
+    },
+    strong: { color: colors.foreground, fontWeight: "700" },
+    em: { color: colors.foreground, fontStyle: "italic" },
+    s: { color: colors.foreground },
+    link: { color: colors.blue, textDecorationLine: "none" },
+    blockquote: {
+      color: colors.mutedForeground,
+      borderLeftWidth: 3,
+      borderLeftColor: colors.border,
+      paddingLeft: 12,
+      marginLeft: 0,
+      marginVertical: 6,
+      backgroundColor: "transparent",
+    },
+    code_inline: {
+      backgroundColor: colors.muted,
+      color: colors.foreground,
+      fontSize: fs.xs + 1,
+      fontFamily: "Menlo",
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+      borderRadius: radius.sm,
+    },
+    code_block: {
+      backgroundColor: colors.muted,
+      color: colors.foreground,
+      fontSize: fs.xs + 1,
+      fontFamily: "Menlo",
+      padding: 12,
+      borderRadius: radius.md,
+      marginVertical: 6,
+    },
+    fence: {
+      backgroundColor: colors.muted,
+      color: colors.foreground,
+      fontSize: fs.xs + 1,
+      fontFamily: "Menlo",
+      padding: 12,
+      borderRadius: radius.md,
+      marginVertical: 6,
+    },
+    table: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      marginVertical: 6,
+    },
+    thead: {
+      backgroundColor: colors.muted,
+    },
+    th: {
+      color: colors.foreground,
+      fontSize: fs.xs,
+      fontWeight: "600",
+      padding: 6,
+      borderBottomWidth: 1,
+      borderColor: colors.border,
+    },
+    td: {
+      color: colors.foreground,
+      fontSize: fs.xs,
+      padding: 6,
+      borderBottomWidth: 0.5,
+      borderColor: colors.border,
+    },
+    bullet_list: { color: colors.foreground, marginVertical: 4 },
+    ordered_list: { color: colors.foreground, marginVertical: 4 },
+    list_item: {
+      color: colors.foreground,
+      marginBottom: 4,
+      flexDirection: "row",
+    },
+    bullet_list_icon: { color: colors.foreground },
+    bullet_list_content: { color: colors.foreground },
+    ordered_list_icon: { color: colors.foreground },
+    ordered_list_content: { color: colors.foreground },
+    hr: {
+      backgroundColor: colors.border,
+      height: 1,
+      marginVertical: 12,
+    },
+    image: {
+      maxWidth: 300,
+      borderRadius: radius.md,
+    },
+  }) as const;

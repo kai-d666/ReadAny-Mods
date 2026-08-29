@@ -16,25 +16,25 @@
     }
   },
   "scripts": {
-    "start": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev",
-    "start:clear": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev --clear",
+    "start": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev",
+    "start:clear": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo start --dev-client --scheme readany-dev --clear",
     "start:dev": "pnpm run start",
     "start:dev:clear": "pnpm run start:clear",
-    "preandroid": "pnpm run build:webassets",
+    "preandroid": "pnpm run build:reader",
     "android": "expo run:android",
-    "android:dev": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development expo run:android --device",
-    "preios": "pnpm run build:webassets && node scripts/configure-native-variant.js",
+    "android:dev": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development expo run:android --device",
+    "preios": "pnpm run build:reader && node scripts/configure-native-variant.js",
     "ios": "expo run:ios",
-    "ios:dev": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios --device",
-    "ios:simulator": "APP_VARIANT=development pnpm run build:webassets && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios",
-    "preprebuild": "pnpm run build:webassets",
+    "ios:dev": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios --device",
+    "ios:simulator": "APP_VARIANT=development pnpm run build:reader && APP_VARIANT=development node scripts/configure-native-variant.js && APP_VARIANT=development expo run:ios",
+    "preprebuild": "pnpm run build:reader",
     "prebuild": "expo prebuild",
     "build:reader": "node scripts/build-reader.js",
     "sync:native-variant": "node scripts/configure-native-variant.js",
     "lint": "biome check .",
     "test": "vitest run",
     "eas-build-pre-install": "bash scripts/eas-install-ios-build-tools.sh",
-    "eas-build-post-install": "pnpm run build:webassets && node scripts/configure-native-variant.js",
+    "eas-build-post-install": "pnpm run build:reader && node scripts/configure-native-variant.js",
     "eas:device:create": "pnpm exec eas device:create",
     "eas:build:android": "APP_VARIANT=production pnpm exec eas build --profile production --platform android",
     "eas:build:android:dev": "APP_VARIANT=development pnpm exec eas build --profile development --platform android",
@@ -42,9 +42,7 @@
     "eas:build:ios": "APP_VARIANT=production pnpm exec eas build --profile production --platform ios",
     "eas:build:ios:dev": "APP_VARIANT=development pnpm exec eas build --profile development --platform ios",
     "eas:build:ios:simulator": "APP_VARIANT=development pnpm exec eas build --profile development-simulator --platform ios",
-    "eas:build:ios:preview": "APP_VARIANT=preview pnpm exec eas build --profile preview --platform ios",
-    "build:chat": "node scripts/build-chat.js",
-    "build:webassets": "pnpm run build:reader && pnpm run build:chat"
+    "eas:build:ios:preview": "APP_VARIANT=preview pnpm exec eas build --profile preview --platform ios"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.712.0",
@@ -76,11 +74,9 @@
     "expo-file-system": "~19.0.21",
     "expo-font": "~14.0.11",
     "expo-image-picker": "~17.0.11",
-    "expo-intent-launcher": "~13.0.8",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.11",
     "expo-media-library": "~18.2.0",
-    "expo-navigation-bar": "~4.2.8",
     "expo-network": "~8.0.8",
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "~14.0.8",
@@ -97,7 +93,6 @@
     "react-devtools-core": "^7.0.1",
     "react-i18next": "^16.5.4",
     "react-native": "~0.81.5",
-    "react-native-enriched-markdown": "0.4.0",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-get-random-values": "~1.11.0",
     "react-native-keyboard-controller": "1.18.5",
@@ -114,7 +109,9 @@
     "react-native-worklets": "0.5.1",
     "text-encoding": "^0.7.0",
     "whatwg-fetch": "^3.6.20",
-    "zustand": "^5.0.5"
+    "zustand": "^5.0.5",
+    "expo-intent-launcher": "~13.0.8",
+    "expo-navigation-bar": "~4.2.8"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
@@ -126,7 +123,6 @@
     "esbuild": "^0.27.3",
     "react-native-svg-transformer": "^1.5.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.2",
-    "marked": "^17.0.3"
+    "vitest": "^4.1.2"
   }
 }

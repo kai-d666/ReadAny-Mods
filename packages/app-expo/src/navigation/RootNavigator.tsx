@@ -8,7 +8,6 @@ import { ReaderScreen } from "@/screens/ReaderScreen";
 import SkillsScreen from "@/screens/SkillsScreen";
 import StatsScreen from "@/screens/StatsScreen";
 import { WebDavImportBrowserScreen } from "@/screens/library/WebDavImportBrowserScreen";
-import { WebviewPerfDemoScreen } from "@/screens/WebviewPerfDemoScreen";
 import AISettingsScreen from "@/screens/settings/AISettingsScreen";
 import AboutScreen from "@/screens/settings/AboutScreen";
 import AppearanceSettingsScreen from "@/screens/settings/AppearanceSettingsScreen";
@@ -48,7 +47,6 @@ export type RootStackParamList = {
   FullScreenNotes: { bookId: string };
   FontSettings: undefined;
   WebDavImportBrowser: { source: WebDavImportSource };
-  WebviewPerfDemo: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -128,12 +126,6 @@ export function RootNavigator() {
             <Stack.Screen
               name="FullScreenNotes"
               component={FullScreenNotesScreen}
-              options={{ animation: "slide_from_right" }}
-            />
-            {/* 性能验证原型,验证后整段删除 */}
-            <Stack.Screen
-              name="WebviewPerfDemo"
-              component={WebviewPerfDemoScreen}
               options={{ animation: "slide_from_right" }}
             />
           </>

@@ -121,10 +121,9 @@ function splitStreamingBlocks(text: string): string[] {
 }
 
 // —— 渐进富化(切会话卡顿的根治策略)——
-// md4c 每条富文本消息在原生线程做文本布局(几十-100ms);切入会话挂 N 条
-// 同时布局 = 600ms+ 原生大帧(实测 gfxinfo 600ms 帧 ×2)。解法:消息首帧
-// 以零布局的纯文本呈现("冷态"),随后【错峰】(每条间隔 100ms)富化——
-// 大帧被拆成 N 个 100ms 小帧,切会话体感顺滑。
+// 每条富文本消息在原生线程做文本布局(几十-100ms);切入会话挂 N 条
+// 同时布局 = 大帧。解法:消息首帧以零布局的纯文本呈现("冷态"),
+// 随后【错峰】(每条间隔 100ms)富化——大帧被拆成 N 个 100ms 小帧。
 // - 已富化的 part 记入模块级 Set:滚出窗口再回来直接富化(无需再次冷启动)
 // - 流式期间保持纯文本(既有逻辑),结束后自然进入错峰富化队列
 const enrichedPartIds = new Set<string>();
@@ -172,10 +171,7 @@ function TextPartView({
     return (
       <>
         {blocks.map((block, i) => (
-          <Text
-            key={i}
-            style={{ fontSize: fs.sm, lineHeight: 20, color: colors.foreground }}
-          >
+          <Text key={i} style={{ fontSize: fs.sm, lineHeight: 20, color: colors.foreground }}>
             {block}
           </Text>
         ))}

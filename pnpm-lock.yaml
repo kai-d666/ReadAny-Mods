@@ -419,9 +419,6 @@ importers:
       react-native:
         specifier: ~0.81.5
         version: 0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
-      react-native-enriched-markdown:
-        specifier: 0.4.0
-        version: 0.4.0(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-gesture-handler:
         specifier: ~2.28.0
         version: 2.28.0(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -8062,12 +8059,6 @@ packages:
 
   react-native-edge-to-edge@1.6.0:
     resolution: {integrity: sha512-2WCNdE3Qd6Fwg9+4BpbATUxCLcouF6YRY7K+J36KJ4l3y+tWN6XCqAC4DuoGblAAbb2sLkhEDp4FOlbOIot2Og==}
-    peerDependencies:
-      react: 19.1.0
-      react-native: '*'
-
-  react-native-enriched-markdown@0.4.0:
-    resolution: {integrity: sha512-4HC/o4qLN0L1P/DscsoCWry/cVwvDCxR8hisJ9eWJuyJqaPa/GP+wwvVXml+u1CQs9TLPTgl53o5UEKkV2d5ug==}
     peerDependencies:
       react: 19.1.0
       react-native: '*'
@@ -18801,11 +18792,6 @@ snapshots:
       - supports-color
 
   react-native-edge-to-edge@1.6.0(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      react: 19.1.0
-      react-native: 0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
-
-  react-native-enriched-markdown@0.4.0(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       react: 19.1.0
       react-native: 0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)

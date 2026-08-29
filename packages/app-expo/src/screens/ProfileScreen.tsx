@@ -82,7 +82,6 @@ type ProfileMenuRoute = Extract<
   | "VectorModelSettings"
   | "Feedback"
   | "About"
-  | "WebviewPerfDemo"
 >;
 type ProfileMenuItem =
   | {
@@ -488,16 +487,6 @@ export function ProfileScreen() {
             url: `https://codedogqby.github.io/ReadAny/${i18n.language === "zh" ? "zh/" : ""}support/`,
           },
           { icon: InfoIcon, label: t("settings.about", "关于"), route: "About" as const },
-        ],
-      },
-      {
-        title: "开发者",
-        items: [
-          {
-            icon: CpuIcon,
-            label: "WebView 聊天渲染验证",
-            route: "WebviewPerfDemo" as const,
-          },
         ],
       },
     ],

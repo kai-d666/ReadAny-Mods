@@ -173,28 +173,14 @@ export function ChatScreen() {
   const { isStreaming, currentMessage, currentStep, error, sendMessage, stopStream } =
     useStreamingChat();
 
-  // Messages — useMemo on stable refs (activeThread.messages / currentMessage /
-  // isStreaming), NOT compute-on-every-render: streaming repaints the screen
-  // every 160ms; rebuilding all MessageV2 objects each time changes every
-  // message reference and defeats memo(MessageBubble), re-rendering the whole
-  // list every publish. Reactivity when switching threads is preserved because
-  // activeThread.messages changes then. (BookChatScreen uses the same pattern.)
+  // Messages - compute directly without useMemo to ensure reactivity
   const activeThread = generalActiveThreadId
     ? threads.find((th) => th.id === generalActiveThreadId)
     : null;
 
   const activeCurrentMessage = activeThread?.id === currentMessage?.threadId ? currentMessage : null;
-  // 依赖用身份键(threadId+条数);原因见 BookChatScreen 同款注释。
-  const displayMessages = useMemo(
-    () => convertToMessageV2(activeThread?.messages || []),
-    [activeThread?.id, activeThread?.messages.length],
-  );
-  const allMessages = useMemo(
-    () => mergeMessagesWithStreaming(displayMessages, activeCurrentMessage, isStreaming),
-    [displayMessages, activeCurrentMessage, isStreaming],
-  );
-
-  void displayMessages; void currentStep;
+  const displayMessages = convertToMessageV2(activeThread?.messages || []);
+  const allMessages = mergeMessagesWithStreaming(displayMessages, activeCurrentMessage, isStreaming);
 
   // Handlers
   const handleSend = useCallback(

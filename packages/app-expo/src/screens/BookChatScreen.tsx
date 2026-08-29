@@ -155,7 +155,6 @@ export function BookChatScreen({ route, navigation }: Props) {
     () => (activeThreadId ? threads.find((t) => t.id === activeThreadId) : null),
     [threads, activeThreadId],
   );
-
   const bookThreads = getThreadsForContext(bookId);
   const firstBookThreadId = bookThreads[0]?.id;
   useEffect(() => {
@@ -259,7 +258,7 @@ export function BookChatScreen({ route, navigation }: Props) {
 
   // 依赖用身份键(threadId+条数)而非 activeThread 对象引用:store.threads
   // 每轮被外部重写时,activeThread 对象会变,但消息内容没变的会话必须保持
-  // messageV2 引用稳定,否则 memo(MessageBubble) 失效、整列表每轮重建。
+  // messagesV2 引用稳定,否则 memo(MessageBubble) 失效、整列表每轮重建。
   const messagesV2: MessageV2[] = useMemo(() => {
     if (!activeThread) return [];
     return convertToMessageV2(activeThread.messages);
@@ -271,8 +270,6 @@ export function BookChatScreen({ route, navigation }: Props) {
     () => mergeMessagesWithStreaming(messagesV2, activeCurrentMessage, isStreaming),
     [activeCurrentMessage, isStreaming, messagesV2],
   );
-
-  void messagesV2; void currentStep;
 
   const handleSend = useCallback(
     async (text: string, deepThinking: boolean, spoilerFree: boolean, quotes?: AttachedQuote[]) => {

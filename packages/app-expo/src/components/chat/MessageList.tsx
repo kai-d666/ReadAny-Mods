@@ -25,11 +25,6 @@ import {
 } from "react-native";
 import { PartRenderer, formatTotalTokens } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
-import { MessageWebView } from "./MessageWebView";
-
-// WebView 渲染开关(排版引擎重构):true = 消息列表整体走 Chromium 排版。
-// false = 原 FlatList 实现(B 面,保留作回滚;验证稳定后另行确认再删)。
-const USE_WEBVIEW = true;
 
 interface MessageListProps {
   messages: MessageV2[];
@@ -63,18 +58,6 @@ export function MessageList({
   onCitationClick,
   onQuoteClick,
 }: MessageListProps) {
-  if (USE_WEBVIEW) {
-    return (
-      <MessageWebView
-        messages={messages}
-        isStreaming={isStreaming}
-        currentStep={currentStep}
-        onCitationClick={onCitationClick}
-        onQuoteClick={onQuoteClick}
-      />
-    );
-  }
-  // ---- B 面:原 FlatList 实现(USE_WEBVIEW=false 时启用)----
   const { t } = useTranslation();
   const colors = useColors();
   const s = makeStyles(colors);

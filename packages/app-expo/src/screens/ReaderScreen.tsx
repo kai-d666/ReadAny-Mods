@@ -367,8 +367,6 @@ export function ReaderScreen({ route, navigation }: Props) {
   const progressRef = useRef(0);
   const locationHistoryRef = useRef<string[]>([]);
   const lastNavigatedCfiRef = useRef<string | undefined>(undefined);
-  /** onRelocate 节流(250ms)——书内 AI 会话打开时阅读器仍挂载,每帧 relocate 会占满 JS 线程 */
-  const lastRelocateAtRef = useRef(0);
   const fileServerRef = useRef<string | null>(null);
   const sessionProgressRef = useRef<{
     mode: "location" | "page" | "characters";
@@ -660,13 +658,13 @@ export function ReaderScreen({ route, navigation }: Props) {
       totalBookCharactersRef.current = totalCharacters > 0 ? totalCharacters : null;
     },
     onRelocate: (detail: RelocateEvent) => {
-      // 节流:WebView 每帧(滚动/翻页)都发 onRelocate;书内 AI 会话打开时
-      // 下层阅读器仍挂载,每帧约 6 个 setState + 进度跟踪会持续占满 JS 线程
-      // (与聊天每轮 160ms 的发布叠加 → 卡)。250ms 内只取最后一次:
-      // 位置/进度/TTS 连续性的误差在节流窗口内无感。
-      const nowRelocate = Date.now();
-      if (nowRelocate - lastRelocateAtRef.current < 250) return;
-      lastRelocateAtRef.current = nowRelocate;
+      console.log("[ReaderScreen] onRelocate", {
+        section: detail.section,
+        fraction: detail.fraction,
+        cfi: detail.cfi,
+        routeCfi: cfi,
+        lastNavigated: lastNavigatedCfiRef.current,
+      });
       if (loading) {
         setLoading(false);
       }
