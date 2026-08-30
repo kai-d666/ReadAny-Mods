@@ -25,6 +25,7 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { openMobileBook } from "@/lib/library/open-mobile-book";
 import { setCallback, setExtractorRef } from "@/lib/rag/auto-vectorize-service";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import { TabPanelGestureContext } from "@/navigation/TabNavigator";
 import { PullDownHost } from "@/components/profile/PullDownHost";
 import { ReadingStatsPanel } from "@/components/profile/ReadingStatsPanel";
 import { useReadingStatsData } from "@/components/profile/stats-blocks";
@@ -59,7 +60,15 @@ import { File as ExpoFile } from "expo-file-system";
  * Features: header search/sort/import, tag filter, vectorization progress banner,
  * tag management sheet, book grid (3 cols), empty/loading states.
  */
-import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -151,6 +160,7 @@ export function LibraryScreen() {
   const { isDark } = useTheme();
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const tabPanelGesture = useContext(TabPanelGestureContext);
   const readingStats = useReadingStatsData();
   const layout = useResponsiveLayout();
   const gridGap = layout.isTablet ? 16 : GRID_GAP;
@@ -808,19 +818,19 @@ export function LibraryScreen() {
 
   return (
     <PullDownHost
+      onOpenChange={tabPanelGesture?.onOpenChange}
       layer2={(ctx) => (
         <ReadingStatsPanel
           drag={ctx.drag}
           scrollY={ctx.scrollY}
           visible={ctx.visible}
-          onOpenStats={() => nav.navigate("Stats")}
+          closePanel={ctx.closePanel}
           overall={readingStats.overall}
           dailyStats={readingStats.dailyStats}
           loading={readingStats.loading}
         />
       )}
-      onSwipeRight={() => nav.navigate("Stats")}
-    >
+          >
       {({ scrollY: contentScrollY }) => (
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
       <ExtractorWebView ref={extractorRef} />

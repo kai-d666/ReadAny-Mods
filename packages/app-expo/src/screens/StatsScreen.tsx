@@ -42,7 +42,7 @@ import { eventBus } from "@readany/core/utils/event-bus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, ScrollView as GHScrollView } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useResolvedCovers } from "./notes/useResolvedCovers";
@@ -103,7 +103,7 @@ function shiftAnchor(date: Date, dim: StatsDimension, delta: -1 | 1): Date {
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-export default function StatsScreen() {
+export default function StatsScreen({ embed = false }: { embed?: boolean } = {}) {
   const colors = useColors();
   const { t, i18n } = useTranslation();
   const isZh = i18n.language.startsWith("zh");
@@ -486,21 +486,9 @@ export default function StatsScreen() {
     [handleBack],
   );
 
-  return (
-    <GestureDetector gesture={backGesture}>
-    <SafeAreaView style={s.container} edges={["top"]}>
-      {/* Header */}
-      <View style={[s.header, { paddingHorizontal: layout.horizontalPadding }]}>
-        <View style={[s.headerInner, { maxWidth: statsContentWidth }]}>
-          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
-            <ChevronLeftIcon size={20} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>{t("stats.title")}</Text>
-          <View style={{ width: 36 }} />
-        </View>
-      </View>
-
-      <ScrollView
+  // 嵌入模式(阅读统计面板「详情」板块):无独立 Header/返回/手势,内容直接滚动
+  const body = (
+      <GHScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           s.scrollContent,
@@ -957,7 +945,28 @@ export default function StatsScreen() {
             ) : null}
           </View>
         )}
-      </ScrollView>
+      </GHScrollView>
+  );
+
+  if (embed) {
+    return <View style={s.container}>{body}</View>;
+  }
+
+  return (
+    <GestureDetector gesture={backGesture}>
+    <SafeAreaView style={s.container} edges={["top"]}>
+      {/* Header */}
+      <View style={[s.header, { paddingHorizontal: layout.horizontalPadding }]}>
+        <View style={[s.headerInner, { maxWidth: statsContentWidth }]}>
+          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
+            <ChevronLeftIcon size={20} color={colors.foreground} />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>{t("stats.title")}</Text>
+          <View style={{ width: 36 }} />
+        </View>
+      </View>
+
+      {body}
     </SafeAreaView>
     </GestureDetector>
   );
