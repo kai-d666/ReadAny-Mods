@@ -31,6 +31,7 @@ import {
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useIsFocused } from "@react-navigation/native";
 import Animated, {
   Easing,
   runOnJS,
@@ -122,6 +123,14 @@ export function ChatInput({
       setExpanded(false);
     }
   }, [keyboardInsets.isVisible, lift]);
+
+  // 离开聊天页面(切 tab/返回)即恢复原样:展开态立刻收起(用户 2026-08-31)
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (isFocused) return;
+    lift.value = withTiming(0, PULL_T);
+    setExpanded(false);
+  }, [isFocused, lift]);
 
   const dragSlotGesture = useRef(
     Gesture.Pan()
@@ -283,7 +292,7 @@ export function ChatInput({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[s.deepThinkBtn, deepThinking && s.deepThinkBtnActive]}
+              style={[s.deepThinkBtn, s.pushedRight, deepThinking && s.deepThinkBtnActive]}
               onPress={toggleDeepThinking}
               activeOpacity={0.7}
             >
@@ -297,7 +306,7 @@ export function ChatInput({
             <ToolPrefsMenu chatMode={chatMode} />
 
             <TouchableOpacity
-              style={[s.deepThinkBtn, spoilerFree && s.deepThinkBtnActive]}
+              style={[s.deepThinkBtn, s.pushedRight, spoilerFree && s.deepThinkBtnActive]}
               onPress={handleToggleSpoilerFree}
               activeOpacity={0.7}
             >
@@ -460,7 +469,10 @@ const makeStyles = (colors: ThemeColors) =>
     toggleRowBetween: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
+    },
+    /* 右列钉死右侧:即便左列(工具)缺失也稳定右对齐,不跳位 */
+    pushedRight: {
+      marginLeft: "auto",
     },
     /* 顶边拖动手柄:热区横贯整卡,视觉为中央小圆角条 */
     dragSlot: {
