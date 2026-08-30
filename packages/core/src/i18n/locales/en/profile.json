@@ -28,7 +28,9 @@
     "clearCacheDoneDesc": "Removed {{count}} cached file(s), freeing {{size}}.",
     "clearCacheFailedTitle": "Failed to Clear Cache",
     "clearCacheFailedDesc": "Please try again later.",
-    "panelDetailTab": "Details"
+    "panelDetailTab": "Details",
+    "detailModeLabel": "Detail",
+    "detailPlaceholderHint": "Content hidden (experiment placeholder)"
   },
   "skills": {
     "title": "Skills",

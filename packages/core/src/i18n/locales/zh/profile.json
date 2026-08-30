@@ -28,7 +28,9 @@
     "clearCacheDoneDesc": "已清除 {{count}} 个缓存文件，释放 {{size}}。",
     "clearCacheFailedTitle": "清除失败",
     "clearCacheFailedDesc": "请稍后重试。",
-    "panelDetailTab": "详情"
+    "panelDetailTab": "详情",
+    "detailModeLabel": "详情",
+    "detailPlaceholderHint": "内容已屏蔽(实验占位)"
   },
   "skills": {
     "title": "技能管理",

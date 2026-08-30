@@ -22,7 +22,11 @@ import {
 } from "@/lib/stats/live-reading-stats";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import { TabActiveContext } from "@/navigation/TabNavigator";
-import { GESTURE_DEBUG_LABELS, useGestureDebugStore } from "@/stores/gesture-debug-store";
+import {
+  DETAIL_DEBUG_LABELS,
+  GESTURE_DEBUG_LABELS,
+  useGestureDebugStore,
+} from "@/stores/gesture-debug-store";
 import { useReadingSessionStore, useTTSStore } from "@/stores";
 import {
   type ThemeColors,
@@ -277,16 +281,29 @@ export function ProfileScreen() {
   return (
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
       {/* 手势调试开关(临时):左右 / 上下 / 全开,单点循环 */}
-      <TouchableOpacity
-        style={s.gestureDebugChip}
-        onPress={() => useGestureDebugStore.getState().cycle()}
-        activeOpacity={0.7}
-      >
-        <Text style={s.gestureDebugText}>
-          {t("profile.gestureDebugLabel", "手势")}:{" "}
-          {GESTURE_DEBUG_LABELS[useGestureDebugStore((s) => s.mode)]}
-        </Text>
-      </TouchableOpacity>
+      <View style={s.gestureDebugRow}>
+        <TouchableOpacity
+          style={s.gestureDebugChip}
+          onPress={() => useGestureDebugStore.getState().cycle()}
+          activeOpacity={0.7}
+        >
+          <Text style={s.gestureDebugText}>
+            {t("profile.gestureDebugLabel", "手势")}:{" "}
+            {GESTURE_DEBUG_LABELS[useGestureDebugStore((s) => s.mode)]}
+          </Text>
+        </TouchableOpacity>
+        {/* 详情板块卡顿实验开关:全量 / 占位 / 预载,单点循环 */}
+        <TouchableOpacity
+          style={s.gestureDebugChip}
+          onPress={() => useGestureDebugStore.getState().cycleDetail()}
+          activeOpacity={0.7}
+        >
+          <Text style={s.gestureDebugText}>
+            {t("profile.detailModeLabel", "详情")}:{" "}
+            {DETAIL_DEBUG_LABELS[useGestureDebugStore((s) => s.detailMode)]}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={s.header}>
         <View style={s.headerTitleWrap}>
@@ -367,10 +384,14 @@ export function ProfileScreen() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    gestureDebugChip: {
+    gestureDebugRow: {
+      flexDirection: "row",
+      gap: 8,
       alignSelf: "flex-start",
-      marginHorizontal: 16,
+      marginLeft: 16,
       marginTop: 8,
+    },
+    gestureDebugChip: {
       borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,

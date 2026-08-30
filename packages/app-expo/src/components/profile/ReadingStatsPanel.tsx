@@ -8,6 +8,7 @@
  * 二级板块不再用嵌套 PagerView(那是移动被吞、判死活结的根源)。
  */
 import { HeatmapSection, StatCardsGrid } from "@/components/profile/stats-blocks";
+import { DETAIL_DEBUG_LABELS, useGestureDebugStore } from "@/stores/gesture-debug-store";
 import StatsScreen from "@/screens/StatsScreen";
 import type { DailyStats, OverallStats } from "@readany/core/stats";
 import { useRef, useState } from "react";
@@ -57,6 +58,7 @@ export function ReadingStatsPanel({
   const { width: W, height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [tabIdx, setTabIdx] = useState(0);
+  const detailMode = useGestureDebugStore((s) => s.detailMode);
   const dragStartRef = useRef(0);
   const tabX = useSharedValue(0);
   const panX = useSharedValue(0);
@@ -186,7 +188,23 @@ export function ReadingStatsPanel({
                 </View>
                 <View style={{ width: W }} key="detail">
                   <GHScrollView>
-                    {tabIdx === 1 ? <StatsScreen embed /> : null}
+                    {/* 卡顿定位实验三档(「我的」页点击调试 chip 切换):
+                        full=切到才挂载 | placeholder=屏蔽内容 | preload=面板一开就挂载 */}
+                    {detailMode === "placeholder" ? (
+                      <View style={s.placeholderBox}>
+                        <Text style={s.placeholderTitle}>
+                          {t("profile.detailModeLabel", "详情")}:{" "}
+                          {DETAIL_DEBUG_LABELS[detailMode]}
+                        </Text>
+                        <Text style={s.placeholderText}>
+                          {t("profile.detailPlaceholderHint", "内容已屏蔽(实验占位)")}
+                        </Text>
+                      </View>
+                    ) : detailMode === "preload" ? (
+                      visible ? <StatsScreen embed /> : null
+                    ) : (
+                      tabIdx === 1 ? <StatsScreen embed /> : null
+                    )}
                   </GHScrollView>
                 </View>
               </Animated.View>
@@ -257,4 +275,20 @@ const makeStyles = (colors: ThemeColors) =>
     },
     board: { flex: 1, overflow: "hidden" },
     boardInner: { flexDirection: "row", flex: 1 },
+    placeholderBox: {
+      flexGrow: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 24,
+      gap: 8,
+    },
+    placeholderTitle: {
+      fontSize: fontSize.md,
+      fontWeight: fontWeight.medium,
+      color: colors.foreground,
+    },
+    placeholderText: {
+      fontSize: fontSize.sm,
+      color: colors.mutedForeground,
+    },
   });
