@@ -1,20 +1,15 @@
 /**
- * stats-blocks — 阅读统计共享块(从 ProfileScreen 迁出,供「我的」页与下拉统计面板复用):
- * StatCardsGrid(总时长/字数/已读/连续四卡)+ HeatmapSection(阅读活动热力图+查看详情)。
+ * stats-blocks — 阅读统计共享块(供「我的」页与下拉统计面板复用):
+ * StatCardsGrid(总时长/当日阅读时长/已读/连续四卡)+ HeatmapSection(阅读活动热力图+查看详情)。
+ * 2026-08-31 用户:字数/速度/场次统计整体移除;字数卡位换「当日阅读时长」。
  */
-import {
-  BarChart3Icon,
-  BookOpenIcon,
-  ClockIcon,
-  FlameIcon,
-  TypeIcon,
-} from "@/components/ui/Icon";
+import { BarChart3Icon, BookOpenIcon, ClockIcon, FlameIcon } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import {
   mergeCurrentSessionIntoDailyStats,
   mergeCurrentSessionIntoOverallStats,
 } from "@/lib/stats/live-reading-stats";
-import { formatCharacterCount, formatTimeLocalized } from "@/screens/stats/stats-utils";
+import { formatTimeLocalized } from "@/screens/stats/stats-utils";
 import type { DailyStats, OverallStats } from "@readany/core/stats";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -78,12 +73,13 @@ export function StatCard({ icon, title, value, unit, onPress, style }: StatCardP
 
 interface StatCardsGridProps {
   overall: OverallStats | null;
+  dailyStats: DailyStats[];
   loading: boolean;
   onOpenStats: () => void;
 }
 
-/** 统计卡 grid(总时长/阅读字数/已读/连续阅读),点卡或点击查看均进统计详情 */
-export function StatCardsGrid({ overall, loading, onOpenStats }: StatCardsGridProps) {
+/** 统计卡 grid(总时长/当日阅读时长/已读/连续阅读),点卡或点击查看均进统计详情 */
+export function StatCardsGrid({ overall, dailyStats, loading, onOpenStats }: StatCardsGridProps) {
   const { t, i18n } = useTranslation();
   const colors = useColors();
   const s = makeStyles(colors);
@@ -96,9 +92,13 @@ export function StatCardsGrid({ overall, loading, onOpenStats }: StatCardsGridPr
   const totalTime = overall
     ? formatTimeLocalized(overall.totalReadingTime, isZh)
     : formatTimeLocalized(0, isZh);
-  const totalCharacters = overall
-    ? formatCharacterCount(overall.totalCharactersRead ?? 0, isZh)
-    : formatCharacterCount(0, isZh);
+  // 当日阅读时长(dailyStats 已并入当前会话,找今天这一条)
+  const todayKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const todayMinutes = dailyStats.find((d) => d.date === todayKey)?.totalTime ?? 0;
+  const todayTime = formatTimeLocalized(todayMinutes, isZh);
   const streak = overall?.currentStreak ?? 0;
 
   const cards = [
@@ -109,10 +109,10 @@ export function StatCardsGrid({ overall, loading, onOpenStats }: StatCardsGridPr
       value: totalTime,
     },
     {
-      key: "volume",
-      icon: <TypeIcon16 />,
-      title: t("profile.readingVolume", "阅读字数"),
-      value: totalCharacters,
+      key: "todayTime",
+      icon: <ClockIcon size={16} color={colors.primary} />,
+      title: t("profile.todayReadingTime", "当日阅读时长"),
+      value: todayTime,
     },
     {
       key: "books",
@@ -161,11 +161,6 @@ export function StatCardsGrid({ overall, loading, onOpenStats }: StatCardsGridPr
       )}
     </View>
   );
-}
-
-function TypeIcon16() {
-  const colors = useColors();
-  return <TypeIcon size={16} color={colors.primary} />;
 }
 
 /* ── 阅读活动热力图 ────────────────────────────────────────────────────────── */

@@ -10,7 +10,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, TouchableOpacity, View } from "react-native";
 import { makeStyles } from "./stats-styles";
-import { formatCharacterCount, formatCharactersPerMinute, formatTimeLocalized } from "./stats-utils";
+import { formatTimeLocalized } from "./stats-utils";
 import type { StatsCopy } from "./StatsSections";
 import { StatsBookCover } from "./StatsBookCover";
 
@@ -54,14 +54,6 @@ export function TopBooksSection({
           allFacts && book.progress !== undefined && book.progress < 1
             ? computeBookETA(book.bookId, book.progress, book.totalPages, allFacts)
             : null;
-        const readingAmountLabel =
-          (book.charactersRead ?? 0) > 0
-            ? formatCharacterCount(book.charactersRead ?? 0, isZh)
-            : null;
-        const readingSpeedLabel =
-          (book.avgCharactersPerMinute ?? 0) > 0
-            ? formatCharactersPerMinute(book.avgCharactersPerMinute ?? 0, isZh)
-            : null;
         return (
           <View
             key={book.bookId}
@@ -93,11 +85,6 @@ export function TopBooksSection({
               <View style={s.bookStatsRow}>
                 <Text style={[s.bookTime, isFirst ? s.bookTimeFirst : s.bookTimeDefault]}>
                   {formatTimeLocalized(book.totalTime, isZh)}
-                </Text>
-                <Text style={s.bookMeta}>
-                  {readingAmountLabel ? `${readingAmountLabel} · ` : ""}
-                  {readingSpeedLabel ? `${readingSpeedLabel} · ` : ""}
-                  {book.sessionsCount} {copy.sessionsSuffix}
                 </Text>
               </View>
               {eta && (

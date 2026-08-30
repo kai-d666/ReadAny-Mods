@@ -42,7 +42,7 @@ import { eventBus } from "@readany/core/utils/event-bus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { Gesture, GestureDetector, ScrollView as GHScrollView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useResolvedCovers } from "./notes/useResolvedCovers";
@@ -63,8 +63,6 @@ import {
 import { makeStyles } from "./stats/stats-styles";
 import {
   buildHeroNarrative,
-  formatCharacterCount,
-  formatCharactersPerMinute,
   formatDateLabel,
   formatTimeLocalized,
   localizeInsight,
@@ -103,7 +101,7 @@ function shiftAnchor(date: Date, dim: StatsDimension, delta: -1 | 1): Date {
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-export default function StatsScreen({ embed = false }: { embed?: boolean } = {}) {
+export default function StatsScreen() {
   const colors = useColors();
   const { t, i18n } = useTranslation();
   const isZh = i18n.language.startsWith("zh");
@@ -244,13 +242,7 @@ export default function StatsScreen({ embed = false }: { embed?: boolean } = {})
       compMap.set(c.label, { delta: c.delta, deltaLabel: c.deltaLabel });
     }
     const adC = compMap.get("activeDays");
-    const ssC = compMap.get("sessions");
     const bkC = compMap.get("books");
-    const readingVolumeValue = formatCharacterCount(report.summary.totalCharactersRead ?? 0, isZh);
-    const readingSpeedValue =
-      (report.summary.avgCharactersPerMinute ?? 0) > 0
-        ? formatCharactersPerMinute(report.summary.avgCharactersPerMinute ?? 0, isZh)
-        : null;
     return [
       {
         label: t("stats.desktop.activeDays"),
@@ -260,16 +252,8 @@ export default function StatsScreen({ embed = false }: { embed?: boolean } = {})
         deltaLabel: adC?.deltaLabel,
       },
       {
-        label: t("stats.desktop.sessions"),
-        value: `${report.summary.totalSessions} ${t("stats.desktop.sessionsSuffix")}`,
-        sublabel: formatTimeLocalized(report.summary.avgSessionTime, isZh),
-        delta: ssC?.delta,
-        deltaLabel: ssC?.deltaLabel,
-      },
-      {
         label: t("stats.desktop.books"),
         value: String(report.summary.booksTouched),
-        sublabel: readingVolumeValue,
         delta: bkC?.delta,
         deltaLabel: bkC?.deltaLabel,
       },
@@ -277,15 +261,6 @@ export default function StatsScreen({ embed = false }: { embed?: boolean } = {})
         label: t("stats.desktop.streak"),
         value: `${report.dimension === "lifetime" ? report.summary.longestStreak : report.summary.currentStreak} ${t("stats.desktop.daysSuffix")}`,
         sublabel: `${t("stats.desktop.longestSession")} ${formatTimeLocalized(report.summary.longestSessionTime, isZh)}`,
-      },
-      {
-        label: readingSpeedValue
-          ? t("stats.desktop.readingSpeed")
-          : t("stats.desktop.avgActiveDay"),
-        value: readingSpeedValue ?? formatTimeLocalized(report.summary.avgActiveDayTime, isZh),
-        sublabel: readingSpeedValue
-          ? t("stats.desktop.characters")
-          : t("stats.desktop.readingTime"),
       },
     ];
   }, [report, isZh, t]);
@@ -397,9 +372,6 @@ export default function StatsScreen({ embed = false }: { embed?: boolean } = {})
       noTopBooks: t("stats.desktop.noTopBooks"),
       unknownAuthor: t("stats.desktop.unknownAuthor"),
       pagesReadSuffix: t("stats.desktop.pagesReadSuffix"),
-      charactersReadSuffix: t("stats.desktop.charactersReadSuffix"),
-      charactersPerMinuteSuffix: t("stats.desktop.charactersPerMinuteSuffix"),
-      sessionsSuffix: t("stats.desktop.sessionsSuffix"),
       noInsights: t("stats.desktop.noInsights"),
       // Day summary
       firstSession: t("stats.desktop.firstSession"),
@@ -486,9 +458,21 @@ export default function StatsScreen({ embed = false }: { embed?: boolean } = {})
     [handleBack],
   );
 
-  // 嵌入模式(阅读统计面板「详情」板块):无独立 Header/返回/手势,内容直接滚动
-  const body = (
-      <GHScrollView
+  return (
+    <GestureDetector gesture={backGesture}>
+    <SafeAreaView style={s.container} edges={["top"]}>
+      {/* Header */}
+      <View style={[s.header, { paddingHorizontal: layout.horizontalPadding }]}>
+        <View style={[s.headerInner, { maxWidth: statsContentWidth }]}>
+          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
+            <ChevronLeftIcon size={20} color={colors.foreground} />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>{t("stats.title")}</Text>
+          <View style={{ width: 36 }} />
+        </View>
+      </View>
+
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           s.scrollContent,
@@ -945,28 +929,7 @@ export default function StatsScreen({ embed = false }: { embed?: boolean } = {})
             ) : null}
           </View>
         )}
-      </GHScrollView>
-  );
-
-  if (embed) {
-    return <View style={s.container}>{body}</View>;
-  }
-
-  return (
-    <GestureDetector gesture={backGesture}>
-    <SafeAreaView style={s.container} edges={["top"]}>
-      {/* Header */}
-      <View style={[s.header, { paddingHorizontal: layout.horizontalPadding }]}>
-        <View style={[s.headerInner, { maxWidth: statsContentWidth }]}>
-          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
-            <ChevronLeftIcon size={20} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>{t("stats.title")}</Text>
-          <View style={{ width: 36 }} />
-        </View>
-      </View>
-
-      {body}
+      </ScrollView>
     </SafeAreaView>
     </GestureDetector>
   );

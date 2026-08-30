@@ -1,30 +1,18 @@
 /**
- * ReadingStatsPanel — 第二层(双板块,全屏手势驱动)。
+ * ReadingStatsPanel — 双层滑动模型里的第二层(阅读统计面板)。
  *
- * 一个全板手势管三件事(微信式共同区):
- * - 纵向向上:内容到顶后 → 面板跟手收回(drag 由外层共享值驱动)
- * - 横向:板块①「阅读统计」/ 板块②「详情」跟手横滑 + 松手吸附
- * - 与滚动共存:两个板块的 GHScrollView 同时收 move(simultaneousWithExternalGesture)
- * 二级板块不再用嵌套 PagerView(那是移动被吞、判死活结的根源)。
+ * 微信式:第一页(我的页,含标题)整体上移,本面板**紧贴其后续入**——
+ * 位移统一由 ProfileScreen 的全屏 drag 共享值驱动(translateY = drag - screenH)。
+ * 本地只负责展示(统计卡 + 热力图);进详情仅经「查看详情」按钮(2026-08-31 用户:右滑
+ * 进详情已删),全屏下拉收回由外层手势处理。
+ * 状态栏(时间/电量)区域保留:面板从 insets.top 下方开始。
  */
 import { HeatmapSection, StatCardsGrid } from "@/components/profile/stats-blocks";
-import { DETAIL_DEBUG_LABELS, useGestureDebugStore } from "@/stores/gesture-debug-store";
-import StatsScreen from "@/screens/StatsScreen";
 import type { DailyStats, OverallStats } from "@readany/core/stats";
-import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { Gesture, GestureDetector, ScrollView as GHScrollView } from "react-native-gesture-handler";
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, {
-  runOnJS,
-  useAnimatedScrollHandler,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  type SharedValue,
-} from "react-native-reanimated";
-import { CLOSE_T, OPEN_T } from "@/components/profile/PullDownHost";
+import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import {
   type ThemeColors,
   fontSize,
@@ -34,10 +22,13 @@ import {
 } from "../../styles/theme";
 
 interface ReadingStatsPanelProps {
+  /** 外层 drag(0=关,screenH=全开,由本组件自取屏高),本层 translateY = drag - screenH */
   drag: SharedValue<number>;
+  /** 本层内容滚动位置(供外层手势判定"内容到顶">下拉收回) */
   scrollY: SharedValue<number>;
   visible: boolean;
-  closePanel: () => void;
+  /** 进入阅读统计详情(仅「查看详情」按钮触发;右滑已删) */
+  onOpenStats: () => void;
   overall: OverallStats | null;
   dailyStats: DailyStats[];
   loading: boolean;
@@ -47,7 +38,7 @@ export function ReadingStatsPanel({
   drag,
   scrollY,
   visible,
-  closePanel,
+  onOpenStats,
   overall,
   dailyStats,
   loading,
@@ -55,165 +46,47 @@ export function ReadingStatsPanel({
   const colors = useColors();
   const s = makeStyles(colors);
   const { t } = useTranslation();
-  const { width: W, height: screenH } = useWindowDimensions();
+  const { height: screenH } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [tabIdx, setTabIdx] = useState(0);
-  const detailMode = useGestureDebugStore((s) => s.detailMode);
-  const dragStartRef = useRef(0);
-  const tabX = useSharedValue(0);
-  const panX = useSharedValue(0);
-  const panelScrollY = useSharedValue(0);
-  // 板块与面板收回共用的全板手势(manual:与 GHScrollView 自动协调,失败即交还滚动)
-  const touchStartX = useSharedValue(0);
-  const touchStartY = useSharedValue(0);
-  const gesture = useRef(
-    Gesture.Pan()
-      .manualActivation(true)
-      .onTouchesDown((e) => {
-        const tt = e.changedTouches[0] ?? e.allTouches?.[0];
-        if (tt) {
-          touchStartX.value = tt.x;
-          touchStartY.value = tt.y;
-        }
-      })
-      .onTouchesMove((e, mgr) => {
-        const tt = e.changedTouches[0] ?? e.allTouches?.[0];
-        const dx = (tt ? tt.x : 0) - touchStartX.value;
-        const dy = (tt ? tt.y : 0) - touchStartY.value;
-        const horizontal = Math.abs(dx) > Math.abs(dy) * 1.3;
-        if (Math.abs(dx) > 14 || Math.abs(dy) > 14) {
-          if (horizontal || panelScrollY.value <= 2) mgr.activate();
-          else mgr.fail(); // 内容未到顶:交给滚动
-        }
-      })
-      .onStart(() => {
-        dragStartRef.current = drag.value;
-      })
-      .onUpdate((e) => {
-        const horizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.3;
-        if (horizontal) {
-          panX.value = e.translationX;
-          return;
-        }
-        if (panelScrollY.value > 2) return; // 内容未到顶:交给滚动
-        drag.value = Math.max(0, Math.min(screenH, dragStartRef.current + e.translationY));
-      })
-      .onEnd((e) => {
-        const horizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.3;
-        if (horizontal) {
-          const next = Math.abs(e.translationX) > W * 0.22 ? (e.translationX < 0 ? 1 : -1) : 0;
-          const target = Math.max(0, Math.min(1, tabIdx + next));
-          tabX.value = withTiming(-target * W, OPEN_T);
-          panX.value = withTiming(0, OPEN_T);
-          if (target !== tabIdx) runOnJS(setTabIdx)(target);
-          return;
-        }
-        const now = drag.value;
-        const pullBack = now < screenH * 0.9 || e.velocityY < -400;
-        drag.value = withTiming(pullBack ? 0 : screenH, pullBack ? CLOSE_T : OPEN_T);
-        if (pullBack) runOnJS(closePanel)();
-      }),
-  ).current;
 
   const panelStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: drag.value - screenH }],
   }));
-  const boardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tabX.value + panX.value }],
-  }));
-
-  const bodyScrollHandler = useAnimatedScrollHandler((e) => {
-    panelScrollY.value = e.contentOffset.y;
-    scrollY.value = e.contentOffset.y;
-  });
-
-  const switchTab = (i: number) => {
-    tabX.value = withTiming(-i * W, OPEN_T);
-    setTabIdx(i);
-  };
 
   return (
     <View
       style={[StyleSheet.absoluteFill, { paddingTop: insets.top }]}
       pointerEvents={visible ? "auto" : "box-none"}
     >
-      {visible ? (
-        <GestureDetector gesture={gesture}>
-          <Animated.View style={[s.panel, panelStyle]}>
-            <View style={s.panelHeader}>
-              <View style={s.handleBar} />
-              <View style={s.headerRow}>
-                {[
-                  { key: "readingPanelTitle", fallback: "阅读统计" },
-                  { key: "panelDetailTab", fallback: "详情" },
-                ].map((item, i) => {
-                  const active = tabIdx === i;
-                  return (
-                    <TouchableOpacity
-                      key={item.key}
-                      style={[s.tabBtn, active && s.tabBtnActive]}
-                      onPress={() => switchTab(i)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[s.tabBtnText, active && s.tabBtnTextActive]}
-                        numberOfLines={1}
-                        maxFontSizeMultiplier={1.5}
-                      >
-                        {t(`profile.${item.key}`, item.fallback)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
+      <Animated.View style={[s.panel, panelStyle]}>
+        {/* 顶栏:标题(进详情仅经热力图旁的「查看详情」) */}
+        <View style={s.panelHeader}>
+          <View style={s.handleBar} />
+          <View style={s.headerRow}>
+            <Text style={s.panelTitle} numberOfLines={1} maxFontSizeMultiplier={1.5}>
+              {t("profile.readingPanelTitle", "阅读统计")}
+            </Text>
+          </View>
+        </View>
 
-            <View style={s.board}>
-              <Animated.View style={[s.boardInner, boardStyle]}>
-                <View style={{ width: W }} key="stats">
-                  <GHScrollView
-                    style={{ height: "100%" }}
-                    contentContainerStyle={{ paddingBottom: 48 }}
-                    showsVerticalScrollIndicator={false}
-                    onScroll={bodyScrollHandler}
-                    scrollEventThrottle={16}
-                  >
-                    <StatCardsGrid
-                      overall={overall}
-                      loading={loading}
-                      onOpenStats={() => switchTab(1)}
-                    />
-                    <HeatmapSection dailyStats={dailyStats} onOpenStats={() => switchTab(1)} />
-                  </GHScrollView>
-                </View>
-                <View style={{ width: W }} key="detail">
-                  <GHScrollView>
-                    {/* 卡顿定位实验三档(「我的」页点击调试 chip 切换):
-                        full=切到才挂载 | placeholder=屏蔽内容 | preload=面板一开就挂载 */}
-                    {detailMode === "placeholder" ? (
-                      <View style={s.placeholderBox}>
-                        <Text style={s.placeholderTitle}>
-                          {t("profile.detailModeLabel", "详情")}:{" "}
-                          {DETAIL_DEBUG_LABELS[detailMode]}
-                        </Text>
-                        <Text style={s.placeholderText}>
-                          {t("profile.detailPlaceholderHint", "内容已屏蔽(实验占位)")}
-                        </Text>
-                      </View>
-                    ) : detailMode === "preload" ? (
-                      visible ? <StatsScreen embed /> : null
-                    ) : (
-                      tabIdx === 1 ? <StatsScreen embed /> : null
-                    )}
-                  </GHScrollView>
-                </View>
-              </Animated.View>
-            </View>
-          </Animated.View>
-        </GestureDetector>
-      ) : (
-        <Animated.View style={[s.panel, panelStyle]} />
-      )}
+        <ScrollView
+          style={s.body}
+          contentContainerStyle={{ paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+          onScroll={(e) => {
+            scrollY.value = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
+        >
+          <StatCardsGrid
+            overall={overall}
+            dailyStats={dailyStats}
+            loading={loading}
+            onOpenStats={onOpenStats}
+          />
+          <HeatmapSection dailyStats={dailyStats} onOpenStats={onOpenStats} />
+        </ScrollView>
+      </Animated.View>
     </View>
   );
 }
@@ -250,45 +123,20 @@ const makeStyles = (colors: ThemeColors) =>
     headerRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 12,
-      height: 34,
-      gap: 10,
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      height: 32,
     },
-    tabBtn: {
-      borderRadius: 999,
-      paddingHorizontal: 14,
-      paddingVertical: 5,
-      backgroundColor: colors.muted,
-    },
-    tabBtnActive: {
-      backgroundColor: withOpacity(colors.primary, 0.12),
-    },
-    tabBtnText: {
-      fontSize: fontSize.sm,
-      lineHeight: fontSize.sm * 1.4,
-      fontWeight: fontWeight.medium,
-      color: colors.mutedForeground,
-    },
-    tabBtnTextActive: {
-      color: colors.primary,
+    panelTitle: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: fontSize.base,
+      lineHeight: fontSize.base * 1.4,
       fontWeight: fontWeight.semibold,
-    },
-    board: { flex: 1, overflow: "hidden" },
-    boardInner: { flexDirection: "row", flex: 1 },
-    placeholderBox: {
-      flexGrow: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 24,
-      gap: 8,
-    },
-    placeholderTitle: {
-      fontSize: fontSize.md,
-      fontWeight: fontWeight.medium,
       color: colors.foreground,
+      marginRight: 8,
     },
-    placeholderText: {
-      fontSize: fontSize.sm,
-      color: colors.mutedForeground,
+    body: {
+      flex: 1,
     },
   });

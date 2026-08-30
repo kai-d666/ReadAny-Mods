@@ -431,9 +431,6 @@ importers:
       react-native-markdown-display:
         specifier: ^7.0.2
         version: 7.0.2(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
-      react-native-pager-view:
-        specifier: 6.9.1
-        version: 6.9.1(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react-native-qrcode-svg:
         specifier: ^6.3.21
         version: 6.3.21(react-native-svg@15.12.1(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -8098,12 +8095,6 @@ packages:
     peerDependencies:
       react: 19.1.0
       react-native: '>=0.50.4'
-
-  react-native-pager-view@6.9.1:
-    resolution: {integrity: sha512-uUT0MMMbNtoSbxe9pRvdJJKEi9snjuJ3fXlZhG8F2vVMOBJVt/AFtqMPUHu9yMflmqOr08PewKzj9EPl/Yj+Gw==}
-    peerDependencies:
-      react: 19.1.0
-      react-native: '*'
 
   react-native-qrcode-svg@6.3.21:
     resolution: {integrity: sha512-6vcj4rcdpWedvphDR+NSJcudJykNuLgNGFwm2p4xYjR8RdyTzlrELKI5LkO4ANS9cQUbqsfkpippPv64Q2tUtA==}
@@ -18842,11 +18833,6 @@ snapshots:
       react: 19.1.0
       react-native: 0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-fit-image: 1.5.5
-
-  react-native-pager-view@6.9.1(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      react: 19.1.0
-      react-native: 0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
 
   react-native-qrcode-svg@6.3.21(react-native-svg@15.12.1(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(patch_hash=bms5a5spv5o4suezbgxzieqjo4)(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:

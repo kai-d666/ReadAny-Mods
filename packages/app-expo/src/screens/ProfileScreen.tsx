@@ -21,12 +21,6 @@ import {
   mergeCurrentSessionIntoOverallStats,
 } from "@/lib/stats/live-reading-stats";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
-import { TabActiveContext } from "@/navigation/TabNavigator";
-import {
-  DETAIL_DEBUG_LABELS,
-  GESTURE_DEBUG_LABELS,
-  useGestureDebugStore,
-} from "@/stores/gesture-debug-store";
 import { useReadingSessionStore, useTTSStore } from "@/stores";
 import {
   type ThemeColors,
@@ -36,7 +30,7 @@ import {
   useColors,
   withOpacity,
 } from "@/styles/theme";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { refreshAndCountUnreadFeedback } from "@readany/core/feedback";
 import { readingStatsService } from "@readany/core/stats";
@@ -47,7 +41,7 @@ import Constants from "expo-constants";
  * ProfileScreen — matching Tauri mobile ProfilePage exactly.
  * Features: 阅读统计面板(顶部下拉滑出:统计卡+热力图)、设置菜单(general/skills/about)。
  */
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -137,15 +131,14 @@ export function ProfileScreen() {
     }
   }, [saveCurrentSession]);
 
-  // tab 激活(Pager 模式):激活时刷新统计与未读反馈(替代原 useFocusEffect)
-  const tabActive = useContext(TabActiveContext);
-  useEffect(() => {
-    if (!tabActive) return;
-    void loadStats();
-    refreshAndCountUnreadFeedback()
-      .then(setUnreadFeedback)
-      .catch((err) => console.warn("[ProfileScreen] feedback unread refresh:", err));
-  }, [tabActive, loadStats]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadStats();
+      refreshAndCountUnreadFeedback()
+        .then(setUnreadFeedback)
+        .catch((err) => console.warn("[ProfileScreen] feedback unread refresh:", err));
+    }, [loadStats]),
+  );
 
   useEffect(() => {
     return eventBus.on("sync:completed", () => {
@@ -280,31 +273,6 @@ export function ProfileScreen() {
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
-      {/* 手势调试开关(临时):左右 / 上下 / 全开,单点循环 */}
-      <View style={s.gestureDebugRow}>
-        <TouchableOpacity
-          style={s.gestureDebugChip}
-          onPress={() => useGestureDebugStore.getState().cycle()}
-          activeOpacity={0.7}
-        >
-          <Text style={s.gestureDebugText}>
-            {t("profile.gestureDebugLabel", "手势")}:{" "}
-            {GESTURE_DEBUG_LABELS[useGestureDebugStore((s) => s.mode)]}
-          </Text>
-        </TouchableOpacity>
-        {/* 详情板块卡顿实验开关:全量 / 占位 / 预载,单点循环 */}
-        <TouchableOpacity
-          style={s.gestureDebugChip}
-          onPress={() => useGestureDebugStore.getState().cycleDetail()}
-          activeOpacity={0.7}
-        >
-          <Text style={s.gestureDebugText}>
-            {t("profile.detailModeLabel", "详情")}:{" "}
-            {DETAIL_DEBUG_LABELS[useGestureDebugStore((s) => s.detailMode)]}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={s.header}>
         <View style={s.headerTitleWrap}>
           <Text style={s.headerTitle} numberOfLines={1} maxFontSizeMultiplier={1.6}>
@@ -384,25 +352,6 @@ export function ProfileScreen() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    gestureDebugRow: {
-      flexDirection: "row",
-      gap: 8,
-      alignSelf: "flex-start",
-      marginLeft: 16,
-      marginTop: 8,
-    },
-    gestureDebugChip: {
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-    },
-    gestureDebugText: {
-      fontSize: fontSize.sm,
-      color: colors.mutedForeground,
-    },
     header: {
       flexDirection: "row",
       alignItems: "center",

@@ -1,7 +1,4 @@
 import { BookOpenIcon, MessageSquareIcon, NotebookPenIcon, UserIcon } from "@/components/ui/Icon";
-import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
-import { useGestureDebugStore } from "@/stores/gesture-debug-store";
-import { usePanelControl } from "@/stores/panel-control";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { ChatScreen } from "@/screens/ChatScreen";
 import { LibraryScreen } from "@/screens/LibraryScreen";
@@ -9,14 +6,18 @@ import { NotesScreen } from "@/screens/NotesScreen";
 import { ProfileScreen } from "@/screens/ProfileScreen";
 import { useTheme } from "@/styles/ThemeContext";
 /**
- * TabNavigator — 4 tab 底部栏 + 原生 Pager 无缝拼接翻页(跟手、吸附、相邻页贴边可见)。
- * 手感和布局由 react-native-pager-view(ViewPager2)提供;底部栏点击/setPage 同步。
+ * TabNavigator — 4 tab 底部栏,点击切换(2026-08-31 用户:基础界面左右滑动已删除,只保留点击)。
+ * 上下面板(书库下拉开统计面板)不受影响,留在 PullDownHost 侧。
  */
-import { createContext, useCallback, useRef, useState } from "react";
+import {
+  createBottomTabNavigator,
+  type BottomTabBarProps,
+} from "@react-navigation/bottom-tabs";
 import { useTranslation } from "react-i18next";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import PagerView from "react-native-pager-view";
+import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { usePanelControl } from "@/stores/panel-control";
 
 export type TabParamList = {
   Library: undefined;
@@ -25,20 +26,10 @@ export type TabParamList = {
   Profile: undefined;
 };
 
-const TAB_SCREENS = [
-  { key: "Library" as const, labelKey: "tabs.library" as const, Icon: BookOpenIcon, Screen: LibraryScreen },
-  { key: "Chat" as const, labelKey: "tabs.ai" as const, Icon: MessageSquareIcon, Screen: ChatScreen },
-  { key: "Notes" as const, labelKey: "tabs.notes" as const, Icon: NotebookPenIcon, Screen: NotesScreen },
-  { key: "Profile" as const, labelKey: "tabs.profile" as const, Icon: UserIcon, Screen: ProfileScreen },
-];
+const TAB_ICONS = [BookOpenIcon, MessageSquareIcon, NotebookPenIcon, UserIcon];
+const TAB_LABEL_KEYS = ["tabs.library", "tabs.ai", "tabs.notes", "tabs.profile"];
 
-/** 当前 tab 激活上下文(替换原 per-tab screen 的 useFocusEffect 语义) */
-export const TabActiveContext = createContext(true);
-
-/** 下拉面板手势占用上下文:面板打开时禁掉外层 PagerView 水平滑动(防右滑误翻 tab) */
-export const TabPanelGestureContext = createContext<
-  { onOpenChange: (open: boolean) => void } | undefined
->(undefined);
+const Tab = createBottomTabNavigator<TabParamList>();
 
 export function TabNavigator() {
   const { t } = useTranslation();
@@ -53,107 +44,105 @@ export function TabNavigator() {
   const baseTabBarHeight = layout.isTabletLandscape ? 72 : layout.isTablet ? 76 : 60;
   const tabBarHeight = baseTabBarHeight + bottomInset;
 
-  const [index, setIndex] = useState(0);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const gestureMode = useGestureDebugStore((s) => s.mode);
-  const pagerRef = useRef<PagerView>(null);
-
-  const handlePanelOpenChange = useCallback((open: boolean) => {
-    setPanelOpen(open);
-  }, []);
-
-  const goTo = useCallback((i: number) => {
-    if (i < 0 || i >= TAB_SCREENS.length) return;
-    if (i !== index) {
-      setPanelOpen(false); // 解除锁定
-      usePanelControl.getState().requestClose(); // 真正收回面板(第一页附庸,不同屏保留)
-    }
-    pagerRef.current?.setPage(i); // 原生吸附动画;onPageSelected 同步 index
-    setIndex(i);
-  }, [index]);
+  const renderTabBar = useCallback(
+    (props: BottomTabBarProps) => (
+      <ReadAnyTabBar {...props} t={t} colors={colors} layout={layout} bottomInset={bottomInset} />
+    ),
+    [t, colors, layout, bottomInset],
+  );
 
   return (
-    <BottomTabBarHeightContext.Provider value={tabBarHeight}>
     <View style={{ flex: 1 }}>
-      {/* 页面区:原生 Pager(无缝拼接,跟手 + 吸附,相邻页预渲染) */}
-      <PagerView
-        ref={pagerRef}
-        style={styles.pager}
-        initialPage={0}
-        onPageSelected={(e) => setIndex(e.nativeEvent.position)}
-        offscreenPageLimit={1}
-        scrollEnabled={!panelOpen && gestureMode !== "vertical"}
-      >
-        {TAB_SCREENS.map((tab, i) => (
-          <View key={tab.key} style={styles.page}>
-            <TabPanelGestureContext.Provider value={{ onOpenChange: handlePanelOpenChange }}>
-            <TabActiveContext.Provider value={i === index}>
-              {tab.key === "Notes" ? (
-                <NotesScreen
-                  route={{ key: "Notes", name: "Notes" } as never}
-                  navigation={undefined as never}
-                />
-              ) : (
-                <tab.Screen />
-              )}
-            </TabActiveContext.Provider>
-            </TabPanelGestureContext.Provider>
-          </View>
-        ))}
-      </PagerView>
-
-      {/* 底部栏 */}
-      <View
-        style={[
-          styles.tabBar,
-          {
-            backgroundColor: colors.background,
-            borderTopColor: colors.border,
-            paddingBottom: bottomInset,
-            height: tabBarHeight,
-            paddingTop: layout.isTabletLandscape ? 8 : 4,
+      <Tab.Navigator
+        safeAreaInsets={{ ...insets, bottom: bottomInset }}
+        screenOptions={{
+          headerShown: false,
+          tabBarHideOnKeyboard: false,
+          animation: "shift",
+          sceneStyle: {
+            paddingBottom: Platform.OS === "android" && insets.bottom === 0 ? 4 : 0,
           },
-        ]}
+        }}
+        tabBar={renderTabBar}
       >
-        {TAB_SCREENS.map((tab, i) => {
-          const focused = index === i;
-          const color = focused ? colors.primary : colors.mutedForeground;
-          const Icon = tab.Icon;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={styles.tabItem}
-              onPress={() => goTo(i)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityState={focused ? { selected: true } : undefined}
-              accessibilityLabel={t(tab.labelKey)}
-            >
-              <Icon size={24} color={color} />
-              <Text
-                style={[
-                  styles.tabLabel,
-                  {
-                    color,
-                    fontSize: layout.isTablet ? 13 : 12,
-                    marginTop: layout.isTabletLandscape ? 4 : 2,
-                  },
-                ]}
-              >
-                {t(tab.labelKey)}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+        <Tab.Screen name="Library" component={LibraryScreen} />
+        <Tab.Screen name="Chat" component={ChatScreen} />
+        <Tab.Screen name="Notes" component={NotesScreen} />
+        <Tab.Screen name="Profile" component={ProfileScreen} />
+      </Tab.Navigator>
     </View>
-    </BottomTabBarHeightContext.Provider>
+  );
+}
+
+/** 自定义底部栏:纯点击切换(稳定性组件) */
+function ReadAnyTabBar({
+  state,
+  navigation,
+  t,
+  colors,
+  layout,
+  bottomInset,
+}: BottomTabBarProps & {
+  t: ReturnType<typeof useTranslation>["t"];
+  colors: ReturnType<typeof useTheme>["colors"];
+  layout: ReturnType<typeof useResponsiveLayout>;
+  bottomInset: number;
+}) {
+  const baseTabBarHeight = layout.isTabletLandscape ? 72 : layout.isTablet ? 76 : 60;
+  const tabBarHeight = baseTabBarHeight + bottomInset;
+
+  return (
+    <View
+      style={[
+        styles.tabBar,
+        {
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+          paddingBottom: bottomInset,
+          height: tabBarHeight,
+          paddingTop: layout.isTabletLandscape ? 8 : 4,
+        },
+      ]}
+    >
+      {state.routes.map((route, i) => {
+        const Icon = TAB_ICONS[i];
+        const focused = state.index === i;
+        const color = focused ? colors.primary : colors.mutedForeground;
+        return (
+          <TouchableOpacity
+            key={route.key}
+            style={styles.tabItem}
+            onPress={() => {
+              // 跳转先行、面板收回同步进行(均在旧页滑出动画阶段),无"先收面板再跳"中间层
+              navigation.navigate(route.name, route.params as never);
+              usePanelControl.getState().requestClose();
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={focused ? { selected: true } : undefined}
+            accessibilityLabel={t(TAB_LABEL_KEYS[i])}
+          >
+            <Icon size={24} color={color} />
+            <Text
+              style={[
+                styles.tabLabel,
+                {
+                  color,
+                  fontSize: layout.isTablet ? 13 : 12,
+                  marginTop: layout.isTabletLandscape ? 4 : 2,
+                },
+              ]}
+            >
+              {t(TAB_LABEL_KEYS[i])}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pager: { flex: 1 },
-  page: { flex: 1 },
   tabBar: {
     flexDirection: "row",
     borderTopWidth: 0.5,
