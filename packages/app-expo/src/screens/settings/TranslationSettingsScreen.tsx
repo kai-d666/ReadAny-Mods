@@ -1,4 +1,8 @@
 import { KeyboardAwareScrollView } from "@/components/ui/KeyboardAwareScrollView";
+import {
+  DICTIONARY_OPTIONS,
+  getDictionaryOption,
+} from "@/lib/dictionary-intents";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useSettingsStore } from "@/stores";
 import {
@@ -115,6 +119,58 @@ export default function TranslationSettingsScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+            </View>
+
+            {/* 查词词典(静态读天下接口表模型:固定接口 + 系统解析拉起,不扫描) */}
+            <View style={[styles.section, styles.sectionSpaced]}>
+              <Text style={styles.sectionTitle}>
+                {t("settings.dictionaryOptionTitle", "查词词典")}
+              </Text>
+              <View style={styles.listCard}>
+                {DICTIONARY_OPTIONS.map((opt, idx) => {
+                  const selected =
+                    translationConfig.dictionaryOptionKey === opt.key ||
+                    (!translationConfig.dictionaryOptionKey && opt.key === "colordict-group");
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={[
+                        styles.listItem,
+                        idx < DICTIONARY_OPTIONS.length - 1 && styles.listItemBorder,
+                      ]}
+                      onPress={() =>
+                        updateTranslationConfig({ dictionaryOptionKey: opt.key })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <View>
+                        <Text style={styles.listItemText}>{t(opt.labelKey, opt.labelKey)}</Text>
+                      </View>
+                      {selected && <Text style={styles.check}>✓</Text>}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* 自定义在线词典:选 custom 时显示 URL 输入 */}
+              {getDictionaryOption(translationConfig.dictionaryOptionKey).key === "custom" && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={styles.fieldHint}>
+                    {t("settings.dictionaryOptionCustomHint", "填入查询 URL，用 %s 代替查询词")}
+                  </Text>
+                  <TextInput
+                    style={styles.apiKeyInput}
+                    value={translationConfig.dictionaryCustomUrl || ""}
+                    onChangeText={(v) =>
+                      updateTranslationConfig({ dictionaryCustomUrl: v })
+                    }
+                    placeholder="https://www.baidu.com/s?wd=%s"
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+              )}
             </View>
 
             {/* DeepL API Key */}

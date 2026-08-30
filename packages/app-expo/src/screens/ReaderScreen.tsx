@@ -20,7 +20,12 @@ import {
 import { SyncButton } from "@/components/ui/SyncButton";
 import { useReaderBridge } from "@/hooks/use-reader-bridge";
 import type { RelocateEvent, SelectionEvent, VisibleTTSSegment } from "@/hooks/use-reader-bridge";
-import { EudicNotInstalledError, launchEudic } from "@/lib/eudic-launcher";
+import {
+  DEFAULT_DICTIONARY_KEY,
+  DictionaryNotInstalledError,
+  DictionaryOptionNotConfiguredError,
+  launchDictionary,
+} from "@/lib/dictionary-intents";
 import { startFileServer } from "@/lib/reader/local-file-server";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -859,12 +864,29 @@ export function ReaderScreen({ route, navigation }: Props) {
       // JS 侧 gesture 门控已保证手势期不推 'selection',此调用多为 no-op,保留作纵深防御。
       setSelection(null);
       suppressReaderTapUntilRef.current = Date.now() + 900;
-      launchEudic(detail.word)
+      // 词典接口表:走翻译设置里选中的接口(默认 colordict-group 深蓝|欧路|MDict|ColorDict)
+      launchDictionary(
+        detail.word,
+        translationConfig.dictionaryOptionKey,
+        translationConfig.dictionaryCustomUrl,
+      )
         .catch((err) => {
-          Alert.alert(
-            err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
-            err instanceof Error ? err.message : String(err),
-          );
+          if (err instanceof DictionaryNotInstalledError) {
+            Alert.alert(
+              t("settings.dictionaryNotInstalledTitle", "未安装所选词典"),
+              t(err.labelKey, err.labelKey),
+            );
+          } else if (err instanceof DictionaryOptionNotConfiguredError) {
+            Alert.alert(
+              t("settings.dictionaryOptionCustomNotSet", "自定义在线词典未配置"),
+              t("settings.dictionaryOptionCustomHint", "请在翻译设置中填写自定义 URL"),
+            );
+          } else {
+            Alert.alert(
+              t("settings.dictionaryLookupFailed", "查词失败"),
+              err instanceof Error ? err.message : String(err),
+            );
+          }
         });
     },
     onTap: () => {
@@ -1675,13 +1697,29 @@ export function ReaderScreen({ route, navigation }: Props) {
             });
           }}
           onDictionary={(text) => {
-            // 词典查词/整句翻译 → 欧路划词小窗(欧路自动判定词/句)
+            // 词典查词/整句翻译 → 词典接口表所选接口(默认 colordict-group 欧路等)
             setSelection(null);
-            launchEudic(text).catch((err) => {
-              Alert.alert(
-                err instanceof EudicNotInstalledError ? "未安装欧路词典" : "查词失败",
-                err instanceof Error ? err.message : String(err),
-              );
+            launchDictionary(
+              text,
+              translationConfig.dictionaryOptionKey,
+              translationConfig.dictionaryCustomUrl,
+            ).catch((err) => {
+              if (err instanceof DictionaryNotInstalledError) {
+                Alert.alert(
+                  t("settings.dictionaryNotInstalledTitle", "未安装所选词典"),
+                  t(err.labelKey, err.labelKey),
+                );
+              } else if (err instanceof DictionaryOptionNotConfiguredError) {
+                Alert.alert(
+                  t("settings.dictionaryOptionCustomNotSet", "自定义在线词典未配置"),
+                  t("settings.dictionaryOptionCustomHint", "请在翻译设置中填写自定义 URL"),
+                );
+              } else {
+                Alert.alert(
+                  t("settings.dictionaryLookupFailed", "查词失败"),
+                  err instanceof Error ? err.message : String(err),
+                );
+              }
             });
           }}
         />

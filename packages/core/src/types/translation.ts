@@ -56,6 +56,10 @@ export interface TranslationConfig {
   dictionaryModel?: AIModelSelection;
   /** 长按翻译的查词方案；默认 AI 查词 */
   dictionaryMethod?: DictionaryMethod;
+  /** 词典接口表(静读天下模型)选中的接口 key;未设置时用 DEFAULT_DICTIONARY_KEY(colordict-group) */
+  dictionaryOptionKey?: string;
+  /** 词典接口表「自定义在线词典」的用户填 URL;用 %s 代替查询词 */
+  dictionaryCustomUrl?: string;
   /** 长按查词时自动朗读单词发音（TTS） */
   dictionarySpeak?: boolean;
   /** 非 AI 查词方案（ECDICT）无效时用 AI 查词兜底；默认开启 */
