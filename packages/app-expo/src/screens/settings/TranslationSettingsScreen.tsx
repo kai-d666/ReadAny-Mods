@@ -7,14 +7,14 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useSettingsStore } from "@/stores";
 import {
   TRANSLATOR_PROVIDERS,
+  type DictionaryMethod,
   type TranslatorName,
 } from "@readany/core/types/translation";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Modal,
-  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,6 +22,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PasswordInput } from "../../components/ui/PasswordInput";
+import { SelectRow, type SelectOption } from "../../components/ui/SelectRow";
+import { TranslationModelPicker } from "../../components/settings/TranslationModelPicker";
 import {
   type ThemeColors,
   fontSize,
@@ -32,61 +34,44 @@ import {
 } from "../../styles/theme";
 import { SettingsHeader } from "./SettingsHeader";
 
+/**
+ * 翻译设置 — 排版对齐 win(桌面)版:
+ * 翻译引擎下拉(win 三引擎 + 移动端「外部翻译」)→
+ *   AI:取词翻译 / 长按翻译 两个独立子卡(dictionaryMethod 分支:AI 查词 / 本地词典 ECDICT)
+ *   DeepL:API Key + baseUrl
+ *   外部翻译:词典接口表(移动端独有,按原先样式展开)
+ */
 export default function TranslationSettingsScreen() {
   const colors = useColors();
   const styles = makeStyles(colors);
   const { t } = useTranslation();
   const layout = useResponsiveLayout();
   const { translationConfig, updateTranslationConfig, aiConfig } = useSettingsStore();
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [modelQuery, setModelQuery] = useState("");
 
   const isAIProvider = translationConfig.provider.id === "ai";
-  // 外部翻译(词典接口表)仅移动端 → 本地追加第 4 项,不动共享 TRANSLATOR_PROVIDERS(桌面端不受影响)
-  const PROVIDERS: Array<{ id: TranslatorName; labelKey: string }> = [
-    ...TRANSLATOR_PROVIDERS,
-    { id: "external", labelKey: "translation.providerExternal" },
-  ];
+  const isDeepLProvider = translationConfig.provider.id === "deepl";
   const isExternalProvider = translationConfig.provider.id === "external";
 
-  const endpointsWithModels = aiConfig.endpoints.filter((e) => e.models.length > 0);
-  const totalModels = endpointsWithModels.reduce((sum, ep) => sum + ep.models.length, 0);
-  const multipleEndpoints = endpointsWithModels.length > 1;
+  const providerOptions: SelectOption[] = [
+    ...TRANSLATOR_PROVIDERS.map((p) => ({ value: p.id, label: t(p.labelKey) })),
+    { value: "external", label: t("translation.providerExternal", "外部翻译") },
+  ];
 
-  // 模型名搜索过滤:命中模型名(不区分大小写);无查询词时全量
-  const modelQueryFiltered = modelQuery.trim().toLowerCase();
-  const visibleEndpoints = modelQueryFiltered
-    ? endpointsWithModels
-        .map((ep) => ({
-          ...ep,
-          models: ep.models.filter((m) => m.toLowerCase().includes(modelQueryFiltered)),
-        }))
-        .filter((ep) => ep.models.length > 0)
-    : endpointsWithModels;
-
-  const selectedEndpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
-  const selectedModel = translationConfig.provider.model || aiConfig.activeModel;
-
-  const handleProviderChange = (providerId: TranslatorName, providerName: string) => {
+  const handleProviderChange = (providerId: TranslatorName) => {
     updateTranslationConfig({
       provider: {
         ...translationConfig.provider,
         id: providerId,
-        name: providerName,
+        name:
+          providerId === "external"
+            ? "translation.providerExternal"
+            : TRANSLATOR_PROVIDERS.find((p) => p.id === providerId)?.labelKey || "",
       },
     });
   };
 
-  const handleModelSelect = (endpointId: string, model: string) => {
-    updateTranslationConfig({
-      provider: {
-        ...translationConfig.provider,
-        model,
-        endpointId,
-      },
-    });
-    setShowModelPicker(false);
-  };
+  const dictionaryMethod = translationConfig.dictionaryMethod ?? "ai";
+  const dictionaryOption = getDictionaryOption(translationConfig.dictionaryOptionKey);
 
   return (
     <SafeAreaView
@@ -103,238 +88,227 @@ export default function TranslationSettingsScreen() {
         contentContainerStyle={[styles.scrollContent, { alignItems: "center" }]}
       >
           <View style={[styles.contentColumn, { width: "100%", maxWidth: layout.centeredContentWidth }]}>
-            {/* Provider */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t("translation.engine", "翻译引擎")}</Text>
-              <View style={styles.listCard}>
-                {PROVIDERS.map((p, idx) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={[
-                      styles.listItem,
-                      idx < PROVIDERS.length - 1 && styles.listItemBorder,
-                    ]}
-                    onPress={() => handleProviderChange(p.id, p.labelKey)}
-                    activeOpacity={0.7}
-                  >
-                    <View>
-                      <Text style={styles.listItemText}>{t(p.labelKey)}</Text>
-                      {p.id === "ai" && (
-                        <Text style={styles.listItemSub}>
-                          {t("translation.useAIModel", {
-                            model: selectedModel || "AI",
-                          })}
-                        </Text>
-                      )}
-                      {p.id === "microsoft" && (
-                        <Text style={styles.listItemSub}>
-                          {t("translation.microsoftHint", "免费，无需配置")}
-                        </Text>
-                      )}
-                      {p.id === "external" && (
-                        <Text style={styles.listItemSub}>
-                          {t(
-                            getDictionaryOption(translationConfig.dictionaryOptionKey).labelKey,
-                          )}
-                        </Text>
-                      )}
+              <Text style={styles.sectionTitle}>{t("settings.translation_title", "翻译设置")}</Text>
+              <Text style={styles.sectionDesc}>{t("settings.translation_desc", "配置翻译选项")}</Text>
+
+              {/* 翻译引擎(下拉,与 win 同款) */}
+              <Text style={styles.fieldLabel}>{t("settings.translationProvider", "翻译引擎")}</Text>
+              <SelectRow
+                options={providerOptions}
+                value={translationConfig.provider.id}
+                onSelect={(v) => handleProviderChange(v as TranslatorName)}
+              />
+
+              {/* 外部翻译 → 词典接口表(静读天下模型:固定接口 + 系统解析拉起,不扫描) */}
+              {isExternalProvider && (
+                <View style={[styles.subCard, styles.subCardSpaced]}>
+                  <Text style={styles.subCardTitle}>
+                    {t("settings.dictionaryOptionTitle", "查词词典")}
+                  </Text>
+                  {DICTIONARY_OPTIONS.map((opt) => {
+                    const selected = opt.key === dictionaryOption.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[
+                          styles.dictItem,
+                          opt.key !== DICTIONARY_OPTIONS[0].key && styles.dictItemBorder,
+                        ]}
+                        onPress={() => updateTranslationConfig({ dictionaryOptionKey: opt.key })}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.dictItemText}>{t(opt.labelKey, opt.labelKey)}</Text>
+                        {selected && <Text style={styles.check}>✓</Text>}
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* 自定义在线词典:选 custom 时显示 URL 输入 */}
+                  {dictionaryOption.key === "custom" && (
+                    <View style={{ marginTop: 12 }}>
+                      <Text style={styles.hintText}>
+                        {t("settings.dictionaryOptionCustomHint", "填入查询 URL，用 %s 代替查询词")}
+                      </Text>
+                      <TextInput
+                        style={styles.apiKeyInput}
+                        value={translationConfig.dictionaryCustomUrl || ""}
+                        onChangeText={(v) => updateTranslationConfig({ dictionaryCustomUrl: v })}
+                        placeholder="https://www.baidu.com/s?wd=%s"
+                        placeholderTextColor={colors.mutedForeground}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
                     </View>
-                    {translationConfig.provider.id === p.id && <Text style={styles.check}>✓</Text>}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+                  )}
+                </View>
+              )}
 
-            {/* 外部翻译 → 词典接口表(静读天下接口模型:固定接口 + 系统解析拉起,不扫描;仅选中「外部翻译」时展开) */}
-            {isExternalProvider && (
-            <View style={[styles.section, styles.sectionSpaced]}>
-              <Text style={styles.sectionTitle}>
-                {t("settings.dictionaryOptionTitle", "查词词典")}
-              </Text>
-              <View style={styles.listCard}>
-                {DICTIONARY_OPTIONS.map((opt, idx) => {
-                  const selected =
-                    translationConfig.dictionaryOptionKey === opt.key ||
-                    (!translationConfig.dictionaryOptionKey && opt.key === "colordict-group");
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={[
-                        styles.listItem,
-                        idx < DICTIONARY_OPTIONS.length - 1 && styles.listItemBorder,
-                      ]}
-                      onPress={() =>
-                        updateTranslationConfig({ dictionaryOptionKey: opt.key })
-                      }
-                      activeOpacity={0.7}
-                    >
-                      <View>
-                        <Text style={styles.listItemText}>{t(opt.labelKey, opt.labelKey)}</Text>
+              {/* AI 引擎 → 取词翻译 / 长按翻译 两个独立子栏(win 排版) */}
+              {isAIProvider && (
+                <>
+                  {/* 取词翻译 */}
+                  <View style={[styles.subCard, styles.subCardSpaced]}>
+                    <Text style={styles.subCardTitle}>
+                      {t("settings.translationSelectionTitle")}
+                    </Text>
+                    <Text style={styles.subCardDesc}>
+                      {t("settings.translationSelectionDesc")}
+                    </Text>
+                    <TranslationModelPicker
+                      value={translationConfig.selectionModel}
+                      onChange={(s) => updateTranslationConfig({ selectionModel: s })}
+                    />
+                    <Text style={styles.hintText}>{t("settings.translationModelUnsetHint")}</Text>
+                  </View>
+
+                  {/* 长按翻译(词典查词) */}
+                  <View style={[styles.subCard, styles.subCardSpaced]}>
+                    <Text style={styles.subCardTitle}>
+                      {t("settings.translationDictionaryTitle")}
+                    </Text>
+                    <Text style={styles.subCardDesc}>
+                      {t("settings.translationDictionaryDesc")}
+                    </Text>
+
+                    {/* 自动发音开关(全局,两种查词方案都生效) */}
+                    <View style={styles.switchRow}>
+                      <View style={styles.switchTextWrap}>
+                        <Text style={styles.switchLabel}>{t("settings.dictionarySpeak")}</Text>
+                        <Text style={styles.hintText}>{t("settings.dictionarySpeakDesc")}</Text>
                       </View>
-                      {selected && <Text style={styles.check}>✓</Text>}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                      <Switch
+                        value={translationConfig.dictionarySpeak ?? false}
+                        onValueChange={(v) => updateTranslationConfig({ dictionarySpeak: v })}
+                      />
+                    </View>
 
-              {/* 自定义在线词典:选 custom 时显示 URL 输入 */}
-              {getDictionaryOption(translationConfig.dictionaryOptionKey).key === "custom" && (
-                <View style={{ marginTop: 12 }}>
-                  <Text style={styles.fieldHint}>
-                    {t("settings.dictionaryOptionCustomHint", "填入查询 URL，用 %s 代替查询词")}
+                    {/* 查词方案:AI 查词 / 本地词典 ECDICT */}
+                    <Text style={[styles.fieldLabel, styles.subCardSpaced]}>
+                      {t("settings.dictionaryMethod")}
+                    </Text>
+                    <SelectRow
+                      options={[
+                        { value: "ai", label: t("settings.dictionaryMethodAI") },
+                        { value: "ecdict", label: t("settings.dictionaryMethodECDICT") },
+                      ]}
+                      value={dictionaryMethod}
+                      onSelect={(v) =>
+                        updateTranslationConfig({ dictionaryMethod: v as DictionaryMethod })
+                      }
+                    />
+
+                    {dictionaryMethod !== "ai" ? (
+                      <View>
+                        <Text style={styles.hintText}>
+                          {t("settings.dictionaryMethodECDICTHint")}
+                        </Text>
+                        {/* 非 AI 方案查不到时 AI 兜底开关 */}
+                        <View style={styles.switchRow}>
+                          <View style={styles.switchTextWrap}>
+                            <Text style={styles.switchLabel}>{t("settings.dictionaryFallback")}</Text>
+                            <Text style={styles.hintText}>{t("settings.dictionaryFallbackDesc")}</Text>
+                          </View>
+                          <Switch
+                            value={translationConfig.dictionaryFallback !== false}
+                            onValueChange={(v) => updateTranslationConfig({ dictionaryFallback: v })}
+                          />
+                        </View>
+                      </View>
+                    ) : (
+                      <View>
+                        <TranslationModelPicker
+                          value={translationConfig.dictionaryModel}
+                          onChange={(s) => updateTranslationConfig({ dictionaryModel: s })}
+                        />
+                        <Text style={styles.hintText}>{t("settings.translationModelUnsetHint")}</Text>
+
+                        {/* 词典查词提示词(仅长按生效) */}
+                        <Text style={[styles.fieldLabel, styles.subCardSpaced]}>
+                          {t("settings.dictionaryPromptTitle")}
+                        </Text>
+                        <TextInput
+                          style={styles.promptInput}
+                          multiline
+                          value={translationConfig.dictionaryPrompt ?? ""}
+                          placeholder={t("settings.dictionaryPromptPlaceholder")}
+                          placeholderTextColor={colors.mutedForeground}
+                          onChangeText={(v) => updateTranslationConfig({ dictionaryPrompt: v })}
+                          textAlignVertical="top"
+                        />
+                        <View style={styles.promptRow}>
+                          <Text style={[styles.hintText, styles.promptRowText]}>
+                            {t("settings.dictionaryPromptDesc")}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.resetBtn}
+                            onPress={() => updateTranslationConfig({ dictionaryPrompt: "" })}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.resetBtnText}>
+                              {t("settings.dictionaryPromptReset")}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </>
+              )}
+
+              {/* DeepL API Key(仅 DeepL 引擎) */}
+              {isDeepLProvider && (
+                <View style={[styles.subCard, styles.subCardSpaced]}>
+                  <Text style={styles.subCardTitle}>{t("translation.deeplApiKey")}</Text>
+                  <PasswordInput
+                    style={styles.apiKeyInput}
+                    value={translationConfig.provider.apiKey || ""}
+                    onChangeText={(v) =>
+                      updateTranslationConfig({
+                        provider: {
+                          ...translationConfig.provider,
+                          apiKey: v,
+                        },
+                      })
+                    }
+                    placeholder={t("translation.deeplApiKeyPlaceholder")}
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                  <Text style={styles.hintText}>{t("settings.deeplKeyHint")}</Text>
+
+                  <Text style={[styles.fieldLabel, styles.subCardSpaced]}>
+                    {t("translation.deeplBaseUrl")}
                   </Text>
                   <TextInput
                     style={styles.apiKeyInput}
-                    value={translationConfig.dictionaryCustomUrl || ""}
+                    value={translationConfig.provider.baseUrl || ""}
                     onChangeText={(v) =>
-                      updateTranslationConfig({ dictionaryCustomUrl: v })
+                      updateTranslationConfig({
+                        provider: {
+                          ...translationConfig.provider,
+                          baseUrl: v,
+                        },
+                      })
                     }
-                    placeholder="https://www.baidu.com/s?wd=%s"
+                    placeholder={t(
+                      "translation.deeplBaseUrlPlaceholder",
+                      "https://api-free.deepl.com/v2",
+                    )}
                     placeholderTextColor={colors.mutedForeground}
                     autoCapitalize="none"
                     autoCorrect={false}
                   />
+                  <Text style={styles.hintText}>
+                    {t(
+                      "translation.deeplBaseUrlHint",
+                      "填写基础地址，也支持直接粘贴完整的 /translate 地址。",
+                    )}
+                  </Text>
                 </View>
               )}
             </View>
-            )}
-
-            {/* DeepL API Key */}
-            {translationConfig.provider.id === "deepl" && (
-              <View style={[styles.section, styles.sectionSpaced]}>
-                <Text style={styles.sectionTitle}>{t("translation.deeplApiKey", "DeepL API Key")}</Text>
-                <PasswordInput
-                  style={styles.apiKeyInput}
-                  value={translationConfig.provider.apiKey || ""}
-                  onChangeText={(v) =>
-                    updateTranslationConfig({
-                      provider: {
-                        ...translationConfig.provider,
-                        apiKey: v,
-                      },
-                    })
-                  }
-                  placeholder={t("translation.deeplApiKeyPlaceholder", "输入 DeepL API Key")}
-                  placeholderTextColor={colors.mutedForeground}
-                />
-                <Text style={styles.fieldHint}>{t("settings.deeplKeyHint", "DeepL API 密钥")}</Text>
-
-                <Text style={[styles.sectionTitle, styles.subSectionTitle]}>
-                  {t("translation.deeplBaseUrl", "DeepL 请求地址")}
-                </Text>
-                <TextInput
-                  style={styles.apiKeyInput}
-                  value={translationConfig.provider.baseUrl || ""}
-                  onChangeText={(v) =>
-                    updateTranslationConfig({
-                      provider: {
-                        ...translationConfig.provider,
-                        baseUrl: v,
-                      },
-                    })
-                  }
-                  placeholder={t(
-                    "translation.deeplBaseUrlPlaceholder",
-                    "https://api-free.deepl.com/v2",
-                  )}
-                  placeholderTextColor={colors.mutedForeground}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <Text style={styles.fieldHint}>
-                  {t(
-                    "translation.deeplBaseUrlHint",
-                    "填写基础地址，也支持直接粘贴完整的 /translate 地址。",
-                  )}
-                </Text>
-              </View>
-            )}
-
-            {/* AI Model Selection */}
-            {isAIProvider && (
-              <View style={[styles.section, styles.sectionSpaced]}>
-                <Text style={styles.sectionTitle}>{t("settings.translationModel", "翻译模型")}</Text>
-                {endpointsWithModels.length > 0 ? (
-                  <TouchableOpacity
-                    style={styles.modelSelector}
-                    onPress={() => {
-                      setModelQuery("");
-                      totalModels > 1 && setShowModelPicker(true);
-                    }}
-                    activeOpacity={totalModels > 1 ? 0.7 : 1}
-                  >
-                    <Text style={styles.modelSelectorText} numberOfLines={1}>
-                      {selectedModel || t("settings.selectModel", "选择模型")}
-                    </Text>
-                    {totalModels > 1 && <Text style={styles.chevron}>▾</Text>}
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.modelSelector}>
-                    <Text style={styles.modelSelectorPlaceholder}>
-                      {t("settings.noModelsFetched", "未获取到模型")}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-
           </View>
       </KeyboardAwareScrollView>
-
-      {/* Model Picker Modal */}
-      <Modal
-        visible={showModelPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowModelPicker(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowModelPicker(false)}
-        >
-          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
-            <Text style={styles.modalTitle}>{t("settings.selectModel", "选择模型")}</Text>
-            <TextInput
-              style={styles.modelSearchInput}
-              value={modelQuery}
-              onChangeText={setModelQuery}
-              placeholder={t("settings.translationModelSearch", "搜索模型名称")}
-              placeholderTextColor={colors.mutedForeground}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <ScrollView nestedScrollEnabled>
-              {visibleEndpoints.map((ep) => (
-                <View key={ep.id}>
-                  {multipleEndpoints && (
-                    <Text style={styles.endpointLabel}>{ep.name || ep.baseUrl}</Text>
-                  )}
-                  {ep.models.map((model) => {
-                    const isActive = model === selectedModel && ep.id === selectedEndpointId;
-                    return (
-                      <TouchableOpacity
-                        key={`${ep.id}-${model}`}
-                        style={styles.modelItem}
-                        onPress={() => handleModelSelect(ep.id, model)}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[styles.modelItemText, isActive && styles.modelItemTextActive]}
-                          numberOfLines={1}
-                        >
-                          {model}
-                        </Text>
-                        {isActive && <Text style={styles.check}>✓</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -352,42 +326,80 @@ const makeStyles = (colors: ThemeColors) =>
     },
     contentColumn: {},
     section: {},
-    sectionSpaced: {
-      marginTop: spacing.xl,
-    },
     sectionTitle: {
       fontSize: fontSize.base,
       fontWeight: fontWeight.semibold,
       color: colors.foreground,
-      marginBottom: 10,
+      marginBottom: 2,
     },
-    listCard: {
+    sectionDesc: {
+      fontSize: fontSize.sm,
+      color: colors.mutedForeground,
+      marginBottom: 16,
+      lineHeight: 20,
+    },
+    fieldLabel: {
+      fontSize: fontSize.sm,
+      color: colors.mutedForeground,
+      marginBottom: 8,
+    },
+    subCard: {
       borderRadius: radius.xl,
-      backgroundColor: colors.card,
       borderWidth: 1,
       borderColor: colors.border,
-      overflow: "hidden",
+      backgroundColor: colors.card,
+      padding: spacing.lg,
     },
-    listItem: {
+    subCardSpaced: {
+      marginTop: spacing.lg,
+    },
+    subCardTitle: {
+      fontSize: fontSize.base,
+      fontWeight: fontWeight.semibold,
+      color: colors.foreground,
+      marginBottom: 4,
+    },
+    subCardDesc: {
+      fontSize: fontSize.sm,
+      color: colors.mutedForeground,
+      marginBottom: 12,
+      lineHeight: 20,
+    },
+    hintText: {
+      fontSize: fontSize.sm,
+      color: colors.mutedForeground,
+      marginTop: 6,
+      lineHeight: 20,
+    },
+    switchRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 14,
+      gap: 12,
+      marginTop: 12,
     },
-    listItemBorder: {
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
+    switchTextWrap: {
+      flex: 1,
+      gap: 2,
     },
-    listItemText: {
-      fontSize: fontSize.md,
+    switchLabel: {
+      fontSize: fontSize.sm,
       color: colors.foreground,
     },
-    listItemSub: {
+    dictItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingVertical: 11,
+    },
+    dictItemBorder: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    dictItemText: {
       fontSize: fontSize.sm,
-      color: colors.mutedForeground,
-      marginTop: 2,
-      lineHeight: 20,
+      color: colors.foreground,
+      marginRight: 8,
     },
     check: {
       fontSize: 14,
@@ -402,115 +414,40 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 12,
       fontSize: fontSize.sm,
       color: colors.foreground,
+      marginTop: 8,
     },
-    fieldHint: {
+    promptInput: {
+      borderRadius: radius.xl,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 12,
       fontSize: fontSize.sm,
-      color: colors.mutedForeground,
+      color: colors.foreground,
+      minHeight: 120,
+      marginTop: 8,
+    },
+    promptRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+      marginTop: 8,
+    },
+    promptRowText: {
+      flex: 1,
+    },
+    resetBtn: {
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
       marginTop: 6,
-      lineHeight: 20,
     },
-    subSectionTitle: {
-      marginTop: 16,
-      marginBottom: 10,
-    },
-    langItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 12,
-    },
-    langText: {
-      fontSize: fontSize.sm,
-      color: colors.foreground,
-    },
-    langTextActive: {
-      color: colors.primary,
-      fontWeight: fontWeight.medium,
-    },
-    modelSelector: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      borderRadius: radius.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 12,
-    },
-    modelSelectorText: {
-      flex: 1,
-      fontSize: fontSize.sm,
-      color: colors.foreground,
-    },
-    modelSelectorPlaceholder: {
+    resetBtnText: {
       fontSize: fontSize.sm,
       color: colors.mutedForeground,
-    },
-    chevron: {
-      fontSize: 14,
-      color: colors.mutedForeground,
-      marginLeft: 8,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.4)",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    modalContent: {
-      width: 280,
-      maxHeight: 400,
-      backgroundColor: colors.background,
-      borderRadius: radius.xl,
-      overflow: "hidden",
-    },
-    modalTitle: {
-      fontSize: fontSize.base,
-      fontWeight: fontWeight.semibold,
-      color: colors.foreground,
-      textAlign: "center",
-      paddingVertical: 12,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    modelSearchInput: {
-      marginHorizontal: spacing.lg,
-      marginTop: 10,
-      borderRadius: radius.lg,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.card,
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 8,
-      fontSize: fontSize.sm,
-      color: colors.foreground,
-    },
-    endpointLabel: {
-      fontSize: fontSize.sm,
-      fontWeight: fontWeight.medium,
-      color: colors.mutedForeground,
-      paddingHorizontal: spacing.lg,
-      paddingTop: 10,
-      paddingBottom: 4,
-    },
-    modelItem: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: spacing.lg,
-      paddingVertical: 12,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
-    },
-    modelItemText: {
-      flex: 1,
-      fontSize: fontSize.sm,
-      color: colors.foreground,
-    },
-    modelItemTextActive: {
-      color: colors.primary,
-      fontWeight: fontWeight.medium,
     },
   });

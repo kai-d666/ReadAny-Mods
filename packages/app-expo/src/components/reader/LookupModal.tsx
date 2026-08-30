@@ -1,7 +1,9 @@
 /**
- * LookupModal — 内置翻译查词结果弹窗(词 + 释义/翻译)。
+ * LookupModal — 内置翻译结果弹窗(词/文本 + 释义/译文)。
  *
- * 长按查词走内置翻译引擎(ai/deepl/microsoft)时展示;外部翻译(词典接口表)拉起第三方词典,不走这里。
+ * 长按查词(dictionary mode)与取词翻译(selection mode)共用;
+ * 外部翻译(词典接口表)拉起第三方词典,不走这里。
+ * TODO(待办):弹窗顶部加目标语言切换(照 win TranslationPopover 头部)。
  */
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -16,14 +18,15 @@ import {
 
 interface LookupModalProps {
   visible: boolean;
-  word: string;
+  /** 结果标题:查词=单词,取词=选中文本 */
+  title: string;
   loading: boolean;
   result: string | null;
   error: string | null;
   onClose: () => void;
 }
 
-export function LookupModal({ visible, word, loading, result, error, onClose }: LookupModalProps) {
+export function LookupModal({ visible, title, loading, result, error, onClose }: LookupModalProps) {
   const colors = useColors();
   const styles = makeStyles(colors);
   const { t } = useTranslation();
@@ -33,7 +36,7 @@ export function LookupModal({ visible, word, loading, result, error, onClose }: 
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <View style={styles.card} onStartShouldSetResponder={() => true}>
           <Text style={styles.word} numberOfLines={2}>
-            {word}
+            {title}
           </Text>
           <View style={styles.divider} />
           {loading ? (

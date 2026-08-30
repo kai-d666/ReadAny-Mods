@@ -27,10 +27,7 @@ import {
   launchDictionary,
 } from "@/lib/dictionary-intents";
 import { LookupModal } from "@/components/reader/LookupModal";
-import {
-  LookupProviderNotConfiguredError,
-  lookupWithProvider,
-} from "@/lib/dictionary-lookup";
+import { translateBuiltin, type BuiltinLookupMode } from "@/lib/dictionary-lookup";
 import { startFileServer } from "@/lib/reader/local-file-server";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -475,6 +472,8 @@ export function ReaderScreen({ route, navigation }: Props) {
     aiConfig,
     ready: translationReady,
     translationConfig,
+    // 与 win 一致:整章翻译属于取词翻译,强制 selectionModel(无全局兜底)
+    requireModelSelection: true,
     getParagraphs: async () => {
       if (!chapterTranslationBridgeRef.current) return [];
       return chapterTranslationBridgeRef.current.getChapterParagraphs();
@@ -1117,32 +1116,29 @@ export function ReaderScreen({ route, navigation }: Props) {
     [translationConfig.dictionaryOptionKey, translationConfig.dictionaryCustomUrl, t],
   );
 
-  const lookupBuiltin = useCallback(
-    async (word: string) => {
+  /** 内置翻译请求(查词=dictionary / 取词=selection),弹窗共用一个结果状态 */
+  const runBuiltinLookup = useCallback(
+    (text: string, mode: BuiltinLookupMode) => {
       const seq = ++lookupSeqRef.current;
-      setLookupWord(word);
+      setLookupWord(text);
       setLookupPending(true);
       setLookupResult(null);
       setLookupError(null);
-      try {
-        const text = await lookupWithProvider(word, translationConfig, aiConfig);
-        if (seq !== lookupSeqRef.current) return; // 已被更新的查词覆盖
-        setLookupResult(text ? text.trim() : "");
-      } catch (err) {
-        if (seq !== lookupSeqRef.current) return;
-        setLookupError(
-          err instanceof LookupProviderNotConfiguredError
-            ? t(
-                "translation.lookupNotConfigured",
-                "内置翻译引擎未配置，请先在 AI 设置中配置后重试",
-              )
-            : t("settings.dictionaryLookupFailed", "查词失败"),
-        );
-      } finally {
-        if (seq === lookupSeqRef.current) setLookupPending(false);
-      }
+      translateBuiltin(text, translationConfig, aiConfig, mode)
+        .then((result) => {
+          if (seq !== lookupSeqRef.current) return; // 已被更新的请求覆盖
+          setLookupResult(result ? result.trim() : "");
+        })
+        .catch((err) => {
+          if (seq !== lookupSeqRef.current) return;
+          // resolveTranslationModel 缺配置时抛中文指引(TRANSLATION_MODEL_UNSET_MESSAGE),原样展示
+          setLookupError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (seq === lookupSeqRef.current) setLookupPending(false);
+        });
     },
-    [translationConfig, aiConfig, t],
+    [translationConfig, aiConfig],
   );
 
   const handleWordLookup = useCallback(
@@ -1150,11 +1146,12 @@ export function ReaderScreen({ route, navigation }: Props) {
       if (translationConfig.provider.id === "external") {
         lookupExternal(word);
       } else {
-        void lookupBuiltin(word);
+        runBuiltinLookup(word, "dictionary");
       }
     },
-    [translationConfig.provider.id, lookupExternal, lookupBuiltin],
+    [translationConfig.provider.id, lookupExternal, runBuiltinLookup],
   );
+
 
   const closeLookup = useCallback(() => {
     lookupSeqRef.current++;
@@ -1762,18 +1759,18 @@ export function ReaderScreen({ route, navigation }: Props) {
               selectionCfi: selectionPopoverSelection.cfi,
             });
           }}
-          onDictionary={(text) => {
-            // 词典查词/整句翻译 → 按翻译引擎分流:外部翻译→词典接口表;内置翻译→内置查词弹窗
+          // 翻译按钮 = 长按翻译调用:外部翻译→词典接口表;内置翻译→内置查词弹窗
+          onTranslate={(text) => {
             setSelection(null);
             handleWordLookup(text);
           }}
         />
       )}
 
-      {/* 内置翻译查词弹窗(外部翻译走词典接口,不经过这里) */}
+      {/* 内置翻译结果弹窗(查词/取词;外部翻译走词典接口,不经过这里) */}
       <LookupModal
         visible={lookupWord !== null}
-        word={lookupWord ?? ""}
+        title={lookupWord ?? ""}
         loading={lookupPending}
         result={lookupResult}
         error={lookupError}

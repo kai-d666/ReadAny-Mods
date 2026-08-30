@@ -1,7 +1,7 @@
 import {
-  BookOpenIcon,
+  AIIcon,
   CopyIcon,
-  SparklesIcon,
+  LanguagesIcon,
   Volume2Icon,
 } from "@/components/ui/Icon";
 import type { SelectionEvent } from "@/hooks/use-reader-bridge";
@@ -10,8 +10,7 @@ import type { ThemeColors } from "@/styles/theme";
 import * as Clipboard from "expo-clipboard";
 /**
  * SelectionPopover — floating action bar shown when text is selected in the reader.
- * 精简版:仅保留 复制 / AI 对话 / 发音 / 词典(欧路小窗)。
- * 高亮、笔记、翻译按钮已按用户要求移除(词典按钮对长句由欧路自动整句翻译)。
+ * 按钮顺序:发音 / 复制 / AI 对话 / 翻译(长按翻译调用)。
  */
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -33,8 +32,8 @@ interface Props {
   onCopy: () => void;
   onAIChat: () => void;
   onSpeak?: (text: string, cfi: string) => void;
-  /** 唤起外部词典(欧路小窗)查词/整句翻译 */
-  onDictionary?: (text: string) => void;
+  /** 翻译(按长按翻译逻辑调用:外部翻译→词典接口 / 内置→词典查词) */
+  onTranslate?: (text: string) => void;
 }
 
 export function SelectionPopover({
@@ -43,14 +42,14 @@ export function SelectionPopover({
   onCopy,
   onAIChat,
   onSpeak,
-  onDictionary,
+  onTranslate,
 }: Props) {
   const { t } = useTranslation();
   const colors = useColors();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const s = useMemo(() => makeStyles(colors), [colors]);
 
-  const buttonCount = 2 + (onSpeak ? 1 : 0) + (onDictionary ? 1 : 0);
+  const buttonCount = 2 + (onSpeak ? 1 : 0) + (onTranslate ? 1 : 0);
   const actionRowWidth = buttonCount * (BUTTON_SIZE + GAP) + POPOVER_PADDING * 2;
   const actionRowHeight = 55; // 44 × 1.25
   const popoverHeight = actionRowHeight + POPOVER_PADDING * 2;
@@ -97,40 +96,40 @@ export function SelectionPopover({
     onDismiss();
   }, [selection.text, selection.cfi, onSpeak, onDismiss]);
 
-  const handleDictionary = useCallback(() => {
-    if (onDictionary) {
-      onDictionary(selection.text);
+  const handleTranslate = useCallback(() => {
+    if (onTranslate) {
+      onTranslate(selection.text);
     }
     onDismiss();
-  }, [selection.text, onDictionary, onDismiss]);
+  }, [selection.text, onTranslate, onDismiss]);
 
   // 无全屏遮罩:弹窗本体外触摸直达 WebView(可继续拖选/点空白关弹窗)。
   // 关弹窗闭环:点空白 → webview tap → 清自绘选区 → selectionCleared → RN setSelection(null)
   return (
     <View style={[s.popover, { left: position.x, top: position.y }]} pointerEvents="box-none">
       <View style={s.actionRow}>
+        {onSpeak && (
+          <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
+            <Volume2Icon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={s.iconBtn} onPress={handleCopy}>
           <CopyIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
         </TouchableOpacity>
 
         <TouchableOpacity style={s.iconBtn} onPress={onAIChat}>
-          <SparklesIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+          <AIIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
         </TouchableOpacity>
 
-        {onDictionary && (
+        {onTranslate && (
           <TouchableOpacity
             style={s.iconBtn}
-            onPress={handleDictionary}
+            onPress={handleTranslate}
             accessibilityRole="button"
-            accessibilityLabel="词典查词"
+            accessibilityLabel="翻译"
           >
-            <BookOpenIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
-          </TouchableOpacity>
-        )}
-
-        {onSpeak && (
-          <TouchableOpacity style={s.iconBtn} onPress={handleSpeak}>
-            <Volume2Icon size={BUTTON_ICON_SIZE} color={colors.foreground} />
+            <LanguagesIcon size={BUTTON_ICON_SIZE} color={colors.foreground} />
           </TouchableOpacity>
         )}
       </View>
