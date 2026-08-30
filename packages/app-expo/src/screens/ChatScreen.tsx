@@ -173,6 +173,16 @@ export function ChatScreen() {
   const { isStreaming, currentMessage, currentStep, error, sendMessage, stopStream } =
     useStreamingChat();
 
+  // 模式/深思考/防剧透切换提示(复用报错横幅样式机制,顶部弹 3 秒)
+  const [modeNotice, setModeNotice] = useState<string | null>(null);
+  const modeNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showModeNotice = useCallback((text: string) => {
+    if (!text) return;
+    setModeNotice(text);
+    if (modeNoticeTimer.current) clearTimeout(modeNoticeTimer.current);
+    modeNoticeTimer.current = setTimeout(() => setModeNotice(null), 3000);
+  }, []);
+
   // Messages - compute directly without useMemo to ensure reactivity
   const activeThread = generalActiveThreadId
     ? threads.find((th) => th.id === generalActiveThreadId)
@@ -513,6 +523,7 @@ export function ChatScreen() {
               onStop={stopStream}
               isStreaming={isStreaming}
               keyboardBottomOffset={tabBarHeight}
+              onNotice={showModeNotice}
             />
           </View>
         </View>
@@ -523,6 +534,15 @@ export function ChatScreen() {
         <View style={s.errorBanner}>
           <Text style={s.errorText} numberOfLines={2}>
             {error.message}
+          </Text>
+        </View>
+      )}
+
+      {/* 模式/深思考/防剧透切换提示(顶部,3s 自动消失) */}
+      {modeNotice && (
+        <View style={s.modeNotice} pointerEvents="none">
+          <Text style={s.modeNoticeText} numberOfLines={2}>
+            {modeNotice}
           </Text>
         </View>
       )}
@@ -720,6 +740,20 @@ const makeStyles = (
     errorText: {
       fontSize: fs.sm,
       color: colors.primaryForeground,
+    },
+
+    // 模式切换提示:顶部起 top:12,下移"一个输入栏初始高度"(≈118)的长度
+    modeNotice: {
+      position: "absolute",
+      top: 130,
+      left: 16,
+      right: 16,
+      zIndex: 50,
+    },
+    modeNoticeText: {
+      fontSize: fs.sm,
+      color: colors.foreground,
+      textAlign: "center",
     },
 
     // Sidebar

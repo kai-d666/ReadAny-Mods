@@ -256,6 +256,16 @@ export function BookChatScreen({ route, navigation }: Props) {
   const { isStreaming, currentMessage, currentStep, error, sendMessage, stopStream } =
     useStreamingChat({ book, bookId });
 
+  // 模式/深思考/防剧透切换提示(复用报错横幅样式机制,顶部弹 3 秒)
+  const [modeNotice, setModeNotice] = useState<string | null>(null);
+  const modeNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showModeNotice = useCallback((text: string) => {
+    if (!text) return;
+    setModeNotice(text);
+    if (modeNoticeTimer.current) clearTimeout(modeNoticeTimer.current);
+    modeNoticeTimer.current = setTimeout(() => setModeNotice(null), 3000);
+  }, []);
+
   // 依赖用身份键(threadId+条数)而非 activeThread 对象引用:store.threads
   // 每轮被外部重写时,activeThread 对象会变,但消息内容没变的会话必须保持
   // messagesV2 引用稳定,否则 memo(MessageBubble) 失效、整列表每轮重建。
@@ -657,6 +667,7 @@ export function BookChatScreen({ route, navigation }: Props) {
               onRemoveQuote={handleRemoveQuote}
               keyboardBottomOffset={insets.bottom}
               variant="book"
+              onNotice={showModeNotice}
             />
           </View>
         </View>
@@ -666,6 +677,15 @@ export function BookChatScreen({ route, navigation }: Props) {
         <View style={s.errorBanner}>
           <Text style={s.errorText} numberOfLines={2}>
             {error.message}
+          </Text>
+        </View>
+      )}
+
+      {/* 模式/深思考/防剧透切换提示(顶部,3s 自动消失) */}
+      {modeNotice && (
+        <View style={s.modeNotice} pointerEvents="none">
+          <Text style={s.modeNoticeText} numberOfLines={2}>
+            {modeNotice}
           </Text>
         </View>
       )}
@@ -822,6 +842,20 @@ const makeStyles = (
     errorText: {
       fontSize: fs.sm,
       color: colors.primaryForeground,
+    },
+
+    // 模式切换提示:顶部起 top:12,下移"一个输入栏初始高度"(≈118)的长度
+    modeNotice: {
+      position: "absolute",
+      top: 130,
+      left: 16,
+      right: 16,
+      zIndex: 50,
+    },
+    modeNoticeText: {
+      fontSize: fs.sm,
+      color: colors.foreground,
+      textAlign: "center",
     },
     sidebarBackdrop: {
       ...StyleSheet.absoluteFillObject,

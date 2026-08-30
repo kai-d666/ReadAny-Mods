@@ -54,6 +54,8 @@ interface ChatInputProps {
   keyboardBottomOffset?: number;
   /** 聊天上下文,决定防剧透开关读写 aiConfig.spoilerFree 的哪个场景(全局聊天/书内聊天) */
   variant?: "general" | "book";
+  /** 切换模式/深思考/防剧透时的顶部提示(仅在切换瞬间调用) */
+  onNotice?: (text: string) => void;
 }
 
 const SINGLE_LINE_INPUT_HEIGHT = 46;
@@ -74,6 +76,7 @@ export function ChatInput({
   placeholder,
   keyboardBottomOffset = 0,
   variant = "general",
+  onNotice,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [deepThinking, setDeepThinking] = useState(false);
@@ -167,16 +170,39 @@ export function ChatInput({
         ? t("chatModeLite", "Lite")
         : t("chatModeStandard", "Standard");
 
+  // onNotice 用 ref 保最新(回调常读,避免闭包过期)
+  const onNoticeRef = useRef<((text: string) => void) | undefined>(undefined);
+  onNoticeRef.current = onNotice;
   const handleToggleSpoilerFree = useCallback(() => {
+    const next = !spoilerFree;
     updateAIConfig({
-      spoilerFree: { ...aiConfig.spoilerFree, [variant]: !aiConfig.spoilerFree[variant] },
+      spoilerFree: { ...aiConfig.spoilerFree, [variant]: next },
     });
-  }, [aiConfig.spoilerFree, variant, updateAIConfig]);
+    if (next) {
+      onNoticeRef.current?.(t("chat.spoilerFreeHint", "AI 将避免透露当前阅读进度之后的内容"));
+    }
+  }, [aiConfig.spoilerFree, variant, updateAIConfig, spoilerFree, t]);
 
   const handleToggleChatMode = useCallback(() => {
     const next = CHAT_MODE_CYCLE[(CHAT_MODE_CYCLE.indexOf(chatMode) + 1) % CHAT_MODE_CYCLE.length];
     updateAIConfig({ chatMode: next });
-  }, [chatMode, updateAIConfig]);
+    const hint =
+      next === "knowledge"
+        ? t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")
+        : next === "lite"
+          ? t("chatModeLiteHint", "快速直连模式")
+          : t("chatModeStandardHint", "标准模式:完整功能对话(默认)");
+    onNoticeRef.current?.(hint);
+  }, [chatMode, updateAIConfig, t]);
+  const toggleDeepThinking = useCallback(() => {
+    setDeepThinking((prev) => {
+      const next = !prev;
+      if (next) {
+        onNoticeRef.current?.(t("chat.deepThinkingHint", "深度思考模式会使用更多 tokens"));
+      }
+      return next;
+    });
+  }, [t]);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -239,7 +265,8 @@ export function ChatInput({
           style={[s.toolArea, toolStyle]}
           pointerEvents={expanded ? "auto" : "none"}
         >
-          <View style={s.toggleRow}>
+          {/* 布局(用户 2026-08-31):左列=模式切换/工具,右列=深度思考/防剧透,一行两列 */}
+          <View style={s.toggleRowBetween}>
             <TouchableOpacity
               style={[s.deepThinkBtn, chatModeActive && s.deepThinkBtnActive]}
               onPress={handleToggleChatMode}
@@ -257,7 +284,7 @@ export function ChatInput({
 
             <TouchableOpacity
               style={[s.deepThinkBtn, deepThinking && s.deepThinkBtnActive]}
-              onPress={() => setDeepThinking(!deepThinking)}
+              onPress={toggleDeepThinking}
               activeOpacity={0.7}
             >
               <BrainIcon size={13} color={deepThinking ? colors.primary : colors.mutedForeground} />
@@ -266,7 +293,7 @@ export function ChatInput({
               </Text>
             </TouchableOpacity>
           </View>
-          <View style={s.toggleRow}>
+          <View style={s.toggleRowBetween}>
             <ToolPrefsMenu chatMode={chatMode} />
 
             <TouchableOpacity
@@ -299,24 +326,8 @@ export function ChatInput({
             </View>
           </GestureDetector>
 
-          {/* Mode hints above the input container (mode/thinking toggles live in lower panel now). */}
-          {deepThinking && (
-            <Text style={s.deepThinkHint}>
-              {t("chat.deepThinkingHint", "深度思考模式会使用更多 tokens")}
-            </Text>
-          )}
-          {spoilerFree && (
-            <Text style={s.deepThinkHint}>
-              {t("chat.spoilerFreeHint", "AI 将避免透露当前阅读进度之后的内容")}
-            </Text>
-          )}
-          {chatMode === "knowledge" ? (
-            <Text style={s.deepThinkHint}>
-              {t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")}
-            </Text>
-          ) : chatMode === "lite" ? (
-            <Text style={s.deepThinkHint}>{t("chatModeLiteHint", "快速直连模式")}</Text>
-          ) : null}
+          {/* 模式/深思考/防剧透说明改为「切换时顶部提示几秒」(见父页面 modeNotice);
+              不再有常驻文字 */}
 
           {/* Attached quotes chips */}
           {quotes.length > 0 && (
@@ -446,10 +457,10 @@ const makeStyles = (colors: ThemeColors) =>
       paddingTop: 14,
       gap: 8,
     },
-    toggleRow: {
+    toggleRowBetween: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
+      justifyContent: "space-between",
     },
     /* 顶边拖动手柄:热区横贯整卡,视觉为中央小圆角条 */
     dragSlot: {
@@ -544,11 +555,5 @@ const makeStyles = (colors: ThemeColors) =>
     sendBtnActive: {
       borderColor: withOpacity(colors.primary, 0.35),
       backgroundColor: colors.primary,
-    },
-    deepThinkHint: {
-      fontSize: fs.xs,
-      color: colors.mutedForeground,
-      textAlign: "center",
-      marginTop: 6,
     },
   });

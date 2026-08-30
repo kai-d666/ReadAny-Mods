@@ -128,5 +128,6 @@
   "toolPrefsTitle": "Tool switches",
   "toolPrefsSubtitle": "Choice items available for the current mode",
   "chatThreadContext": "Session context",
-  "chatModeKnowledgeHint": "Knowledge-Only: answers from the model's own knowledge, no book retrieval"
+  "chatModeKnowledgeHint": "Knowledge-Only: answers from the model's own knowledge, no book retrieval",
+  "chatModeStandardHint": "Standard mode: full-featured conversation (default)"
 }

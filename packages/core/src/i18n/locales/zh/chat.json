@@ -130,5 +130,6 @@
   "toolPrefsTitle": "工具开关",
   "toolPrefsSubtitle": "仅列出当前模式可选的工具",
   "chatThreadContext": "会话上下文",
-  "chatModeKnowledgeHint": "Knowledge-Only: 基于模型知识回答,不检索原文"
+  "chatModeKnowledgeHint": "Knowledge-Only: 基于模型知识回答,不检索原文",
+  "chatModeStandardHint": "标准模式:完整功能对话(默认)"
 }
