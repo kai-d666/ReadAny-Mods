@@ -32,7 +32,7 @@ interface Props {
   onCopy: () => void;
   onAIChat: () => void;
   onSpeak?: (text: string, cfi: string) => void;
-  /** 翻译(按长按翻译逻辑调用:外部翻译→词典接口 / 内置→词典查词) */
+  /** 划词翻译:内置引擎→默认提示词标准翻译(不用户自定义词典提示词);外部翻译→词典接口 */
   onTranslate?: (text: string) => void;
 }
 

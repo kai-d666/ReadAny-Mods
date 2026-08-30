@@ -402,7 +402,7 @@
     "dictionaryPromptReset": "重置为默认",
     "translationSelectionTitle": "取词翻译",
     "translationSelectionDesc": "选中文字翻译与整章翻译使用的 AI 模型",
-    "translationDictionaryTitle": "长按翻译（词典查词）",
+    "translationDictionaryTitle": "长按查词（词典查词）",
     "translationDictionaryDesc": "长按单词弹出词典释义时使用的 AI 模型",
     "translationModelUnsetHint": "未选择模型时，使用对应翻译功能会提示错误",
     "translationEndpoint": "端点",

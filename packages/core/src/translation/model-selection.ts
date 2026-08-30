@@ -15,7 +15,7 @@ export type TranslationModelMode = "selection" | "dictionary";
 
 export const TRANSLATION_MODEL_UNSET_MESSAGE: Record<TranslationModelMode, string> = {
   selection: "未选择 AI 翻译模型。请在 设置 → 翻译 → 取词翻译 中选择一个 AI 模型。",
-  dictionary: "未选择 AI 翻译模型。请在 设置 → 翻译 → 长按翻译 中选择一个 AI 模型。",
+  dictionary: "未选择 AI 翻译模型。请在 设置 → 翻译 → 长按查词 中选择一个 AI 模型。",
 };
 
 /**

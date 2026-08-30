@@ -1152,6 +1152,18 @@ export function ReaderScreen({ route, navigation }: Props) {
     [translationConfig.provider.id, lookupExternal, runBuiltinLookup],
   );
 
+  /** 划词翻译:外部翻译→词典接口;内置翻译→标准翻译(默认提示词,不用自定义词典提示词) */
+  const handleTranslateSelection = useCallback(
+    (text: string) => {
+      if (translationConfig.provider.id === "external") {
+        lookupExternal(text);
+      } else {
+        runBuiltinLookup(text, "selection");
+      }
+    },
+    [translationConfig.provider.id, lookupExternal, runBuiltinLookup],
+  );
+
 
   const closeLookup = useCallback(() => {
     lookupSeqRef.current++;
@@ -1759,10 +1771,10 @@ export function ReaderScreen({ route, navigation }: Props) {
               selectionCfi: selectionPopoverSelection.cfi,
             });
           }}
-          // 翻译按钮 = 长按翻译调用:外部翻译→词典接口表;内置翻译→内置查词弹窗
+          // 划词翻译:外部翻译→词典接口表;内置翻译→标准翻译弹窗(默认提示词)
           onTranslate={(text) => {
             setSelection(null);
-            handleWordLookup(text);
+            handleTranslateSelection(text);
           }}
         />
       )}

@@ -25,6 +25,9 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { openMobileBook } from "@/lib/library/open-mobile-book";
 import { setCallback, setExtractorRef } from "@/lib/rag/auto-vectorize-service";
 import type { RootStackParamList } from "@/navigation/RootNavigator";
+import { PullDownHost } from "@/components/profile/PullDownHost";
+import { ReadingStatsPanel } from "@/components/profile/ReadingStatsPanel";
+import { useReadingStatsData } from "@/components/profile/stats-blocks";
 import { WebDavConnectSheet } from "@/screens/library/WebDavConnectSheet";
 import { WebDavImportSourceSheet } from "@/screens/library/WebDavImportSourceSheet";
 import { useLibraryStore } from "@/stores/library-store";
@@ -148,6 +151,7 @@ export function LibraryScreen() {
   const { isDark } = useTheme();
   const { t } = useTranslation();
   const nav = useNavigation<Nav>();
+  const readingStats = useReadingStatsData();
   const layout = useResponsiveLayout();
   const gridGap = layout.isTablet ? 16 : GRID_GAP;
   const columnCount = layout.isTabletLandscape ? 5 : layout.isTablet ? 4 : NUM_COLUMNS;
@@ -803,6 +807,21 @@ export function LibraryScreen() {
   );
 
   return (
+    <PullDownHost
+      layer2={(ctx) => (
+        <ReadingStatsPanel
+          drag={ctx.drag}
+          scrollY={ctx.scrollY}
+          visible={ctx.visible}
+          onOpenStats={() => nav.navigate("Stats")}
+          overall={readingStats.overall}
+          dailyStats={readingStats.dailyStats}
+          loading={readingStats.loading}
+        />
+      )}
+      onSwipeRight={() => nav.navigate("Stats")}
+    >
+      {({ scrollY: contentScrollY }) => (
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
       <ExtractorWebView ref={extractorRef} />
 
@@ -1107,6 +1126,10 @@ export function LibraryScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
+              onScroll={(e) => {
+                contentScrollY.value = e.nativeEvent.contentOffset.y;
+              }}
+              scrollEventThrottle={16}
             />
           )}
         </View>
@@ -1194,6 +1217,8 @@ export function LibraryScreen() {
         onClose={() => setShowGroupPicker(false)}
       />
     </SafeAreaView>
+      )}
+    </PullDownHost>
   );
 }
 

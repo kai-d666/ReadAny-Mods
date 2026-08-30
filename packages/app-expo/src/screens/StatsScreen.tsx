@@ -42,6 +42,8 @@ import { eventBus } from "@readany/core/utils/event-bus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useResolvedCovers } from "./notes/useResolvedCovers";
 import { BadgesPreview } from "./stats/BadgesPreview";
@@ -463,21 +465,34 @@ export default function StatsScreen() {
 
   /* ━━━━━━━━━━ Render ━━━━━━━━━━ */
 
+  const handleBack = useCallback(() => {
+    if (nav.canGoBack()) {
+      nav.goBack();
+    } else {
+      nav.navigate("Tabs" as never);
+    }
+  }, [nav]);
+
+  // 左滑返回(水平优先,与纵向滚动不冲突)
+  const backGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-15, 15])
+        .onEnd((e) => {
+          if (e.translationX < -70 && Math.abs(e.translationX) > Math.abs(e.translationY) * 1.5) {
+            runOnJS(handleBack)();
+          }
+        }),
+    [handleBack],
+  );
+
   return (
+    <GestureDetector gesture={backGesture}>
     <SafeAreaView style={s.container} edges={["top"]}>
       {/* Header */}
       <View style={[s.header, { paddingHorizontal: layout.horizontalPadding }]}>
         <View style={[s.headerInner, { maxWidth: statsContentWidth }]}>
-          <TouchableOpacity
-            style={s.backBtn}
-            onPress={() => {
-              if (nav.canGoBack()) {
-                nav.goBack();
-              } else {
-                nav.navigate("Tabs" as never);
-              }
-            }}
-          >
+          <TouchableOpacity style={s.backBtn} onPress={handleBack}>
             <ChevronLeftIcon size={20} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={s.headerTitle}>{t("stats.title")}</Text>
@@ -944,5 +959,6 @@ export default function StatsScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+    </GestureDetector>
   );
 }
