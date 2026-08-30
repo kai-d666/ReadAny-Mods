@@ -26,7 +26,8 @@ interface ChapterTranslationSheetProps {
   onCancel: () => void;
   onToggleOriginalVisible: () => void;
   onToggleTranslationVisible: () => void;
-  onReset: () => void;
+  /** 用户显式删除翻译结果(清缓存,否则自动恢复机制会把它注回) */
+  onClear: () => void;
 }
 
 export function ChapterTranslationSheet({
@@ -37,7 +38,7 @@ export function ChapterTranslationSheet({
   onCancel,
   onToggleOriginalVisible,
   onToggleTranslationVisible,
-  onReset,
+  onClear,
 }: ChapterTranslationSheetProps) {
   const { t } = useTranslation();
   const colors = useColors();
@@ -217,7 +218,7 @@ export function ChapterTranslationSheet({
           <Pressable
             style={s.destructiveButton}
             onPress={() => {
-              onReset();
+              onClear();
               onClose();
             }}
           >
@@ -287,7 +288,7 @@ export function ChapterTranslationSheet({
           <Pressable
             style={s.destructiveButton}
             onPress={() => {
-              onReset();
+              onClear();
               onClose();
             }}
           >

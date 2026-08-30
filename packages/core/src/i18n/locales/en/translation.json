@@ -33,6 +33,10 @@
     "translation": "Translation",
     "providerMicrosoft": "Microsoft Translate (Free)",
     "providerAI": "AI Translation",
-    "providerDeepL": "DeepL"
+    "providerDeepL": "DeepL",
+    "providerExternal": "External Translation",
+    "lookupLoading": "Looking up...",
+    "lookupNoResult": "No lookup result",
+    "lookupNotConfigured": "Built-in translation engine is not configured. Set it up in AI settings first."
   }
 }

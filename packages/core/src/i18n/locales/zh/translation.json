@@ -33,6 +33,10 @@
     "translation": "译文",
     "providerMicrosoft": "微软翻译（免费）",
     "providerAI": "AI 翻译",
-    "providerDeepL": "DeepL"
+    "providerDeepL": "DeepL",
+    "providerExternal": "外部翻译",
+    "lookupLoading": "查词中...",
+    "lookupNoResult": "没有查词结果",
+    "lookupNotConfigured": "内置翻译引擎未配置，请先在 AI 设置中配置后重试"
   }
 }

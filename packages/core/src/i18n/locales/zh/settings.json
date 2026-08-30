@@ -394,6 +394,7 @@
     "apiKeyPlaceholder": "输入 API 密钥",
     "deeplKeyHint": "DeepL API 密钥",
     "translationModel": "翻译模型",
+    "translationModelSearch": "搜索模型名称",
     "selectEngine": "选择引擎",
     "dictionaryPromptTitle": "词典查词提示词",
     "dictionaryPromptDesc": "长按单词弹出词典释义时使用的 AI 提示词。支持 {targetLang}、{sourceLang}、{word} 占位符，清空后恢复内置默认模板。",

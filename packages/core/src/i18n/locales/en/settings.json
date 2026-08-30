@@ -398,6 +398,7 @@
     "apiKeyPlaceholder": "Enter API Key",
     "deeplKeyHint": "DeepL API Key",
     "translationModel": "Translation Model",
+    "translationModelSearch": "Search model name",
     "selectEngine": "Select Engine",
     "dictionaryPromptTitle": "Dictionary Lookup Prompt",
     "dictionaryPromptDesc": "AI system prompt used when long-pressing a word to look it up. Supports {targetLang}, {sourceLang} and {word} placeholders. Clear to restore the built-in default template.",

@@ -264,6 +264,17 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     // This allows auto-restore to work when the user returns to this chapter.
   }, [removeTranslations]);
 
+  // ---- Clear (user explicitly deletes the translation) ----------------------
+  // 与 reset 的区别:清掉持久化章节缓存。否则 auto-restore 会在状态变 idle 后
+  // 立即检测 isChapterFullyCached 并把翻译重新注回 —— 表现为"删不掉、恢复不到正常状态"。
+  const clearTranslation = useCallback(async () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    removeTranslations();
+    await clearChapterCache(bookId, sectionIndex);
+    setState({ status: "idle" });
+  }, [removeTranslations, bookId, sectionIndex]);
+
   // ---- Auto-restore cached translations on section load -----------------------
   useEffect(() => {
     if (!ready || state.status !== "idle") return;
@@ -352,5 +363,6 @@ export function useChapterTranslation(options: UseChapterTranslationOptions) {
     toggleOriginalVisible,
     toggleTranslationVisible,
     reset,
+    clearTranslation,
   };
 }

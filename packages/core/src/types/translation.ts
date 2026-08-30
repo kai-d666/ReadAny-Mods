@@ -2,7 +2,7 @@
  * Translation Types
  */
 
-export type TranslatorName = "ai" | "deepl" | "microsoft";
+export type TranslatorName = "ai" | "deepl" | "microsoft" | "external";
 
 export interface TranslationProvider {
   id: TranslatorName;

@@ -6,9 +6,8 @@ import {
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useSettingsStore } from "@/stores";
 import {
-  TRANSLATOR_LANGS,
   TRANSLATOR_PROVIDERS,
-  type TranslationTargetLang,
+  type TranslatorName,
 } from "@readany/core/types/translation";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -40,17 +39,35 @@ export default function TranslationSettingsScreen() {
   const layout = useResponsiveLayout();
   const { translationConfig, updateTranslationConfig, aiConfig } = useSettingsStore();
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [modelQuery, setModelQuery] = useState("");
 
   const isAIProvider = translationConfig.provider.id === "ai";
+  // 外部翻译(词典接口表)仅移动端 → 本地追加第 4 项,不动共享 TRANSLATOR_PROVIDERS(桌面端不受影响)
+  const PROVIDERS: Array<{ id: TranslatorName; labelKey: string }> = [
+    ...TRANSLATOR_PROVIDERS,
+    { id: "external", labelKey: "translation.providerExternal" },
+  ];
+  const isExternalProvider = translationConfig.provider.id === "external";
 
   const endpointsWithModels = aiConfig.endpoints.filter((e) => e.models.length > 0);
   const totalModels = endpointsWithModels.reduce((sum, ep) => sum + ep.models.length, 0);
   const multipleEndpoints = endpointsWithModels.length > 1;
 
+  // 模型名搜索过滤:命中模型名(不区分大小写);无查询词时全量
+  const modelQueryFiltered = modelQuery.trim().toLowerCase();
+  const visibleEndpoints = modelQueryFiltered
+    ? endpointsWithModels
+        .map((ep) => ({
+          ...ep,
+          models: ep.models.filter((m) => m.toLowerCase().includes(modelQueryFiltered)),
+        }))
+        .filter((ep) => ep.models.length > 0)
+    : endpointsWithModels;
+
   const selectedEndpointId = translationConfig.provider.endpointId || aiConfig.activeEndpointId;
   const selectedModel = translationConfig.provider.model || aiConfig.activeModel;
 
-  const handleProviderChange = (providerId: "ai" | "deepl" | "microsoft", providerName: string) => {
+  const handleProviderChange = (providerId: TranslatorName, providerName: string) => {
     updateTranslationConfig({
       provider: {
         ...translationConfig.provider,
@@ -90,12 +107,12 @@ export default function TranslationSettingsScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{t("translation.engine", "翻译引擎")}</Text>
               <View style={styles.listCard}>
-                {TRANSLATOR_PROVIDERS.map((p, idx) => (
+                {PROVIDERS.map((p, idx) => (
                   <TouchableOpacity
                     key={p.id}
                     style={[
                       styles.listItem,
-                      idx < TRANSLATOR_PROVIDERS.length - 1 && styles.listItemBorder,
+                      idx < PROVIDERS.length - 1 && styles.listItemBorder,
                     ]}
                     onPress={() => handleProviderChange(p.id, p.labelKey)}
                     activeOpacity={0.7}
@@ -114,6 +131,13 @@ export default function TranslationSettingsScreen() {
                           {t("translation.microsoftHint", "免费，无需配置")}
                         </Text>
                       )}
+                      {p.id === "external" && (
+                        <Text style={styles.listItemSub}>
+                          {t(
+                            getDictionaryOption(translationConfig.dictionaryOptionKey).labelKey,
+                          )}
+                        </Text>
+                      )}
                     </View>
                     {translationConfig.provider.id === p.id && <Text style={styles.check}>✓</Text>}
                   </TouchableOpacity>
@@ -121,7 +145,8 @@ export default function TranslationSettingsScreen() {
               </View>
             </View>
 
-            {/* 查词词典(静态读天下接口表模型:固定接口 + 系统解析拉起,不扫描) */}
+            {/* 外部翻译 → 词典接口表(静读天下接口模型:固定接口 + 系统解析拉起,不扫描;仅选中「外部翻译」时展开) */}
+            {isExternalProvider && (
             <View style={[styles.section, styles.sectionSpaced]}>
               <Text style={styles.sectionTitle}>
                 {t("settings.dictionaryOptionTitle", "查词词典")}
@@ -172,6 +197,7 @@ export default function TranslationSettingsScreen() {
                 </View>
               )}
             </View>
+            )}
 
             {/* DeepL API Key */}
             {translationConfig.provider.id === "deepl" && (
@@ -231,7 +257,10 @@ export default function TranslationSettingsScreen() {
                 {endpointsWithModels.length > 0 ? (
                   <TouchableOpacity
                     style={styles.modelSelector}
-                    onPress={() => totalModels > 1 && setShowModelPicker(true)}
+                    onPress={() => {
+                      setModelQuery("");
+                      totalModels > 1 && setShowModelPicker(true);
+                    }}
                     activeOpacity={totalModels > 1 ? 0.7 : 1}
                   >
                     <Text style={styles.modelSelectorText} numberOfLines={1}>
@@ -249,36 +278,6 @@ export default function TranslationSettingsScreen() {
               </View>
             )}
 
-            {/* Target Language */}
-            <View style={[styles.section, styles.sectionSpaced]}>
-              <Text style={styles.sectionTitle}>{t("translation.targetLanguage", "目标语言")}</Text>
-              <View style={[styles.listCard, { maxHeight: 320 }]}>
-                <ScrollView nestedScrollEnabled>
-                  {Object.entries(TRANSLATOR_LANGS).map(([code, name]) => (
-                    <TouchableOpacity
-                      key={code}
-                      style={styles.langItem}
-                      onPress={() =>
-                        updateTranslationConfig({
-                          targetLang: code as TranslationTargetLang,
-                        })
-                      }
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.langText,
-                          translationConfig.targetLang === code && styles.langTextActive,
-                        ]}
-                      >
-                        {name}
-                      </Text>
-                      {translationConfig.targetLang === code && <Text style={styles.check}>✓</Text>}
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
           </View>
       </KeyboardAwareScrollView>
 
@@ -296,8 +295,17 @@ export default function TranslationSettingsScreen() {
         >
           <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>{t("settings.selectModel", "选择模型")}</Text>
+            <TextInput
+              style={styles.modelSearchInput}
+              value={modelQuery}
+              onChangeText={setModelQuery}
+              placeholder={t("settings.translationModelSearch", "搜索模型名称")}
+              placeholderTextColor={colors.mutedForeground}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
             <ScrollView nestedScrollEnabled>
-              {endpointsWithModels.map((ep) => (
+              {visibleEndpoints.map((ep) => (
                 <View key={ep.id}>
                   {multipleEndpoints && (
                     <Text style={styles.endpointLabel}>{ep.name || ep.baseUrl}</Text>
@@ -466,6 +474,18 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: colors.border,
+    },
+    modelSearchInput: {
+      marginHorizontal: spacing.lg,
+      marginTop: 10,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 8,
+      fontSize: fontSize.sm,
+      color: colors.foreground,
     },
     endpointLabel: {
       fontSize: fontSize.sm,
