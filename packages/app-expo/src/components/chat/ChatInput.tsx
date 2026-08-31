@@ -1,15 +1,8 @@
-import {
-  BrainIcon,
-  EyeOffIcon,
-  SendIcon,
-  SparklesIcon,
-  StopCircleIcon,
-  XIcon,
-} from "@/components/ui/Icon";
+import { BrainIcon, EyeOffIcon, SendIcon, StopCircleIcon, XIcon } from "@/components/ui/Icon";
 import { useKeyboardInsets } from "@/hooks/use-keyboard-insets";
 import { useSettingsStore } from "@/stores/settings-store";
 import { ToolPrefsMenu } from "./ToolPrefsMenu";
-import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
+import { fontSize as fs, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { AIChatMode, AttachedQuote } from "@readany/core/types";
 /**
@@ -34,11 +27,175 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useIsFocused } from "@react-navigation/native";
 import Animated, {
   Easing,
+  interpolateColor,
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
+
+const MODE_IDX: Record<AIChatMode, number> = { knowledge: 0, standard: 1, lite: 2 };
+const MODES: AIChatMode[] = ["knowledge", "standard", "lite"];
+const SEG_LABEL_KEYS = ["chatModeKnowledge", "chatModeStandard", "chatModeLite"] as const;
+/** 滑块弹簧(带微过冲);按压缩放弹簧 */
+const SLIDE_SPRING = { damping: 14, stiffness: 200, mass: 0.5 };
+const PRESS_SPRING = { damping: 12, stiffness: 180, mass: 0.6 };
+
+/**
+ * ModeSlider — 模式切换滑动开关(用户设计 2026-08-31):
+ * 三个模式横排一段(轨道胶囊凹陷感),白色滑块(1/3 宽)可整轨拖动/点击段/弹簧吸附;
+ * 按下载入即跳到手指下("立即跟手"),松手吸附最近段;段文字颜色随滑块距离渐变。
+ */
+function ModeSlider({
+  mode,
+  onChange,
+}: {
+  mode: AIChatMode;
+  onChange: (m: AIChatMode) => void;
+}) {
+  const { t } = useTranslation();
+  const colors = useColors();
+  const st = makeStyles(colors);
+  const [trackW, setTrackW] = useState(0);
+  const [thumbW, setThumbW] = useState(0);
+  const trackWSV = useSharedValue(0); // worklet 镜像
+  const thumbX = useSharedValue(0); // 滑块中心 x
+  const scale = useSharedValue(1);
+  const startX = useSharedValue(0);
+
+  // 外部 mode 变化(如设置页)或首次测量:滑块飞向对应段
+  useEffect(() => {
+    if (trackW <= 0) return;
+    const target = (MODE_IDX[mode] + 0.5) * (trackW / 3);
+    thumbX.value = withSpring(target, SLIDE_SPRING);
+  }, [mode, trackW, thumbX]);
+
+  const segW = trackW / 3;
+
+  // 结构修复(用户 2026-08-31 拍板):
+  // - 手指按下**不瞬移** thumb(点击时滑块保持不动,松手由 Tap 判定后一次到位)
+  // - pan/tap 都只"播下目标段",吸附+切换由**单一 reaction** 执行(一个事实源)
+  const pendingIdx = useSharedValue(-1);
+  const logEvt = useCallback((tag: string, val: number) => {
+    console.log(`[ModeSlider] ${tag}=${val}`);
+  }, []);
+  const logRef = useRef(logEvt);
+  logRef.current = logEvt;
+
+  const panGesture = useRef(
+    Gesture.Pan()
+      .activeOffsetX([-8, 8])
+      .failOffsetY([-16, 16])
+      .onTouchesDown(() => {
+        scale.value = withSpring(1.06, PRESS_SPRING);
+      })
+      .onStart(() => {
+        startX.value = thumbX.value;
+      })
+      .onUpdate((e) => {
+        const t = trackWSV.value;
+        const w = Math.max(1, t / 3 - 8);
+        const half = w / 2;
+        thumbX.value = Math.min(t - half, Math.max(half, startX.value + e.translationX));
+      })
+      .onEnd(() => {
+        scale.value = withSpring(1, PRESS_SPRING);
+        const segWv = trackWSV.value / 3;
+        const i = Math.min(2, Math.max(0, Math.round((thumbX.value - segWv / 2) / segWv)));
+        pendingIdx.value = i;
+        runOnJS(logRef.current)("panEnd", i);
+      }),
+  ).current;
+
+  const tapGesture = useRef(
+    Gesture.Tap()
+      .maxDistance(8)
+      .onEnd((e) => {
+        scale.value = withSpring(1, PRESS_SPRING);
+        const segWv = trackWSV.value / 3;
+        const i = Math.min(2, Math.max(0, Math.round((e.x - segWv / 2) / segWv)));
+        pendingIdx.value = i;
+        runOnJS(logRef.current)("tapEnd", i);
+      }),
+  ).current;
+
+  const gesture = useRef(Gesture.Race(panGesture, tapGesture)).current;
+
+  // 单一吸附事实源:谁播下目标,谁就由此执行弹簧 + 切换(同值不重复触发)
+  useAnimatedReaction(
+    () => pendingIdx.value,
+    (next, prev) => {
+      if (next < 0 || next === prev) return;
+      const segWv = trackWSV.value / 3;
+      thumbX.value = withSpring((next + 0.5) * segWv, SLIDE_SPRING);
+      runOnJS(logRef.current)("apply", next);
+      runOnJS(onChange)(MODES[next]);
+    },
+  );
+
+  // 段文字颜色:至滑块中心的距离 → primary↔muted 渐变
+  const primaryColor = colors.primary;
+  const mutedColor = colors.mutedForeground;
+  const kLabelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      Math.abs(thumbX.value - 0.5 * (trackWSV.value / 3)),
+      [0, (trackWSV.value / 3) * 0.5],
+      [primaryColor, mutedColor],
+    ),
+  }));
+  const sLabelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      Math.abs(thumbX.value - 1.5 * (trackWSV.value / 3)),
+      [0, (trackWSV.value / 3) * 0.5],
+      [primaryColor, mutedColor],
+    ),
+  }));
+  const lLabelStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      Math.abs(thumbX.value - 2.5 * (trackWSV.value / 3)),
+      [0, (trackWSV.value / 3) * 0.5],
+      [primaryColor, mutedColor],
+    ),
+  }));
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: thumbX.value - thumbW / 2 },
+      { scale: scale.value },
+    ],
+  }));
+
+  return (
+    <View
+      style={[st.modeSliderTrack]}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        setTrackW(w);
+        trackWSV.value = Math.max(1, w);
+        setThumbW(Math.round(w / 3 - 8));
+      }}
+    >
+      <GestureDetector gesture={gesture}>
+        <View style={st.modeSliderSegs}>
+          {SEG_LABEL_KEYS.map((key, i) => (
+            <View key={key} style={[st.modeSliderSeg, { width: segW }]}>
+              <Animated.Text
+                style={[st.modeSliderLabel, [kLabelStyle, sLabelStyle, lLabelStyle][i]]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
+              >
+                {t(key)}
+              </Animated.Text>
+            </View>
+          ))}
+          <Animated.View style={[st.modeSliderThumb, thumbStyle, { width: thumbW, height: 36 }]} />
+        </View>
+      </GestureDetector>
+    </View>
+  );
+}
 
 interface ChatInputProps {
   onSend: (
@@ -63,10 +220,7 @@ const SINGLE_LINE_INPUT_HEIGHT = 46;
 const MAX_INPUT_HEIGHT = 112;
 const INPUT_PADDING_VERTICAL = 16;
 /** 展开行程(上层上移距离;下层随之被"拉长",动态跟随所以行程可独立取值) */
-const EXPAND_H = 116;
 const PULL_T = { duration: 200, easing: Easing.out(Easing.cubic) };
-/** Tri-state chat mode cycle — starts on Knowledge-Only (K-O), the default mode. */
-const CHAT_MODE_CYCLE: AIChatMode[] = ["knowledge", "standard", "lite"];
 
 export function ChatInput({
   onSend,
@@ -112,6 +266,8 @@ export function ChatInput({
   const [rigH, setRigH] = useState(150);
   // worklet 镜像:展开距离 = rig 高一半
   const rigSV = useSharedValue(150);
+  /** 展开行程 = 工具面板(onLayout)实测内容高度,替代固定常量 */
+  const expandSV = useSharedValue(150);
   // 键盘"新弹出"边沿 → 下层自动收回(键盘优先,组合体已被键盘顶起;仅边沿触发,
   // 避免展开拖拽中(键盘已可见)被自己的 effect 抢收)
   const prevKeyboardVisible = useRef(false);
@@ -140,11 +296,11 @@ export function ChatInput({
         startLift.value = lift.value;
       })
       .onUpdate((e) => {
-        lift.value = Math.max(-EXPAND_H, Math.min(0, startLift.value + e.translationY));
+        lift.value = Math.max(-expandSV.value, Math.min(0, startLift.value + e.translationY));
       })
       .onEnd((e) => {
-        const open = lift.value < -EXPAND_H * 0.5 || e.velocityY < -400;
-        const target = open ? -EXPAND_H : 0;
+        const open = lift.value < -expandSV.value * 0.5 || e.velocityY < -400;
+        const target = open ? -expandSV.value : 0;
         lift.value = withTiming(target, PULL_T);
         runOnJS(setExpanded)(open);
       }),
@@ -169,15 +325,6 @@ export function ChatInput({
   const updateAIConfig = useSettingsStore((st) => st.updateAIConfig);
   const spoilerFree = aiConfig.spoilerFree[variant];
   const chatMode = aiConfig.chatMode ?? "knowledge";
-  // The mode button shows the CURRENT mode (tri-state cycle). K-O and Lite get the
-  // active highlight; Standard stays plain, matching the previous default look.
-  const chatModeActive = chatMode !== "standard";
-  const chatModeLabel =
-    chatMode === "knowledge"
-      ? t("chatModeKnowledge", "K-O")
-      : chatMode === "lite"
-        ? t("chatModeLite", "Lite")
-        : t("chatModeStandard", "Standard");
 
   // onNotice 用 ref 保最新(回调常读,避免闭包过期)
   const onNoticeRef = useRef<((text: string) => void) | undefined>(undefined);
@@ -192,17 +339,21 @@ export function ChatInput({
     }
   }, [aiConfig.spoilerFree, variant, updateAIConfig, spoilerFree, t]);
 
-  const handleToggleChatMode = useCallback(() => {
-    const next = CHAT_MODE_CYCLE[(CHAT_MODE_CYCLE.indexOf(chatMode) + 1) % CHAT_MODE_CYCLE.length];
-    updateAIConfig({ chatMode: next });
-    const hint =
-      next === "knowledge"
-        ? t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")
-        : next === "lite"
-          ? t("chatModeLiteHint", "快速直连模式")
-          : t("chatModeStandardHint", "标准模式:完整功能对话(默认)");
-    onNoticeRef.current?.(hint);
-  }, [chatMode, updateAIConfig, t]);
+  // 模式切换(ModeSlider 回调):写配置 + 弹对应提示
+  const handleModeChange = useCallback(
+    (next: AIChatMode) => {
+      if (next === chatMode) return;
+      updateAIConfig({ chatMode: next });
+      const hint =
+        next === "knowledge"
+          ? t("chatModeKnowledgeHint", "Knowledge-Only: 基于模型知识回答,不检索原文")
+          : next === "lite"
+            ? t("chatModeLiteHint", "快速直连模式")
+            : t("chatModeStandardHint", "标准模式:完整功能对话(默认)");
+      onNoticeRef.current?.(hint);
+    },
+    [chatMode, updateAIConfig, t],
+  );
   const toggleDeepThinking = useCallback(() => {
     setDeepThinking((prev) => {
       const next = !prev;
@@ -273,23 +424,17 @@ export function ChatInput({
         <Animated.View
           style={[s.toolArea, toolStyle]}
           pointerEvents={expanded ? "auto" : "none"}
+          onLayout={(e) => {
+            // 样式一致性:面板内容高度 = 展开行程(替代常量 116)
+            expandSV.value = Math.max(96, Math.round(e.nativeEvent.layout.height));
+          }}
         >
-          {/* 布局(用户 2026-08-31):左列=模式切换/工具,右列=深度思考/防剧透,一行两列 */}
+          {/* 行1:模式切换滑动开关(全宽) */}
+          <ModeSlider mode={chatMode} onChange={handleModeChange} />
+
+          {/* 行2:工具(左) · 深度思考(右,钉死) */}
           <View style={s.toggleRowBetween}>
-            <TouchableOpacity
-              style={[s.deepThinkBtn, chatModeActive && s.deepThinkBtnActive]}
-              onPress={handleToggleChatMode}
-              activeOpacity={0.7}
-              accessibilityLabel={chatModeLabel}
-            >
-              <SparklesIcon
-                size={13}
-                color={chatModeActive ? colors.primary : colors.mutedForeground}
-              />
-              <Text style={[s.deepThinkText, chatModeActive && s.deepThinkTextActive]}>
-                {chatModeLabel}
-              </Text>
-            </TouchableOpacity>
+            <ToolPrefsMenu chatMode={chatMode} />
 
             <TouchableOpacity
               style={[s.deepThinkBtn, s.pushedRight, deepThinking && s.deepThinkBtnActive]}
@@ -302,8 +447,10 @@ export function ChatInput({
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* 行3:[空占位] · 防剧透(右,钉死)——左列不齐时右列稳定 */}
           <View style={s.toggleRowBetween}>
-            <ToolPrefsMenu chatMode={chatMode} />
+            <View style={{ width: 1, height: 1 }} />
 
             <TouchableOpacity
               style={[s.deepThinkBtn, s.pushedRight, spoilerFree && s.deepThinkBtnActive]}
@@ -473,6 +620,42 @@ const makeStyles = (colors: ThemeColors) =>
     /* 右列钉死右侧:即便左列(工具)缺失也稳定右对齐,不跳位 */
     pushedRight: {
       marginLeft: "auto",
+    },
+    /* 模式切换滑条 */
+    modeSliderTrack: {
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: withOpacity(colors.muted, 0.6),
+      padding: 4,
+      overflow: "hidden",
+    },
+    modeSliderSegs: {
+      flexDirection: "row",
+      height: 36,
+      position: "relative",
+    },
+    modeSliderSeg: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    modeSliderLabel: {
+      fontSize: fs.xs,
+      fontWeight: fontWeight.medium,
+    },
+    modeSliderThumb: {
+      position: "absolute",
+      left: 0,
+      top: 0,
+      borderRadius: 999,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 3,
+      elevation: 3,
     },
     /* 顶边拖动手柄:热区横贯整卡,视觉为中央小圆角条 */
     dragSlot: {
