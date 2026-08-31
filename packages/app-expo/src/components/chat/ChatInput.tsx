@@ -74,17 +74,17 @@ function ModeSlider({
 
   const segW = trackW / 3;
 
-  // 结构修复(用户 2026-08-31 拍板):
-  // - 手指按下**不瞬移** thumb(点击时滑块保持不动,松手由 Tap 判定后一次到位)
-  // - pan/tap 都只"播下目标段",吸附+切换由**单一 reaction** 执行(一个事实源)
+  // 证据驱动重写(用户 2026-08-31 拍板):
+  // - 日志证实 Tap 从未赢过(Race 无意义),Pan 点击/拖动每次都会 ended → 单 Pan 二合一
+  // - 段计算用手指终位 e.x(点击/拖动都准)
+  // - 吸附与切换解耦:reaction 无条件弹簧吸附,仅"段变了"才回调(onChange)
   const pendingIdx = useSharedValue(-1);
-  const logEvt = useCallback((tag: string, val: number) => {
-    console.log(`[ModeSlider] ${tag}=${val}`);
+  // 稳定 JS 函数(传入 worklet 的只能是不变引用,不用 ref 对象)
+  const logEvt = useCallback((tag: string, ...vals: number[]) => {
+    console.log(`[ModeSlider] ${tag}=${vals.join(",")}`);
   }, []);
-  const logRef = useRef(logEvt);
-  logRef.current = logEvt;
 
-  const panGesture = useRef(
+  const gesture = useRef(
     Gesture.Pan()
       .activeOffsetX([-8, 8])
       .failOffsetY([-16, 16])
@@ -96,41 +96,27 @@ function ModeSlider({
       })
       .onUpdate((e) => {
         const t = trackWSV.value;
-        const w = Math.max(1, t / 3 - 8);
+        const w = Math.max(1, t / 3 - 6);
         const half = w / 2;
         thumbX.value = Math.min(t - half, Math.max(half, startX.value + e.translationX));
       })
-      .onEnd(() => {
-        scale.value = withSpring(1, PRESS_SPRING);
-        const segWv = trackWSV.value / 3;
-        const i = Math.min(2, Math.max(0, Math.round((thumbX.value - segWv / 2) / segWv)));
-        pendingIdx.value = i;
-        runOnJS(logRef.current)("panEnd", i);
-      }),
-  ).current;
-
-  const tapGesture = useRef(
-    Gesture.Tap()
-      .maxDistance(8)
       .onEnd((e) => {
         scale.value = withSpring(1, PRESS_SPRING);
         const segWv = trackWSV.value / 3;
         const i = Math.min(2, Math.max(0, Math.round((e.x - segWv / 2) / segWv)));
+        // 吸附必须每次松手都执行(同段松手也回中:reaction 只随"值变化"跑,靠不住)
+        thumbX.value = withSpring((i + 0.5) * segWv, SLIDE_SPRING);
         pendingIdx.value = i;
-        runOnJS(logRef.current)("tapEnd", i);
+        runOnJS(logEvt)("panEnd", i, Math.round(e.x), Math.round(thumbX.value));
       }),
   ).current;
 
-  const gesture = useRef(Gesture.Race(panGesture, tapGesture)).current;
-
-  // 单一吸附事实源:谁播下目标,谁就由此执行弹簧 + 切换(同值不重复触发)
+  // 切换回调(吸附已在 onEnd;这里只做"段变化时切换一次")
   useAnimatedReaction(
     () => pendingIdx.value,
     (next, prev) => {
       if (next < 0 || next === prev) return;
-      const segWv = trackWSV.value / 3;
-      thumbX.value = withSpring((next + 0.5) * segWv, SLIDE_SPRING);
-      runOnJS(logRef.current)("apply", next);
+      runOnJS(logEvt)("apply", next);
       runOnJS(onChange)(MODES[next]);
     },
   );
@@ -190,7 +176,7 @@ function ModeSlider({
               </Animated.Text>
             </View>
           ))}
-          <Animated.View style={[st.modeSliderThumb, thumbStyle, { width: thumbW, height: 36 }]} />
+          <Animated.View style={[st.modeSliderThumb, thumbStyle, { width: thumbW, height: 24 }]} />
         </View>
       </GestureDetector>
     </View>
@@ -429,12 +415,9 @@ export function ChatInput({
             expandSV.value = Math.max(96, Math.round(e.nativeEvent.layout.height));
           }}
         >
-          {/* 行1:模式切换滑动开关(全宽) */}
-          <ModeSlider mode={chatMode} onChange={handleModeChange} />
-
-          {/* 行2:工具(左) · 深度思考(右,钉死) */}
+          {/* 行1:[模式滑条(左)] · 深度思考(右,钉死) */}
           <View style={s.toggleRowBetween}>
-            <ToolPrefsMenu chatMode={chatMode} />
+            <ModeSlider mode={chatMode} onChange={handleModeChange} />
 
             <TouchableOpacity
               style={[s.deepThinkBtn, s.pushedRight, deepThinking && s.deepThinkBtnActive]}
@@ -448,9 +431,9 @@ export function ChatInput({
             </TouchableOpacity>
           </View>
 
-          {/* 行3:[空占位] · 防剧透(右,钉死)——左列不齐时右列稳定 */}
+          {/* 行2:工具(左) · 防剧透(右,钉死) */}
           <View style={s.toggleRowBetween}>
-            <View style={{ width: 1, height: 1 }} />
+            <ToolPrefsMenu chatMode={chatMode} />
 
             <TouchableOpacity
               style={[s.deepThinkBtn, s.pushedRight, spoilerFree && s.deepThinkBtnActive]}
@@ -621,18 +604,20 @@ const makeStyles = (colors: ThemeColors) =>
     pushedRight: {
       marginLeft: "auto",
     },
-    /* 模式切换滑条 */
+    /* 模式切换滑条(缩小版:宽 190 左对齐,轨道高 30,同比例) */
     modeSliderTrack: {
+      width: 190,
+      alignSelf: "flex-start",
       borderRadius: 999,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: withOpacity(colors.muted, 0.6),
-      padding: 4,
+      padding: 3,
       overflow: "hidden",
     },
     modeSliderSegs: {
       flexDirection: "row",
-      height: 36,
+      height: 24,
       position: "relative",
     },
     modeSliderSeg: {
