@@ -268,7 +268,6 @@ export function ChatInput({
    * 展开距离 = 下层卡自身高 = rig/2 —— 拉满恰好全露出,零空带 */
   const lift = useSharedValue(0);
   const startLift = useSharedValue(0);
-  const [rigH, setRigH] = useState(150);
   // worklet 镜像:展开距离 = rig 高一半
   const rigSV = useSharedValue(150);
   /** 展开行程 = 工具面板(onLayout)实测内容高度,替代固定常量 */
@@ -319,10 +318,6 @@ export function ChatInput({
   const panelStyle = useAnimatedStyle(() => ({
     top: rigSV.value / 2 + lift.value,
   }));
-  // 工具行固定(2026-08-31 用户):不再随 lift 运动,锚点 = 上层完全拉开后的下边线。
-  // JS 固定值:top = rigH - expandH(行程=工具行实测高度,自洽:收起时被输入卡盖住,
-  // 拉满时下层底边恰好与工具顶对接)。运动量:行高来自 onLayout 同步的 expandH state。
-  const [expandH, setExpandH] = useState(150);
 
   // 防剧透开关按聊天上下文(general/book)持久记忆,发送后不重置(移植自桌面 ea0bd55)
   const aiConfig = useSettingsStore((st) => st.aiConfig);
@@ -422,17 +417,14 @@ export function ChatInput({
       <View style={s.rig}>
         {/* 下层功能卡:底边=盒底(静态);上边缘=上层实时中心线(动态跟随 lift)——
             初始与上层下半叠合被盖;拖动时上边缘随上层中线爬升,下层被"拉长"露出 */}
-        <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="none" />
-
-        {/* 工具行(独立层):锚点=上层卡上边缘(动态 lift 同步);悬于上层卡之上 */}
+        {/* 下层卡(含工具行,压缩式):工具行=卡内容,底部排布(flex-end),被卡壳圆角裁剪;
+            行程=工具行自然高(onLayout)——上层最大移动=工具块高,分毫不差 */}
+        <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="auto">
         <Animated.View
-          style={[s.toolArea, { top: rigH - expandH }]}
-          pointerEvents={expanded ? "auto" : "none"}
+          style={s.toolArea}
           onLayout={(e) => {
-            // 样式一致性:面板内容高度 = 展开行程(替代常量 116)
-            const ph = Math.max(96, Math.round(e.nativeEvent.layout.height));
-            expandSV.value = ph;
-            setExpandH(ph);
+            const ph = Math.round(e.nativeEvent.layout.height);
+            expandSV.value = Math.max(96, ph);
           }}
         >
           {/* 行1:[模式滑条(左)] · 深度思考(右,钉死) */}
@@ -467,13 +459,13 @@ export function ChatInput({
             </TouchableOpacity>
           </View>
         </Animated.View>
+        </Animated.View>
 
         {/* 上层输入卡(唯一运动层):拖动经卡顶小手柄;下层完全安静,上层移开后露出它 */}
         <Animated.View
           style={[comboStyle, s.combo]}
           onLayout={(e) => {
             const h = Math.round(e.nativeEvent.layout.height);
-            setRigH(h);
             rigSV.value = Math.max(1, h);
           }}
         >
@@ -587,12 +579,15 @@ const makeStyles = (colors: ThemeColors) =>
     /* 下层功能卡:显示区以上层(输入卡)下边线为界——top:100% 紧贴上卡底边,
        顶边不收圆角(直边),被盖住区零内容(无上移穿透);露出部分=左右直边+大圆角底边 */
     /* 下层卡体(仅背景/直边/圆角;上边缘为动画值 rig/2+lift) */
+    /* 下层卡:卡壳(直边动画)+ 工具行内容(压缩式,flex-end 压底);overflow 裁圆角 */
     layerPanel: {
       position: "absolute",
       zIndex: 0,
       left: 0,
       right: 0,
       bottom: 0, // 下层下边 = 上层下边初始位置(静态端点;上边缘为动画值 rig/2+lift)
+      overflow: "hidden",
+      justifyContent: "flex-end",
       borderTopWidth: 0,
       borderLeftWidth: 1,
       borderRightWidth: 1,
@@ -601,19 +596,11 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.card,
       borderBottomLeftRadius: 32,
       borderBottomRightRadius: 32,
-      paddingTop: 14,
-      paddingBottom: 14,
-      paddingHorizontal: 12,
-      gap: 8,
     },
     /* 工具行(独立层):锚点=上层卡上边缘(动画 top 与 lift 同步),悬于上层之上 */
+    /* 工具行(压缩式):卡壳内 flow 内容,底部排布;无独立留白,paddingH=与上层文字对齐 */
     toolArea: {
-      position: "absolute",
-      zIndex: 0, // 与下层卡壳同级:输入卡(combo z1)盖住它——合拢时工具行被完全覆盖
-      left: 0,
-      right: 0,
       paddingHorizontal: 12,
-      paddingTop: 14,
       gap: 8,
     },
     toggleRowBetween: {
