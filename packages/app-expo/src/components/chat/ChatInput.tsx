@@ -315,6 +315,8 @@ export function ChatInput({
   const comboStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: lift.value }],
   }));
+  // 下层卡:实体大卡,顶=上层卡当前中线(rigSV/2+lift)——下层卡面穿伸到上层中心,
+  // 上层两个下圆角"坐"在下层卡面上(弧外三角区域=下层卡面实体,非页面背景)
   const panelStyle = useAnimatedStyle(() => ({
     top: rigSV.value / 2 + lift.value,
   }));
@@ -417,14 +419,14 @@ export function ChatInput({
       <View style={s.rig}>
         {/* 下层功能卡:底边=盒底(静态);上边缘=上层实时中心线(动态跟随 lift)——
             初始与上层下半叠合被盖;拖动时上边缘随上层中线爬升,下层被"拉长"露出 */}
-        {/* 下层卡(含工具行,压缩式):工具行=卡内容,底部排布(flex-end),被卡壳圆角裁剪;
-            行程=工具行自然高(onLayout)——上层最大移动=工具块高,分毫不差 */}
+        {/* 下层卡(实体大卡:顶=上层当前中线,卡面连续,工具区在卡底;只有两层,无独立延伸带) */}
         <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="auto">
         <Animated.View
           style={s.toolArea}
           onLayout={(e) => {
             const ph = Math.round(e.nativeEvent.layout.height);
-            expandSV.value = Math.max(96, ph);
+            expandSV.value = Math.max(8, ph); // 行程=工具区真实高(之前 96 兜底虚增 25px)
+            console.log(`[ChatInput] toolH=${ph} expandSV=${Math.max(8, ph)} rigSV=${rigSV.value}`);
           }}
         >
           {/* 行1:[模式滑条(左)] · 深度思考(右,钉死) */}
@@ -467,6 +469,7 @@ export function ChatInput({
           onLayout={(e) => {
             const h = Math.round(e.nativeEvent.layout.height);
             rigSV.value = Math.max(1, h);
+            console.log(`[ChatInput] comboH=${h}`);
           }}
         >
         <View style={s.container}>
@@ -579,7 +582,7 @@ const makeStyles = (colors: ThemeColors) =>
     /* 下层功能卡:显示区以上层(输入卡)下边线为界——top:100% 紧贴上卡底边,
        顶边不收圆角(直边),被盖住区零内容(无上移穿透);露出部分=左右直边+大圆角底边 */
     /* 下层卡体(仅背景/直边/圆角;上边缘为动画值 rig/2+lift) */
-    /* 下层卡:卡壳(直边动画)+ 工具行内容(压缩式,flex-end 压底);overflow 裁圆角 */
+    /* 下层卡:实体大卡(顶动画=上层中线;卡面连续至屏底;工具区 flex-end 压底) */
     layerPanel: {
       position: "absolute",
       zIndex: 0,
@@ -598,9 +601,12 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomRightRadius: 32,
     },
     /* 工具行(独立层):锚点=上层卡上边缘(动画 top 与 lift 同步),悬于上层之上 */
-    /* 工具行(压缩式):卡壳内 flow 内容,底部排布;无独立留白,paddingH=与上层文字对齐 */
+    /* 工具行(压缩式):卡壳内 flow 内容,底部排布;上下各留 7px(用户 2026-09-01)
+       距壳边/上层底边一点呼吸空间;行程=实测高(含 7+7)自动对齐 */
     toolArea: {
       paddingHorizontal: 12,
+      paddingTop: 7,
+      paddingBottom: 7,
       gap: 8,
     },
     toggleRowBetween: {
