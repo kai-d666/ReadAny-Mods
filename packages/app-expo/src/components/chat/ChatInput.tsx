@@ -36,9 +36,10 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-const MODE_IDX: Record<AIChatMode, number> = { knowledge: 0, standard: 1, lite: 2 };
-const MODES: AIChatMode[] = ["knowledge", "standard", "lite"];
-const SEG_LABEL_KEYS = ["chatModeKnowledge", "chatModeStandard", "chatModeLite"] as const;
+/** 段顺序(左→右):标准 / Lite / K-O(用户 2026-08-31) */
+const MODE_IDX: Record<AIChatMode, number> = { standard: 0, lite: 1, knowledge: 2 };
+const MODES: AIChatMode[] = ["standard", "lite", "knowledge"];
+const SEG_LABEL_KEYS = ["chatModeStandard", "chatModeLite", "chatModeKnowledge"] as const;
 /** 滑块弹簧(带微过冲);按压缩放弹簧 */
 const SLIDE_SPRING = { damping: 14, stiffness: 200, mass: 0.5 };
 const PRESS_SPRING = { damping: 12, stiffness: 180, mass: 0.6 };
@@ -157,16 +158,17 @@ function ModeSlider({
     <View
       style={[st.modeSliderTrack]}
       onLayout={(e) => {
-        const w = Math.round(e.nativeEvent.layout.width);
-        setTrackW(w);
-        trackWSV.value = Math.max(1, w);
-        setThumbW(Math.round(w / 3 - 8));
+        // 统一用"内容区宽"(外宽-边框2-内边距6):段以 flex 均分,thumb 同基准
+        const inner = Math.round(e.nativeEvent.layout.width) - 8;
+        setTrackW(inner);
+        trackWSV.value = Math.max(1, inner);
+        setThumbW(Math.round(inner / 3 - 6));
       }}
     >
       <GestureDetector gesture={gesture}>
         <View style={st.modeSliderSegs}>
           {SEG_LABEL_KEYS.map((key, i) => (
-            <View key={key} style={[st.modeSliderSeg, { width: segW }]}>
+            <View key={key} style={[st.modeSliderSeg, { flex: 1 }]}>
               <Animated.Text
                 style={[st.modeSliderLabel, [kLabelStyle, sLabelStyle, lLabelStyle][i]]}
                 numberOfLines={1}
