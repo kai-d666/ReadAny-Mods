@@ -319,11 +319,10 @@ export function ChatInput({
   const panelStyle = useAnimatedStyle(() => ({
     top: rigSV.value / 2 + lift.value,
   }));
-  // 工具行锚点=上层卡下边缘(动态):top = rigH + lift(与 combo 底边同步);
-  // 初始(rigH,屏底之下)被 wrapper 裁剪不可见;拖动时随上层底边一起拉出
-  const toolStyle = useAnimatedStyle(() => ({
-    top: rigSV.value + lift.value,
-  }));
+  // 工具行固定(2026-08-31 用户):不再随 lift 运动,锚点 = 上层完全拉开后的下边线。
+  // JS 固定值:top = rigH - expandH(行程=工具行实测高度,自洽:收起时被输入卡盖住,
+  // 拉满时下层底边恰好与工具顶对接)。运动量:行高来自 onLayout 同步的 expandH state。
+  const [expandH, setExpandH] = useState(150);
 
   // 防剧透开关按聊天上下文(general/book)持久记忆,发送后不重置(移植自桌面 ea0bd55)
   const aiConfig = useSettingsStore((st) => st.aiConfig);
@@ -427,11 +426,13 @@ export function ChatInput({
 
         {/* 工具行(独立层):锚点=上层卡上边缘(动态 lift 同步);悬于上层卡之上 */}
         <Animated.View
-          style={[s.toolArea, toolStyle]}
+          style={[s.toolArea, { top: rigH - expandH }]}
           pointerEvents={expanded ? "auto" : "none"}
           onLayout={(e) => {
             // 样式一致性:面板内容高度 = 展开行程(替代常量 116)
-            expandSV.value = Math.max(96, Math.round(e.nativeEvent.layout.height));
+            const ph = Math.max(96, Math.round(e.nativeEvent.layout.height));
+            expandSV.value = ph;
+            setExpandH(ph);
           }}
         >
           {/* 行1:[模式滑条(左)] · 深度思考(右,钉死) */}
@@ -608,7 +609,7 @@ const makeStyles = (colors: ThemeColors) =>
     /* 工具行(独立层):锚点=上层卡上边缘(动画 top 与 lift 同步),悬于上层之上 */
     toolArea: {
       position: "absolute",
-      zIndex: 2,
+      zIndex: 0, // 与下层卡壳同级:输入卡(combo z1)盖住它——合拢时工具行被完全覆盖
       left: 0,
       right: 0,
       paddingHorizontal: 12,
