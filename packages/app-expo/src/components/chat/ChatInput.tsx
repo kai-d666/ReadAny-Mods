@@ -85,14 +85,18 @@ function ModeSlider({
     console.log(`[ModeSlider] ${tag}=${vals.join(",")}`);
   }, []);
 
+  // 点击检测(RNGH 低阶 onTouchesUp 在未激活松手也触发;激活标志区分:拖动走 onEnd,点击走 touchesUp)
+  const everActivated = useSharedValue(false);
   const gesture = useRef(
     Gesture.Pan()
       .activeOffsetX([-8, 8])
       .failOffsetY([-16, 16])
       .onTouchesDown(() => {
+        everActivated.value = false;
         scale.value = withSpring(1.06, PRESS_SPRING);
       })
       .onStart(() => {
+        everActivated.value = true;
         startX.value = thumbX.value;
       })
       .onUpdate((e) => {
@@ -109,6 +113,19 @@ function ModeSlider({
         thumbX.value = withSpring((i + 0.5) * segWv, SLIDE_SPRING);
         pendingIdx.value = i;
         runOnJS(logEvt)("panEnd", i, Math.round(e.x), Math.round(thumbX.value));
+      })
+      .onTouchesUp((e) => {
+        if (everActivated.value) return; // 拖动已由 onEnd 处理
+        const tt = e.changedTouches[0] ?? e.allTouches?.[0];
+        scale.value = withSpring(1, PRESS_SPRING);
+        const segWv = trackWSV.value / 3;
+        const i = Math.min(
+          2,
+          Math.max(0, Math.round(((tt ? tt.x : 0) - segWv / 2) / segWv)),
+        );
+        thumbX.value = withSpring((i + 0.5) * segWv, SLIDE_SPRING);
+        pendingIdx.value = i;
+        runOnJS(logEvt)("tap", i, tt ? Math.round(tt.x) : -1);
       }),
   ).current;
 
