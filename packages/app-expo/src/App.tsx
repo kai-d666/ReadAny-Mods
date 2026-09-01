@@ -54,7 +54,7 @@ import TrackPlayer, {
 import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { UpdateDialog } from "@/components/update/UpdateDialog";
 import { useUpdateChecker } from "@/hooks/use-update-checker";
-import { navigate, navigationRef } from "@/lib/navigationRef";
+import { navigationRef } from "@/lib/navigationRef";
 import { ReaderSearchSession } from "@/lib/rag/reader-search-session";
 import { preloadReaderHtmlAsset } from "@/lib/reader/reader-html-asset";
 import { ExpoPlatformService } from "@/lib/platform/expo-platform-service";
@@ -62,7 +62,6 @@ import { subscribeRagSearchConfiguration } from "@/lib/rag/configure-search";
 import { MobileSyncAdapter } from "@/lib/sync/sync-adapter-mobile";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { useLibraryStore } from "@/stores/library-store";
-import { useResumeStore } from "@/stores/resume-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { ThemeProvider, useTheme } from "@/styles/ThemeContext";
 import { useAutoSync } from "@readany/core/hooks/use-auto-sync";
@@ -313,30 +312,6 @@ function AppInner() {
   useUpdateChecker();
   useAutoSync(loadBooks);
 
-  // 启动恢复:最后一次退出在阅读器内 → 冷启动直接回到阅读页
-  //(进度位置由 ReaderScreen 从 DB 恢复,与"点书"路径一致,无需存 cfi)
-  const handleNavReady = useCallback(() => {
-    const tryResume = (attempt: number) => {
-      const resume = useResumeStore.getState();
-      if (!resume._hasHydrated) {
-        // 持久化尚未读完,最多等 ~5s(onboard 标记毫秒级,一般 1 次即过)
-        if (attempt < 25) setTimeout(() => tryResume(attempt + 1), 200);
-        return;
-      }
-      if (!useSettingsStore.getState().hasCompletedOnboarding) return;
-      const bookId = resume.activeReaderBookId;
-      if (!bookId) return;
-      // 等书库加载完成:loadBooks 由 AppInner 异步触发,onReady 时刻它还没跑完,
-      // 此时 navigate 会让 ReaderScreen 查不到书 → "书籍未找到"必须手点重试
-      if (!useLibraryStore.getState().isLoaded) {
-        if (attempt < 50) setTimeout(() => tryResume(attempt + 1), 200);
-        return;
-      }
-      navigate("Reader", { bookId });
-    };
-    tryResume(0);
-  }, []);
-
   const navTheme = useMemo(
     () => ({
       ...(isDark ? DarkTheme : DefaultTheme),
@@ -356,7 +331,7 @@ function AppInner() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardProvider>
         <SafeAreaProvider>
-          <NavigationContainer theme={navTheme} ref={navigationRef} onReady={handleNavReady}>
+          <NavigationContainer theme={navTheme} ref={navigationRef}>
             <StatusBar style={mode === "dark" ? "light" : "dark"} />
             <RootNavigator />
           </NavigationContainer>

@@ -51,7 +51,8 @@ import { useChapterTranslation } from "@readany/core/hooks";
 import { useReadingSession } from "@readany/core/hooks/use-reading-session";
 import { getPlatformService } from "@readany/core/services";
 import { getCSSFontFace, useFontStore } from "@readany/core/stores";
-import type { ReadSettings, TOCItem } from "@readany/core/types";
+import type { Book, ReadSettings, TOCItem } from "@readany/core/types";
+import { getBook } from "@readany/core/db/database";
 import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
 import * as DocumentPicker from "expo-document-picker";
@@ -414,7 +415,28 @@ export function ReaderScreen({ route, navigation }: Props) {
     highlights,
     removeBookmark,
   } = useAnnotationStore();
-  const book = useMemo(() => books.find((b) => b.id === bookId), [books, bookId]);
+  // book 优先取 store(实时进度/删除标记);启动恢复直达时书库可能尚未加载,
+  // store 未命中则从 DB 一次性兜底(加载完成后 store 出现,自动切换回 store)
+  const storeBook = useMemo(() => books.find((b) => b.id === bookId), [books, bookId]);
+  const [dbBook, setDbBook] = useState<Book | null>(null);
+  useEffect(() => {
+    if (storeBook) {
+      setDbBook(null);
+      return;
+    }
+    let stale = false;
+    getBook(bookId, { includeDeleted: true })
+      .then((b) => {
+        if (!stale) setDbBook(b ?? null);
+      })
+      .catch(() => {
+        if (!stale) setDbBook(null);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [bookId, storeBook]);
+  const book = storeBook ?? dbBook;
 
   // ── System info (clock/battery/statusBar/SafeArea) ─────────────────────────
   const { readerClock, batteryLevel, isBatteryCharging, stableTopInset, insets } =
@@ -1196,6 +1218,8 @@ export function ReaderScreen({ route, navigation }: Props) {
       setLoading(false);
       return;
     }
+    // book 从"无料"变"有"(书库异步加载完成/或 DB 兜底到达),清除"未找到"错误
+    setError(null);
     setBookTitle(book.meta.title);
     updateBook(bookId, { lastOpenedAt: Date.now() });
     loadAnnotations(bookId);
@@ -1203,7 +1227,9 @@ export function ReaderScreen({ route, navigation }: Props) {
     return () => {
       readingContextService.clearContext();
     };
-  }, [bookId]);
+    // 依赖 Boolean(book):只在"无→有/有→无"边界重跑。直接依赖 book 会因
+    // updateBook 更新 books 数组形成循环(新引用→重跑→再写)
+  }, [bookId, Boolean(book)]);
 
   useEffect(() => {
     return eventBus.on("sync:completed", () => {

@@ -20,6 +20,10 @@ import TTSSettingsScreen from "@/screens/settings/TTSSettingsScreen";
 import TranslationSettingsScreen from "@/screens/settings/TranslationSettingsScreen";
 import VectorModelSettingsScreen from "@/screens/settings/VectorModelSettingsScreen";
 import { useSettingsStore } from "@/stores";
+import { useResumeStore } from "@/stores/resume-store";
+import { useLibraryStore } from "@/stores/library-store";
+import { useState } from "react";
+import { StyleSheet, View } from "react-native";
 /**
  * RootNavigator — top-level stack matching Tauri mobile App.tsx routes exactly.
  */
@@ -53,16 +57,39 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+// 进程内只消费一次:RootNavigator(如 hot reload/二次挂载)重渲染时不再重复"直达书内"
+let resumeInitialBook: string | null = null;
+
 export function RootNavigator() {
   const { hasCompletedOnboarding, _hasHydrated } = useSettingsStore();
+  const resumeHydrated = useResumeStore((s) => s._hasHydrated);
+  const resumeBookId = useResumeStore((s) => s.activeReaderBookId);
 
   const showOnboarding = !hasCompletedOnboarding && _hasHydrated;
 
-  if (!_hasHydrated) return null;
+  // 启动恢复 = 初始路由直接进阅读器(与静读天下"一下到书内"同构:
+  // 无主页闪现/无二跳;恢复的书不存在时 ReaderScreen 走既有"书籍未找到"兜底)
+  const [initialResumeBook] = useState(() => {
+    if (resumeInitialBook) return resumeInitialBook;
+    const bookId = useResumeStore.getState().activeReaderBookId;
+    if (bookId) resumeInitialBook = bookId;
+    return bookId ?? null;
+  });
+  // 门禁只等持久化(settings/resume,毫秒级)。⚠️ 切勿等书库 isLoaded:
+  // loadBooks 由 LibraryScreen mount 触发,先等它再渲染导航 = 鸡生蛋死锁。
+  // 恢复直达时书库未加载的问题由 ReaderScreen 的 DB 兜底查书解决。
+  if (!_hasHydrated || !resumeHydrated) {
+    return <View style={s.bootstrapBg} />;
+  }
 
   return (
     <>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{ headerShown: false }}
+        initialRouteName={
+          showOnboarding ? "Onboarding" : initialResumeBook ? "Reader" : "Tabs"
+        }
+      >
         {showOnboarding ? (
           <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
         ) : (
@@ -76,6 +103,7 @@ export function RootNavigator() {
             <Stack.Screen
               name="Reader"
               component={ReaderScreen}
+              initialParams={initialResumeBook ? { bookId: initialResumeBook } : undefined}
               options={{ animation: "slide_from_right" }}
             />
             <Stack.Screen
@@ -142,3 +170,8 @@ export function RootNavigator() {
     </>
   );
 }
+
+const s = StyleSheet.create({
+  /** 门禁等待占位:与原生 splash/AnimatedSplash 同色,避免露出主题背景 */
+  bootstrapBg: { flex: 1, backgroundColor: "#05042B" },
+});
