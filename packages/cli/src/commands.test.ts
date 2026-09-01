@@ -6,6 +6,7 @@ import {
   mkdir,
   readFile,
   readlink,
+  rm,
   symlink,
   truncate,
   writeFile,
@@ -14,7 +15,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { buildStoreOnlyZip, type ZipEntry } from "@readany/core/utils/store-only-zip";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+
+// mkdtemp 工作区收集:每个用例结束后删除,避免孤儿目录留在 %TEMP%
+const workspaceRoots = new Set<string>();
+afterEach(async () => {
+  for (const root of workspaceRoots) {
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+  }
+  workspaceRoots.clear();
+});
 import { getAuditLogFilePath } from "./audit-log.js";
 import { parseCommand, runCommand } from "./commands.js";
 import { ensureCoreInitialized, resetCoreForTests } from "./data.js";
@@ -104,6 +114,7 @@ function buildSimplePdf(pages: string[]): Uint8Array {
 
 async function createWorkspace() {
   const root = await mkdtemp(join(tmpdir(), "readany-cli-workspace-"));
+  workspaceRoots.add(root);
   const dataRoot = join(root, "library");
   const appRoot = join(root, "app-data");
   const skillsDir = join(root, "agent", "skills", "readany");
@@ -2961,7 +2972,9 @@ describe("commands", () => {
     await mkdir(auditLogDir, { recursive: true });
     const auditPath = getAuditLogFilePath(auditLogDir, "2026-07-06T00:00:00.000Z");
     await writeFile(auditPath, "", "utf8");
-    await truncate(auditPath, 3 * 1024 * 1024 * 1024);
+    // 64MB 已远超 16MB 读取保护阈值;勿用 GB 级长度——POSIX truncate 是稀疏的,
+    // Windows 上会真实分配等量空间(2026-09-01 实测 3GB 零填充文件吃爆 C 盘)
+    await truncate(auditPath, 64 * 1024 * 1024);
     await appendFile(
       auditPath,
       `\n${JSON.stringify({
