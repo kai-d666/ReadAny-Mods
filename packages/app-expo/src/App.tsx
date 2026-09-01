@@ -54,7 +54,7 @@ import TrackPlayer, {
 import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { UpdateDialog } from "@/components/update/UpdateDialog";
 import { useUpdateChecker } from "@/hooks/use-update-checker";
-import { navigationRef } from "@/lib/navigationRef";
+import { navigate, navigationRef } from "@/lib/navigationRef";
 import { ReaderSearchSession } from "@/lib/rag/reader-search-session";
 import { preloadReaderHtmlAsset } from "@/lib/reader/reader-html-asset";
 import { ExpoPlatformService } from "@/lib/platform/expo-platform-service";
@@ -62,6 +62,8 @@ import { subscribeRagSearchConfiguration } from "@/lib/rag/configure-search";
 import { MobileSyncAdapter } from "@/lib/sync/sync-adapter-mobile";
 import { RootNavigator } from "@/navigation/RootNavigator";
 import { useLibraryStore } from "@/stores/library-store";
+import { useResumeStore } from "@/stores/resume-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { ThemeProvider, useTheme } from "@/styles/ThemeContext";
 import { useAutoSync } from "@readany/core/hooks/use-auto-sync";
 
@@ -86,10 +88,75 @@ setFeedbackWorkerUrl(feedbackWorkerUrl);
 // Keep the native splash screen visible while we bootstrap
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/**
+ * TTS 播放引擎(react-native-track-player)初始化——bootstrap 之后延迟执行,
+ * 不占用冷启动首帧路径。逻辑与旧 bootstrap 内联版一致:
+ * setupPlayer 单例可复用(Configuration Change 后 Activity 重启时原样成功)。
+ */
+async function setupTtsPlayer() {
+  try {
+    await TrackPlayer.setupPlayer();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/already been initialized/i.test(msg)) throw e;
+    console.log("[App] TrackPlayer already initialized — reusing existing native instance");
+  }
+  await TrackPlayer.updateOptions({
+    android: {
+      appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+      alwaysPauseOnInterruption: false,
+    },
+    stoppingAppPausesPlayback: false,
+    capabilities: [
+      Capability.Play,
+      Capability.Pause,
+      Capability.Stop,
+      Capability.SkipToNext,
+      Capability.SkipToPrevious,
+    ],
+    compactCapabilities: [Capability.Play, Capability.Pause],
+    notificationCapabilities: [
+      Capability.Play,
+      Capability.Pause,
+      Capability.Stop,
+      Capability.SkipToNext,
+      Capability.SkipToPrevious,
+    ],
+  });
+
+  // Remote event → TTS store bridge
+  const { useTTSStore: ttsStore } = await import("@/stores/tts-store");
+  TrackPlayer.addEventListener(TrackEvent.RemotePlay, () => {
+    ttsStore.getState().resume();
+  });
+  TrackPlayer.addEventListener(TrackEvent.RemotePause, () => {
+    ttsStore.getState().pause();
+  });
+  TrackPlayer.addEventListener(TrackEvent.RemoteStop, () => {
+    ttsStore.getState().stop();
+  });
+  TrackPlayer.addEventListener(TrackEvent.RemoteNext, () => {
+    const { jumpToChunk, currentChunkIndex, totalChunks } = ttsStore.getState();
+    const nextIndex = currentChunkIndex + 1;
+    if (nextIndex < totalChunks) {
+      jumpToChunk(nextIndex);
+    }
+  });
+  TrackPlayer.addEventListener(TrackEvent.RemotePrevious, () => {
+    const { jumpToChunk, currentChunkIndex } = ttsStore.getState();
+    const prevIndex = currentChunkIndex - 1;
+    if (prevIndex >= 0) {
+      jumpToChunk(prevIndex);
+    }
+  });
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  // 开发者模式:跳过启动品牌动画(设置持久化,下次启动生效)
+  const skipSplash = useSettingsStore((s) => s.devFlags.skipSplashAnimation);
 
   useEffect(() => {
     let unsubscribeRagSearch: (() => void) | undefined;
@@ -137,68 +204,13 @@ export default function App() {
           shouldDuckAndroid: true,
         });
 
-        console.log("[App] bootstrap: init react-native-track-player");
-        // setupPlayer can only be called once per native process. On Android,
-        // a Configuration Change (e.g. Huawei tablet small-screen → fullscreen)
-        // restarts the Activity and re-runs this bootstrap, but the native
-        // singleton is still alive — so setupPlayer() throws
-        // "The player has already been initialized via setupPlayer".
-        // Treat that specific error as success so bootstrap can continue.
-        try {
-          await TrackPlayer.setupPlayer();
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (!/already been initialized/i.test(msg)) throw e;
-          console.log("[App] TrackPlayer already initialized — reusing existing native instance");
-        }
-        await TrackPlayer.updateOptions({
-          android: {
-            appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
-            alwaysPauseOnInterruption: false,
-          },
-          stoppingAppPausesPlayback: false,
-          capabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.Stop,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-          ],
-          compactCapabilities: [Capability.Play, Capability.Pause],
-          notificationCapabilities: [
-            Capability.Play,
-            Capability.Pause,
-            Capability.Stop,
-            Capability.SkipToNext,
-            Capability.SkipToPrevious,
-          ],
-        });
-
-        // Remote event → TTS store bridge
-        const { useTTSStore: ttsStore } = await import("@/stores/tts-store");
-        TrackPlayer.addEventListener(TrackEvent.RemotePlay, () => {
-          ttsStore.getState().resume();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemotePause, () => {
-          ttsStore.getState().pause();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemoteStop, () => {
-          ttsStore.getState().stop();
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemoteNext, () => {
-          const { jumpToChunk, currentChunkIndex, totalChunks } = ttsStore.getState();
-          const nextIndex = currentChunkIndex + 1;
-          if (nextIndex < totalChunks) {
-            jumpToChunk(nextIndex);
-          }
-        });
-        TrackPlayer.addEventListener(TrackEvent.RemotePrevious, () => {
-          const { jumpToChunk, currentChunkIndex } = ttsStore.getState();
-          const prevIndex = currentChunkIndex - 1;
-          if (prevIndex >= 0) {
-            jumpToChunk(prevIndex);
-          }
-        });
+        // TrackPlayer(TTS 播放引擎)延后到首帧后初始化——setupPlayer 的原生
+        // 初始化(MediaPlayer 单例 + 音频焦点)是启动期重活,冷启动不等待它;
+        // TTS 的任何交互都发生在 500ms 之后,语义不变
+        console.log("[App] bootstrap: schedule tts player init");
+        setTimeout(() => {
+          setupTtsPlayer().catch((e) => console.error("[App] setupTtsPlayer failed:", e));
+        }, 500);
 
         console.log("[App] bootstrap: done");
         setReady(true);
@@ -264,7 +276,7 @@ export default function App() {
     <I18nextProvider i18n={i18n}>
       <ThemeProvider>
         <AppInner />
-        {!splashDone && <AnimatedSplash onFinish={handleSplashFinish} />}
+        {!splashDone && !skipSplash && <AnimatedSplash onFinish={handleSplashFinish} />}
       </ThemeProvider>
     </I18nextProvider>
   );
@@ -301,6 +313,30 @@ function AppInner() {
   useUpdateChecker();
   useAutoSync(loadBooks);
 
+  // 启动恢复:最后一次退出在阅读器内 → 冷启动直接回到阅读页
+  //(进度位置由 ReaderScreen 从 DB 恢复,与"点书"路径一致,无需存 cfi)
+  const handleNavReady = useCallback(() => {
+    const tryResume = (attempt: number) => {
+      const resume = useResumeStore.getState();
+      if (!resume._hasHydrated) {
+        // 持久化尚未读完,最多等 ~5s(onboard 标记毫秒级,一般 1 次即过)
+        if (attempt < 25) setTimeout(() => tryResume(attempt + 1), 200);
+        return;
+      }
+      if (!useSettingsStore.getState().hasCompletedOnboarding) return;
+      const bookId = resume.activeReaderBookId;
+      if (!bookId) return;
+      // 等书库加载完成:loadBooks 由 AppInner 异步触发,onReady 时刻它还没跑完,
+      // 此时 navigate 会让 ReaderScreen 查不到书 → "书籍未找到"必须手点重试
+      if (!useLibraryStore.getState().isLoaded) {
+        if (attempt < 50) setTimeout(() => tryResume(attempt + 1), 200);
+        return;
+      }
+      navigate("Reader", { bookId });
+    };
+    tryResume(0);
+  }, []);
+
   const navTheme = useMemo(
     () => ({
       ...(isDark ? DarkTheme : DefaultTheme),
@@ -320,7 +356,7 @@ function AppInner() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardProvider>
         <SafeAreaProvider>
-          <NavigationContainer theme={navTheme} ref={navigationRef}>
+          <NavigationContainer theme={navTheme} ref={navigationRef} onReady={handleNavReady}>
             <StatusBar style={mode === "dark" ? "light" : "dark"} />
             <RootNavigator />
           </NavigationContainer>

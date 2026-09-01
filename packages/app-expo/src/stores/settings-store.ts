@@ -19,11 +19,14 @@ export interface SettingsState {
   settingsUpdatedAt: number;
   hasCompletedOnboarding: boolean;
   showOnboardingGuide: boolean;
+  /** 开发者模式开关(入口:长按底部导航「我的」5s 振动进入) */
+  devFlags: { skipSplashAnimation: boolean };
   _hasHydrated: boolean;
   _apiKeysLoaded: boolean;
 
   completeOnboarding: () => void;
   setShowOnboardingGuide: (show: boolean) => void;
+  setDevFlag: (key: keyof SettingsState["devFlags"], value: boolean) => void;
   updateReadSettings: (updates: Partial<ReadSettings>) => void;
   updateTranslationConfig: (updates: Partial<TranslationConfig>) => void;
   updateAIConfig: (
@@ -120,6 +123,9 @@ function migrateSettingsState(state: SettingsState): SettingsState {
         useBookFonts: true,
       },
     };
+  }
+  if (!next.devFlags) {
+    next = { ...next, devFlags: { skipSplashAnimation: false } };
   }
   return next;
 }
@@ -464,6 +470,7 @@ export const useSettingsStore = create<SettingsState>()(
       settingsUpdatedAt: 0,
       hasCompletedOnboarding: false,
       showOnboardingGuide: true,
+      devFlags: { skipSplashAnimation: false },
       _hasHydrated: false,
       _apiKeysLoaded: false,
 
@@ -471,6 +478,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       completeOnboarding: () => set({ hasCompletedOnboarding: true }),
       setShowOnboardingGuide: (show: boolean) => set({ showOnboardingGuide: show }),
+
+      setDevFlag: (key, value) =>
+        set((state) => ({ devFlags: { ...state.devFlags, [key]: value } })),
 
       updateReadSettings: (updates) =>
         set((state) => ({

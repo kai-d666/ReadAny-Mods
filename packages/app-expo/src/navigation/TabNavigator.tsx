@@ -14,10 +14,13 @@ import {
   type BottomTabBarProps,
 } from "@react-navigation/bottom-tabs";
 import { useTranslation } from "react-i18next";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useCallback } from "react";
+import { Platform, StyleSheet, Text, TouchableOpacity, Vibration, View } from "react-native";
+import { useCallback, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { usePanelControl } from "@/stores/panel-control";
+
+/** 开发者模式入口:长按「我的」3s 振动进入(隐藏,不影响正常点击切换) */
+const DEV_GATE_MS = 3000;
 
 export type TabParamList = {
   Library: undefined;
@@ -91,6 +94,39 @@ function ReadAnyTabBar({
   const baseTabBarHeight = layout.isTabletLandscape ? 72 : layout.isTablet ? 76 : 60;
   const tabBarHeight = baseTabBarHeight + bottomInset;
 
+  // 开发者模式长按计时:「我的」tab 专用
+  const devGateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const devGateFired = useRef(false);
+
+  const handleTabPress = useCallback(
+    (routeName: string, routeParams?: unknown) => {
+      // 跳转先行、面板收回同步进行(均在旧页滑出动画阶段),无"先收面板再跳"中间层
+      navigation.navigate(routeName, routeParams as never);
+      usePanelControl.getState().requestClose();
+    },
+    [navigation],
+  );
+
+  // 门闩语义:onPressIn 重置为 false;fire 时置 true——之后直到下一次新按压
+  // 之前的 onPress 一律吞掉,不存在"松手/超时窗口"(修复:长按触发后松手退出开发者页)
+  const handleDevGatePressIn = useCallback(() => {
+    devGateFired.current = false;
+    devGateTimer.current = setTimeout(() => {
+      devGateFired.current = true;
+      Vibration.vibrate(150);
+      console.log("[Tab] devgate fired");
+      navigation.getParent()?.navigate("DevTools" as never);
+      usePanelControl.getState().requestClose();
+    }, DEV_GATE_MS);
+  }, [navigation]);
+
+  const handleDevGatePressOut = useCallback(() => {
+    if (devGateTimer.current) {
+      clearTimeout(devGateTimer.current);
+      devGateTimer.current = null;
+    }
+  }, []);
+
   return (
     <View
       style={[
@@ -108,15 +144,24 @@ function ReadAnyTabBar({
         const Icon = TAB_ICONS[i];
         const focused = state.index === i;
         const color = focused ? colors.primary : colors.mutedForeground;
+        const isDevGateTab = i === state.routes.length - 1; // 最后一个 tab =「我的」
         return (
           <TouchableOpacity
             key={route.key}
             style={styles.tabItem}
             onPress={() => {
-              // 跳转先行、面板收回同步进行(均在旧页滑出动画阶段),无"先收面板再跳"中间层
-              navigation.navigate(route.name, route.params as never);
-              usePanelControl.getState().requestClose();
+              if (isDevGateTab && devGateFired.current) {
+                console.log("[Tab] devgate swallow");
+                return; // 长按触发后本次松手/点击被吞,不切 tab 不退出
+              }
+              handleTabPress(route.name, route.params);
             }}
+            {...(isDevGateTab
+              ? {
+                  onPressIn: handleDevGatePressIn,
+                  onPressOut: handleDevGatePressOut,
+                }
+              : null)}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityState={focused ? { selected: true } : undefined}

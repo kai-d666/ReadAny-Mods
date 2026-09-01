@@ -40,6 +40,7 @@ import {
 } from "@/stores";
 import { useChatStore } from "@/stores/chat-store";
 import { useMissingBookPromptStore } from "@/stores/missing-book-prompt-store";
+import { useResumeStore } from "@/stores/resume-store";
 import { useTheme } from "@/styles/ThemeContext";
 import { useColors, withOpacity } from "@/styles/theme";
 import { useIsFocused } from "@react-navigation/native";
@@ -224,6 +225,14 @@ export function ReaderScreen({ route, navigation }: Props) {
   const s = useMemo(() => makeStyles(colors), [colors]);
   const { bookId, cfi, highlight: shouldHighlight, openTTS } = route.params;
   const { t, i18n } = useTranslation();
+
+  // 启动恢复打点:进入阅读器记 bookId(App 被杀也持久化),离开(pop)清空
+  useEffect(() => {
+    useResumeStore.getState().setActiveReader(bookId);
+    return () => {
+      useResumeStore.getState().setActiveReader(null);
+    };
+  }, [bookId]);
   const isWideLayout = SCREEN_WIDTH >= 768;
   const isIPadLayout = Platform.OS === "ios" && Platform.isPad;
   const shouldToggleSystemStatusBar = !isIPadLayout;

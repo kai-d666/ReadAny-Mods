@@ -10,6 +10,7 @@ import StatsScreen from "@/screens/StatsScreen";
 import { WebDavImportBrowserScreen } from "@/screens/library/WebDavImportBrowserScreen";
 import AISettingsScreen from "@/screens/settings/AISettingsScreen";
 import AboutScreen from "@/screens/settings/AboutScreen";
+import DevToolsScreen from "@/screens/DevToolsScreen";
 import AppearanceSettingsScreen from "@/screens/settings/AppearanceSettingsScreen";
 import FeedbackDetailScreen from "@/screens/settings/FeedbackDetailScreen";
 import FeedbackScreen from "@/screens/settings/FeedbackScreen";
@@ -29,6 +30,7 @@ import { TabNavigator } from "./TabNavigator";
 export type RootStackParamList = {
   Onboarding: undefined;
   Tabs: undefined;
+  DevTools: undefined;
   Reader: { bookId: string; cfi?: string; highlight?: boolean; openTTS?: boolean };
   BookDetails: { bookId: string };
   BookChat: { bookId: string; selectedText?: string; chapterTitle?: string; selectionCfi?: string };
@@ -66,6 +68,11 @@ export function RootNavigator() {
         ) : (
           <>
             <Stack.Screen name="Tabs" component={TabNavigator} />
+            <Stack.Screen
+              name="DevTools"
+              component={DevToolsScreen}
+              options={{ animation: "slide_from_right" }}
+            />
             <Stack.Screen
               name="Reader"
               component={ReaderScreen}
