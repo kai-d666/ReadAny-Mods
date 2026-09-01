@@ -1738,7 +1738,20 @@
     }
 
     // ─── Book loading ───
+
+    // bundle script(在页面尾部内联,2MB + esbuild 执行)可能尚未跑完,
+    // 而 RN 的 openBook cmd 已到达(WebView 自愈重建后尤为常见)——等待就绪,
+    // 消除 makeBook 未定义的 race;超时(5s)后按原逻辑执行,让错误自然暴露。
+    async function waitForFoliateBundle() {
+      for (let i = 0; i < 50; i += 1) {
+        if (typeof window.makeBook === 'function') return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      console.warn('[Reader] bundle not ready after 5s, proceeding anyway');
+    }
+
     async function openBook(msg) {
+      await waitForFoliateBundle();
       postToRN('debug', { message: '[ReaderSearchSession-rdr] openBook cmd received' });
       const container = document.getElementById('reader-container');
       const loading = document.getElementById('loading');
@@ -4864,6 +4877,7 @@ a { color: ${primary} !important; }
 
     async function handleExtractBookChapters(msg) {
       try {
+        await waitForFoliateBundle();
         if (isPDFBookMessage(msg)) {
           if (typeof window._extractPDFChapters !== 'function') {
             throw new Error('PDF extraction is not available in this reader build');
@@ -5564,6 +5578,23 @@ a { color: ${primary} !important; }
   </script>
 
   <!-- __READANY_FOLIATE_BUNDLE_INSERT_POINT_7f3a9b2e__ -->
+
+  <script>
+    // bundle 执行探针 + 自愈:WebView 偶发丢弃 2MB inline script(bundle 标识
+    // 全部 undefined)→ 整页 reload 一次(第二次解析必执行,防止 makeBook 未定义)。
+    if (window.ReactNativeWebView) {
+      var __mbType = ((typeof window.makeBook === 'function') ? 'function' : String(typeof window.makeBook));
+      var __wbType = ((typeof window._zipJs === 'object') ? 'object' : String(typeof window._zipJs));
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'debug',
+        message: '[page] after-bundle makeBook=' + __mbType + ' zipJs=' + __wbType,
+      }));
+      if (__mbType !== 'function' && !window.__readanyBundleReloaded) {
+        window.__readanyBundleReloaded = true;
+        try { location.reload(); } catch (e) { /* ignore */ }
+      }
+    }
+  </script>
 
   <script>
     // Signal ready AFTER foliate-js is loaded
