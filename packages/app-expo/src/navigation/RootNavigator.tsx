@@ -89,6 +89,20 @@ export function RootNavigator() {
         initialRouteName={
           showOnboarding ? "Onboarding" : initialResumeBook ? "Reader" : "Tabs"
         }
+        // 恢复直达时栈 = [Tabs(垫底), Reader]:用户按系统返回键回书库
+        // (栈里只有 Reader 时返回键会直接退出 app——用户实测特例)
+        // 注:native-stack 的 TS 定义未声明 initialState(运行时支持),断言绕开
+        {...((!showOnboarding && initialResumeBook
+          ? {
+              initialState: {
+                index: 1,
+                routes: [
+                  { name: "Tabs" },
+                  { name: "Reader", params: { bookId: initialResumeBook } },
+                ],
+              },
+            }
+          : {}) as object)}
       >
         {showOnboarding ? (
           <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
