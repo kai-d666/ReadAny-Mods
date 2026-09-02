@@ -100,6 +100,7 @@ function GroupCoverLayer({
             source={{ uri }}
             style={styles.coverImage}
             resizeMode="cover"
+            resizeMethod="resize"
             onError={() => setError(true)}
           />
           <View style={bookStyles.spineOverlay} pointerEvents="none">

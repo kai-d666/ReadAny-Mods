@@ -243,6 +243,7 @@ export const BookCard = memo(function BookCard({
                 source={{ uri: resolvedCoverUrl }}
                 style={s.coverImage}
                 resizeMode="cover"
+                resizeMethod="resize"
                 onError={() => setImageError(true)}
               />
               {/* Book spine crease overlay — matches desktop .book-spine */}

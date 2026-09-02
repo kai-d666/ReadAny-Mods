@@ -89,20 +89,6 @@ export function RootNavigator() {
         initialRouteName={
           showOnboarding ? "Onboarding" : initialResumeBook ? "Reader" : "Tabs"
         }
-        // 恢复直达时栈 = [Tabs(垫底), Reader]:用户按系统返回键回书库
-        // (栈里只有 Reader 时返回键会直接退出 app——用户实测特例)
-        // 注:native-stack 的 TS 定义未声明 initialState(运行时支持),断言绕开
-        {...((!showOnboarding && initialResumeBook
-          ? {
-              initialState: {
-                index: 1,
-                routes: [
-                  { name: "Tabs" },
-                  { name: "Reader", params: { bookId: initialResumeBook } },
-                ],
-              },
-            }
-          : {}) as object)}
       >
         {showOnboarding ? (
           <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
@@ -118,12 +104,7 @@ export function RootNavigator() {
               name="Reader"
               component={ReaderScreen}
               initialParams={initialResumeBook ? { bookId: initialResumeBook } : undefined}
-              options={{
-                animation: "slide_from_right",
-                // 柱2:书页 WebView 由 App 级常驻壳承载(下层),屏幕背景必须透明
-                // 才能透出书页;悬浮 UI 仍由本屏幕绘制(在上层)
-                contentStyle: { backgroundColor: "transparent" },
-              }}
+              options={{ animation: "slide_from_right" }}
             />
             <Stack.Screen
               name="BookDetails"

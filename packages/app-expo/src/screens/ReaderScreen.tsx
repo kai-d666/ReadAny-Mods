@@ -67,6 +67,7 @@ import {
   Alert,
   Animated,
   AppState,
+  BackHandler,
   type AppStateStatus,
   Easing,
   Modal,
@@ -177,7 +178,7 @@ import { useReaderSystemInfo } from "./reader/useReaderSystemInfo";
 import { useReaderTTS } from "./reader/useReaderTTS";
 import { useVolumeButtonPaging } from "./reader/useVolumeButtonPaging";
 
-import { residentReader, residentReaderWebViewRef } from "@/lib/reader/resident-reader-view";
+import { getReaderHtmlUri, getReaderHtmlUriSync } from "@/lib/reader/reader-html-asset";
 const LOCAL_FONT_SERVER_DIR = "readany-fonts";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Reader">;
@@ -234,6 +235,19 @@ export function ReaderScreen({ route, navigation }: Props) {
       useResumeStore.getState().setActiveReader(null);
     };
   }, [bookId]);
+
+  // 系统返回键兜底:启动恢复「直达书内」时栈中只有本屏,容器级 back handler
+  // 因 canGoBack()=false 不拦截 BACK,系统直接退出 app(用户实测特例)。
+  // 这里接管:无下级可退时改为回书库(栈重置为 [Tabs],与正常退出行为一致),
+  // 有下级时返回 false 交给容器默认 goBack。
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (navigation.canGoBack()) return false;
+      navigation.reset({ routes: [{ name: "Tabs" }] });
+      return true;
+    });
+    return () => sub.remove();
+  }, [navigation]);
   const isWideLayout = SCREEN_WIDTH >= 768;
   const isIPadLayout = Platform.OS === "ios" && Platform.isPad;
   const shouldToggleSystemStatusBar = !isIPadLayout;
@@ -260,13 +274,14 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [totalPages, setTotalPages] = useState(0);
   const [toc, setToc] = useState<TOCItem[]>([]);
   const [bookTitle, setBookTitle] = useState("");
-  // 柱2:WebView 由常驻壳(ResidentReaderView,App 顶层)承载。壳在门禁期即
-  // 加载 bundle,挂载时可能已 foliate-ready → 初值直接取壳快照。
-  const [webViewReady, setWebViewReady] = useState(() => residentReader.snapshot().foliateReady);
-  // 自愈(与旧逻辑同义):壳 8s 未 ready 则重建其 WebView(跳 JS 初始化的怪癖兜底)
+  const [webViewReady, setWebViewReady] = useState(false);
+  // 自愈:WebView 在转场动画期间创建时,Android 可能跳过 JS 初始化(ready 永不发,
+  // 表现为一直转圈)。挂载后 8s 未 ready 则重建 WebView(此时页面已稳定,必成功)。
   const [webViewEpoch, setWebViewEpoch] = useState(0);
-  const webViewReadyRef = useRef(residentReader.snapshot().foliateReady);
+  const webViewReadyRef = useRef(false);
   const [translationReady, setTranslationReady] = useState(false);
+  // 惰性初始化:asset 已预下载(冷启动后),WebView 首帧即可创建,不等 effect
+  const [readerHtmlUri, setReaderHtmlUri] = useState<string | null>(() => getReaderHtmlUriSync());
   // 首渲染只保留 WebView + loading overlay:界面装饰(工具栏/信息条/浮动工具等)
   // 延迟 400ms 挂载,大幅缩小首渲染组件树 → 点书到阅读页出现更快
   const [chromeReady, setChromeReady] = useState(false);
@@ -294,6 +309,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const noteTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteTooltipVisibleRef = useRef(false);
   const suppressReaderTapUntilRef = useRef(0);
+  const assetLoadedRef = useRef(false);
   // Mediator ref so onRelocate can fire TTS continuation without direct hook dependency
   const ttsPendingContinueRef = useRef<{
     pendingTTSContinueCallbackRef: React.RefObject<(() => void) | null>;
@@ -572,7 +588,26 @@ export function ReaderScreen({ route, navigation }: Props) {
     return () => sub.remove();
   }, []);
 
-  // reader.html asset 由常驻壳(ResidentReaderView)负责加载,本屏不再自建。
+  // Load reader HTML asset (共享预下载:App 启动时已后台下载,这里秒取)
+  useEffect(() => {
+    if (assetLoadedRef.current) return;
+    assetLoadedRef.current = true;
+
+    const loadAsset = async () => {
+      try {
+        const uri = await getReaderHtmlUri();
+        if (uri) {
+          setReaderHtmlUri(uri);
+        } else {
+          throw new Error("reader.html localUri unavailable");
+        }
+      } catch (err) {
+        console.error("[ReaderScreen] Failed to load reader.html asset:", err);
+        setError("Failed to load reader");
+      }
+    };
+    if (!readerHtmlUri) loadAsset();
+  }, [readerHtmlUri]);
 
   // Controls toggle — declared before bridge so onTap can reference it without TS error
   const toggleControls = useCallback(() => {
@@ -956,103 +991,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     onBookmarkSnippet: (text: string) => {
       bookmark.onBookmarkSnippet(text);
     },
-  }, residentReaderWebViewRef);
-
-  // ── 常驻壳接入(柱2)────────────────────────────────────────────
-  // 1) WebView 消息 → bridge 处理器(壳 onMessage 统一转发原始 data 字符串)
-  useEffect(() => {
-    residentReader.setMessageHandler((raw: string) =>
-      bridge.handleMessage({ nativeEvent: { data: raw } }),
-    );
-    return () => residentReader.setMessageHandler(null);
-  }, [bridge.handleMessage]);
-
-  // 2) 补发:壳常在挂载前就完成 foliate-ready/loaded(提前 openBook 场景),
-  //    ready/loaded 消息已被壳消费,不能再触发 onReady/onLoaded → 快照补偿。
-  useEffect(() => {
-    const snap = residentReader.snapshot();
-    const alreadyLoaded =
-      snap.foliateReady && snap.openBookedBookId === bookId && snap.bookReadyFor === bookId;
-    if (alreadyLoaded) {
-      webViewReadyRef.current = true;
-      setWebViewReady(true);
-      const settings = useSettingsStore.getState().readSettings;
-      const { fonts, selectedFontId: selId } = useFontStore.getState();
-      const fontCSS = buildCustomFontFaceCSS(fonts, selId, fileServerRef.current);
-      const fontFamily = selId ? fonts.find((f) => f.id === selId)?.fontFamily : "";
-      bridge.applySettings({
-        fontSize: computeEffectiveFontSize(settings.fontSize, settings.followSystemFontScale),
-        lineHeight: settings.lineHeight,
-        paragraphSpacing: settings.paragraphSpacing,
-        pageMargin: settings.pageMargin,
-        fontTheme: settings.fontTheme,
-        useBookFonts: settings.useBookFonts,
-        viewMode: settings.viewMode,
-        paginatedLayout: settings.paginatedLayout,
-        sideTapPageTurn: settings.sideTapPageTurn !== false,
-        longPressLookupMode: settings.longPressLookupMode ?? "auto",
-        customFontFaceCSS: fontCSS,
-        customFontFamily: fontFamily ?? "",
-      });
-      bridge.setThemeColors({
-        background: colors.background,
-        foreground: colors.foreground,
-        muted: colors.mutedForeground,
-        primary: colors.primary,
-        themeMode,
-      });
-      setLoading(false);
-      if (snap.lastToc && snap.lastToc.length) {
-        setToc(snap.lastToc as unknown as TOCItem[]);
-      }
-      if (snap.lastRelocate) {
-        const d = snap.lastRelocate as RelocateEvent;
-        if (d.fraction != null) setProgress(d.fraction);
-        if (d.section?.current != null) setCurrentSectionIndex(d.section.current);
-        if (d.page) {
-          setCurrentPage(Math.max(1, d.page.current));
-          setTotalPages(Math.max(1, d.page.total));
-        } else if (d.section?.total && !d.location?.total) {
-          setCurrentPage(Math.max(1, d.section.current + 1));
-          setTotalPages(Math.max(1, d.section.total));
-        }
-        if (d.tocItem?.label) setCurrentChapter(d.tocItem.label);
-        if (d.cfi) {
-          lastCfiRef.current = d.cfi;
-          setCurrentCfi(d.cfi);
-        }
-        if (!translationReady) setTranslationReady(true);
-      }
-    }
-  }, [bookId, colors.background, colors.foreground, colors.mutedForeground, colors.primary, themeMode, bridge]);
-
-  // 3) 书页几何同步:壳依此定阅读区(marginTop/height,同原 WebView);
-  //    面板打开时书页不可交互(与原 WebView pointerEvents 语义一致)
-  useEffect(() => {
-    if (!isFocused) return;
-    const marginTop = !showSearch
-      ? showTopTitleProgress
-        ? stableTopInset + 30
-        : stableTopInset
-      : 0;
-    const height = Math.max(screenHeight - marginTop, 200);
-    residentReader.showReader({ marginTop, height });
-    const panelOpen = showTOC || showSettings || showSearch || showNotebook || showTranslation;
-    residentReader.setInteractive(!panelOpen);
-    return () => {
-      residentReader.setInteractive(false);
-      residentReader.hideReader();
-    };
-  }, [
-    isFocused,
-    showSearch,
-    showTopTitleProgress,
-    stableTopInset,
-    showTOC,
-    showSettings,
-    showNotebook,
-    showTranslation,
-  ]);
+  });
 
   useEffect(() => {
     noteTooltipVisibleRef.current = !!noteTooltip;
@@ -1098,22 +1037,21 @@ export function ReaderScreen({ route, navigation }: Props) {
   bridgeRef.current = bridge;
   chapterTranslationBridgeRef.current = bridge;
 
-  // 自愈(同旧逻辑,面向常驻壳):WebView 在转场动画期间创建时,Android 可能跳过
-  // JS 初始化(ready 永不发,一直转圈)。8s 未 ready 则重建壳 WebView。
+  // 自愈:WebView 在转场动画期间创建时,Android 可能跳过 JS 初始化(ready 永不发,
+  // 一直转圈)。8s 未 ready 则重建 WebView(此时页面已稳定,加载必成功)。
   // 重建最多 2 次,避免死循环。
   useEffect(() => {
-    if (webViewReady) return;
+    if (webViewReady || !readerHtmlUri) return;
     const t = setTimeout(() => {
       if (!webViewReadyRef.current && webViewEpoch < 2) {
         console.warn("[ReaderScreen] WebView not ready, recreating...");
         webViewReadyRef.current = false;
         setWebViewReady(false);
-        residentReader.recreate();
         setWebViewEpoch((e) => e + 1);
       }
     }, 8000);
     return () => clearTimeout(t);
-  }, [webViewReady, webViewEpoch]);
+  }, [webViewReady, readerHtmlUri, webViewEpoch]);
 
   // ── useReaderTTS ──
   const tts = useReaderTTS({
@@ -1340,16 +1278,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     if (!webViewReady || !book?.filePath) {
       return;
     }
-    // 柱2:壳已在挂载前预装此书(提前 openBook 并 loaded)→ 不重复打开,
-    // 由上方快照补发 effect 负责设置/状态。
-    const snap = residentReader.snapshot();
-    if (snap.openBookedBookId === bookId && snap.bookReadyFor === bookId) {
-      return;
-    }
-
-    const lastLocation = book.currentCfi || undefined;
-    const fileName = book.filePath.split("/").pop() || "book.epub";
-    const mimeType = BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream";
 
     const loadBook = async () => {
       try {
@@ -1357,6 +1285,10 @@ export function ReaderScreen({ route, navigation }: Props) {
         setError(null);
         const platform = getPlatformService();
         const appData = await platform.getAppDataDir();
+        const absPath = await platform.joinPath(appData, book.filePath);
+        const lastLocation = book.currentCfi || undefined;
+        const fileName = book.filePath.split("/").pop() || "book.epub";
+        const mimeType = BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream";
 
         // Start a local HTTP server so the WebView can fetch the file directly.
         // This avoids loading the entire file into RN memory + base64 encoding (33% overhead)
@@ -1369,7 +1301,7 @@ export function ReaderScreen({ route, navigation }: Props) {
           .map((s) => encodeURIComponent(s))
           .join("/");
 
-        residentReader.openBook(bookId, {
+        bridge.openBook({
           uri: `${serverUrl}/${encodedPath}`,
           fileName,
           mimeType,
@@ -1402,7 +1334,7 @@ export function ReaderScreen({ route, navigation }: Props) {
       }
     };
 
-    void loadBook();
+    loadBook();
   }, [bookId, book?.filePath, loadAttempt, webViewReady]);
 
   const handleReimportMissingBook = useCallback(async () => {
@@ -1589,7 +1521,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     };
   }, [bookId, currentCfi, goToCFISafely, loading, navigation, openTTS, webViewReady]);
 
-  if (loading && !webViewReady) {
+  if (loading && !webViewReady && !readerHtmlUri) {
     return (
       <SafeAreaView style={[s.container, { backgroundColor: colors.background }]}>
         <View style={s.loadingWrap}>
@@ -1640,6 +1572,17 @@ export function ReaderScreen({ route, navigation }: Props) {
           </View>
         </View>
       </SafeAreaView>
+    );
+  }
+
+  if (!readerHtmlUri) {
+    return (
+      <View style={s.container}>
+        <View style={s.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={s.loadingText}>{t("reader.loading", "加载阅读器...")}</Text>
+        </View>
+      </View>
     );
   }
 
@@ -1711,16 +1654,55 @@ export function ReaderScreen({ route, navigation }: Props) {
     : null;
 
   return (
-    // 柱2:主容器透明——书页由 App 级常驻壳透出;触摸经原生 TouchForwarder
-    // 直转壳 WebView(不依赖 RN pointerEvents 链),悬浮 UI 仍在导航层
-    <View style={[s.container, { backgroundColor: "transparent" }]} pointerEvents="box-none">
+    <View style={s.container}>
       <Animated.View
         style={[s.readerStage, { transform: [{ translateY: readerPullAnim }] }]}
         pointerEvents="box-none"
       >
-        {/* 书页 WebView 由常驻壳(ResidentReaderView,App 顶层)承载;
-            本区域透明,UI 悬浮其上 */}
-        <View style={{ flex: 1 }} />
+        {/* WebView with foliate-js */}
+        <View style={{ flex: 1 }}>
+          <WebView
+            key={`reader-wv-${webViewEpoch}`}
+            ref={bridge.webViewRef}
+            source={{ uri: readerHtmlUri }}
+            style={[
+              s.webview,
+              {
+                flex: 0,
+                height: readerWebViewHeight,
+                marginTop: readerTopMargin,
+              },
+            ]}
+            pointerEvents={isPanelOpen ? "none" : "auto"}
+            onMessage={bridge.handleMessage}
+            onError={(e) => {
+              console.error("[ReaderScreen] WebView error:", e.nativeEvent);
+            }}
+            onHttpError={(e) => {
+              console.error("[ReaderScreen] WebView HTTP error:", e.nativeEvent);
+            }}
+            onContentProcessDidTerminate={() => {
+              console.warn("[ReaderScreen] WebView content process terminated");
+            }}
+            javaScriptEnabled
+            domStorageEnabled
+            cacheEnabled={false}
+            allowFileAccess
+            allowFileAccessFromFileURLs
+            allowUniversalAccessFromFileURLs
+            allowsInlineMediaPlayback
+            scrollEnabled={false}
+            showsVerticalScrollIndicator={false}
+            originWhitelist={["*"]}
+            mixedContentMode="always"
+            onTouchEnd={() => {
+              // 物理松手信号 → webview(RN 触摸层与选区句柄独立,松手必然可达)
+              bridge.webViewRef.current?.injectJavaScript(
+                "window.__readanyOnRelease && window.__readanyOnRelease(); true;",
+              );
+            }}
+          />
+        </View>
 
         {/* Loading overlay */}
         {loading && (

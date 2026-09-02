@@ -1,7 +1,10 @@
 import { BookCard } from "@/components/library/BookCard";
 import { GroupCard } from "@/components/library/GroupCard";
 import { GroupPickerSheet } from "@/components/library/GroupPickerSheet";
-import { type ExtractorRef, ExtractorWebView } from "@/components/rag/ExtractorWebView";
+import { appExtractorRef, type ExtractorRef } from "@/components/rag/ExtractorWebView";
+
+/** 同步配置进程内只 loadConfig 一次(见挂载 useEffect 注释) */
+let syncConfigLoadedOnce = false;
 import { resetReaderSearchBookRegistry } from "@/lib/rag/reader-search-session";
 import {
   ArrowDownAZIcon,
@@ -198,7 +201,8 @@ export function LibraryScreen() {
   const emptyImportAnchorRef = useRef<View>(null);
   const localImportInFlightRef = useRef(false);
 
-  const extractorRef = useRef<ExtractorRef>(null);
+  // 提取器常驻 App 级(ExtractorWebView 的 AppExtractorWebView),书库挂载
+  // 时不再新建 WebView/重执行 foliate bundle(首次返回书库卡顿的源头)
   const loadSyncConfig = useSyncStore((state) => state.loadConfig);
   const syncConfig = useSyncStore((state) => state.config);
   const syncBackendType = useSyncStore((state) => state.backendType);
@@ -238,7 +242,7 @@ export function LibraryScreen() {
   });
 
   const { vectorQueue, vectorizingBookId, vectorProgress, handleVectorize } = useVectorizationQueue(
-    { extractorRef, nav },
+    { extractorRef: appExtractorRef, nav },
   );
 
   const openSearch = useCallback(() => {
@@ -256,17 +260,29 @@ export function LibraryScreen() {
   }, [searchAnim, setFilter]);
 
   useEffect(() => {
-    loadBooks();
+    const state = useLibraryStore.getState();
+    if (!state.isLoaded || state.books.length === 0) {
+      // 无数据(预热未完成/冷启动异常):全量加载
+      loadBooks();
+    }
+    // 数据已由启动预热(或上次加载)持有:不重拉 DB 刷新——
+    // set 会触发全网格重排,正是"点返回首次进书库卡 1.1s"的源头。
+    // 数据新鲜度由 onLibraryChanged 增量(下方 effect)保障。
   }, [loadBooks]);
+  // 同步配置进程内只加载一次:每次挂载(如返回书库)重跑会 set 触发书库
+  // 组件树重渲染——"首次返回书库 ~2s 后布局二次波动"的源头;配置变更由
+  // 设置页/Onboarding 自身 loadConfig 刷新,无需挂载时重载。
   useEffect(() => {
+    if (syncConfigLoadedOnce) return;
+    syncConfigLoadedOnce = true;
     void loadSyncConfig();
   }, [loadSyncConfig]);
 
   useEffect(() => {
-    setExtractorRef(extractorRef.current);
+    setExtractorRef(appExtractorRef.current);
     setFallbackContentProvider({
       async getChapters(book) {
-        if (!extractorRef.current) throw new Error("Mobile fallback extractor is not ready");
+        if (!appExtractorRef.current) throw new Error("Mobile fallback extractor is not ready");
         const platform = getPlatformService();
         const appData = await platform.getAppDataDir();
         const filePath =
@@ -296,7 +312,7 @@ export function LibraryScreen() {
           fbz: "application/x-zip-compressed-fb2",
           txt: "text/plain",
         };
-        return extractorRef.current.extractChapters(
+        return appExtractorRef.current.extractChapters(
           bytesToBase64(bytes),
           mimeTypes[String(book.format || "").toLowerCase()] || "application/epub+zip",
         );
@@ -822,8 +838,6 @@ export function LibraryScreen() {
     >
       {({ scrollY: contentScrollY }) => (
     <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={["top"]}>
-      <ExtractorWebView ref={extractorRef} />
-
       {/* Header */}
       <View style={[s.header, { zIndex: 20 }]}>
         <View style={s.headerInner}>

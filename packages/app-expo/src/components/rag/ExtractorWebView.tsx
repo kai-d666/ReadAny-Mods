@@ -1,6 +1,14 @@
 import type { ChapterData } from "@readany/core/rag";
 import { Asset } from "expo-asset";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  createRef,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 
@@ -161,3 +169,19 @@ export const ExtractorWebView = forwardRef<ExtractorRef>((_, ref) => {
     </View>
   );
 });
+
+/**
+ * App 级常驻提取器:书库首次挂载(LibraryScreen mount)时不再创建 WebView +
+ * 重执行 2MB foliate bundle——那是"首次返回书库卡 ~2.1s"的源头。
+ * 启动后 4s 再挂载:避开冷启动双 foliate WebView 竞争窗口(基线:并发执行
+ * 时 attach→foliate-loaded 820-980ms,单壳 151ms),不动书内启动路径。
+ */
+export const appExtractorRef = createRef<ExtractorRef>();
+export function AppExtractorWebView() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMounted(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
+  return mounted ? <ExtractorWebView ref={appExtractorRef} /> : null;
+}

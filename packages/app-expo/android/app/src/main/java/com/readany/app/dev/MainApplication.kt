@@ -27,8 +27,6 @@ class MainApplication : Application(), ReactApplication {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
               add(OnnxruntimePackage())
-              // 柱2:阅读器触摸转发(常驻阅读 WebView)
-              add(com.readany.app.dev.touchforwarder.TouchForwarderPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
