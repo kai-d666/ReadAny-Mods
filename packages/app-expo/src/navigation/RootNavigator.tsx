@@ -104,7 +104,12 @@ export function RootNavigator() {
               name="Reader"
               component={ReaderScreen}
               initialParams={initialResumeBook ? { bookId: initialResumeBook } : undefined}
-              options={{ animation: "slide_from_right" }}
+              options={{
+                animation: "slide_from_right",
+                // 柱2:书页 WebView 由 App 级常驻壳承载(下层),屏幕背景必须透明
+                // 才能透出书页;悬浮 UI 仍由本屏幕绘制(在上层)
+                contentStyle: { backgroundColor: "transparent" },
+              }}
             />
             <Stack.Screen
               name="BookDetails"

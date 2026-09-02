@@ -91,8 +91,12 @@ export interface ReaderBridgeCallbacks {
   onBookmarkPull?: (detail: BookmarkPullEvent) => void;
 }
 
-export function useReaderBridge(callbacks: ReaderBridgeCallbacks) {
-  const webViewRef = useRef<WebView>(null);
+export function useReaderBridge(
+  callbacks: ReaderBridgeCallbacks,
+  externalWebViewRef?: { current: WebView | null },
+) {
+  // 柱2:可注入外部壳的 webViewRef(常驻阅读壳);缺省自建(自建 WebView 旧路径)
+  const webViewRef = externalWebViewRef ?? useRef<WebView>(null);
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
   const pendingVisibleTextResolveRef = useRef<((text: string) => void) | null>(null);

@@ -27,7 +27,6 @@ import * as SplashScreen from "expo-splash-screen";
 import * as NavigationBar from "expo-navigation-bar";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { WebView } from "react-native-webview";
 import { LogBox, Platform, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -57,6 +56,7 @@ import { useUpdateChecker } from "@/hooks/use-update-checker";
 import { navigationRef } from "@/lib/navigationRef";
 import { ReaderSearchSession } from "@/lib/rag/reader-search-session";
 import { preloadReaderHtmlAsset } from "@/lib/reader/reader-html-asset";
+import { ResidentReaderView, residentReader, preloadResumeBook } from "@/lib/reader/resident-reader-view";
 import { ExpoPlatformService } from "@/lib/platform/expo-platform-service";
 import { subscribeRagSearchConfiguration } from "@/lib/rag/configure-search";
 import { MobileSyncAdapter } from "@/lib/sync/sync-adapter-mobile";
@@ -225,6 +225,14 @@ export default function App() {
     return () => unsubscribeRagSearch?.();
   }, []);
 
+  // A3(柱 2):常驻阅读壳 bundle 就绪 → 立即预打开恢复书(冷启动书内直达时
+  // 解析提前到导航出现前;ReaderScreen 挂载后只等渲染)
+  useEffect(() => {
+    return residentReader.onFoliateReady(() => {
+      preloadResumeBook().catch((e) => console.warn("[App] preloadResumeBook failed:", e));
+    });
+  }, []);
+
   const handleSplashFinish = useCallback(() => {
     setSplashDone(true);
   }, []);
@@ -272,12 +280,19 @@ export default function App() {
   }
 
   return (
-    <I18nextProvider i18n={i18n}>
-      <ThemeProvider>
-        <AppInner />
-        {!splashDone && !skipSplash && <AnimatedSplash onFinish={handleSplashFinish} />}
-      </ThemeProvider>
-    </I18nextProvider>
+    <>
+      {/* 柱2:常驻阅读器壳——挂在 App 顶层、导航树之前:门禁期(!ready 占位)
+          即创建 WebView,bundle 在首帧前开始执行;渲染在导航树下层,阅读激活
+          时 ReaderScreen 透明背景透出书页;壳永不卸载:热路径零重建。
+          书页触摸由原生 TouchForwarder(ReactRootView 拦截→直转壳 WebView)。 */}
+      <ResidentReaderView />
+      <I18nextProvider i18n={i18n}>
+        <ThemeProvider>
+          <AppInner />
+          {!splashDone && !skipSplash && <AnimatedSplash onFinish={handleSplashFinish} />}
+        </ThemeProvider>
+      </I18nextProvider>
+    </>
   );
 }
 
@@ -328,30 +343,16 @@ function AppInner() {
   );
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+    // 柱2:手势根背景改透明——书页由下层常驻壳绘制,各页面自带背景色;
+    // 透明根让阅读器屏(contentStyle 透明)透出书页
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "transparent" }}>
       <KeyboardProvider>
         <SafeAreaProvider>
           <NavigationContainer theme={navTheme} ref={navigationRef}>
             <StatusBar style={mode === "dark" ? "light" : "dark"} />
             <RootNavigator />
           </NavigationContainer>
-          {/* Android WebView 内核预热:首次创建 WebView 时系统加载内核(数百 ms),
-              发生在点书进阅读页的渲染流程里,是"点书→阅读页出现"的最大单点耗时;
-              App 启动即创建一次隐藏实例,内核提前就绪,进阅读页时秒建 */}
-          <View
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: 1,
-              height: 1,
-              opacity: 0,
-              zIndex: -1,
-            }}
-            pointerEvents="none"
-          >
-            <WebView source={{ html: "<!DOCTYPE html><html><body></body></html>" }} />
-          </View>
+          {/* 常驻阅读壳(柱2)承担 WebView 内核预热,1x1 blob 预热实例已删 */}
           <UpdateDialog />
           <FloatingTTSBubble />
           {/* 单常驻阅读器会话(隐藏 WebView,fallback 工具后端)——挂在 App 级
