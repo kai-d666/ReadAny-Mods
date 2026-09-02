@@ -173,8 +173,14 @@ class FakeSyncDb {
       return (TABLE_COLUMNS[pragmaMatch[1]] ?? []).map((name) => ({ name })) as T[];
     }
 
-    if (normalized === "SELECT value FROM sync_metadata WHERE key = 'last_sync_at'") {
-      const value = this.syncMetadata.get("last_sync_at");
+    if (
+      normalized === "SELECT value FROM sync_metadata WHERE key = 'last_sync_at'" ||
+      normalized === "SELECT value FROM sync_metadata WHERE key = ?"
+    ) {
+      const key = String(params[0] ?? (normalized.includes("'last_sync_at'") ? "last_sync_at" : ""));
+      const value = this.syncMetadata.get(
+        normalized.includes("'last_sync_at'") ? "last_sync_at" : key,
+      );
       return (value === undefined ? [] : [{ value }]) as T[];
     }
 
@@ -220,7 +226,7 @@ class FakeSyncDb {
     }
 
     const dupMatch = normalized.match(
-      /^SELECT id FROM (\w+) WHERE book_id = \? AND cfi = \? (?:AND|AND COALESCE\()/,
+      /^SELECT id FROM (\w+) WHERE book_id = \? AND (?:cfi = \?|COALESCE\(cfi, ''\) = \?) (?:AND|AND COALESCE\()/,
     );
     if (dupMatch) {
       const [, dupTable] = dupMatch;
@@ -280,9 +286,12 @@ class FakeSyncDb {
     if (normalized === "ROLLBACK") return;
 
     if (
-      normalized === "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('last_sync_at', ?)"
+      normalized === "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('last_sync_at', ?)" ||
+      normalized === "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)"
     ) {
-      this.syncMetadata.set("last_sync_at", String(params[0]));
+      const key = normalized.includes("'last_sync_at'") ? "last_sync_at" : String(params[0]);
+      const value = normalized.includes("'last_sync_at'") ? String(params[0]) : String(params[1]);
+      this.syncMetadata.set(key, value);
       return;
     }
 
@@ -460,6 +469,7 @@ function bookRow(overrides: Row = {}): Row {
     is_vectorized: 1,
     vectorize_progress: 0.5,
     sync_status: "local",
+    file_hash: "hash-abc",
     ...overrides,
   };
 }
@@ -468,6 +478,7 @@ function highlightRow(overrides: Row = {}): Row {
   return {
     id: "hl-1",
     book_id: "book-1",
+    book_hash: "hash-abc",
     cfi: "epubcfi(/6/2)",
     text: "Marked text",
     color: "yellow",
@@ -520,6 +531,7 @@ describe("simple sync convergence (v2: records only)", () => {
     deviceA.insert("notes", {
       id: "note-1",
       book_id: "book-1",
+      book_hash: "hash-abc",
       highlight_id: null,
       cfi: "epubcfi(/6/2)",
       title: "",
@@ -637,6 +649,7 @@ describe("simple sync convergence (v2: records only)", () => {
             {
               id: "note-1",
               book_id: "book-1",
+              book_hash: "hash-abc",
               highlight_id: null,
               cfi: "epubcfi(/6/2)",
               title: "",
@@ -852,6 +865,7 @@ describe("simple sync convergence (v2: records only)", () => {
             {
               id: "note-remote",
               book_id: "book-1",
+              book_hash: "hash-abc",
               highlight_id: null,
               cfi: "epubcfi(/6/2)",
               title: "",
@@ -967,6 +981,78 @@ describe("simple sync convergence (v2: records only)", () => {
     expect(result).toEqual({ applied: 0, skipped: 1 });
     expect(target.get("highlights", "hl-remote")).toBeUndefined();
     expect(target.get("highlights", "hl-local")).toBeTruthy();
+  });
+
+  it("does not re-apply already-applied records after the device pointer advanced", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow({ id: "local-book-1", file_hash: "hash-abc" }));
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    // 第一次:应用 3000 前的记录(updated_at=1000)→ applied
+    const first = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: 3000,
+      since: 0,
+      tables: {
+        highlights: {
+          records: [
+            highlightRow({
+              id: "hl-1",
+              book_id: "remote-book-uuid",
+              book_hash: "hash-abc",
+              updated_at: 1000,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+    expect(first).toEqual({ applied: 1, skipped: 0 });
+
+    // 第二次:同设备快照仍是全量(更新到 timestamp=3000 之前记录)→ 指针已推进,不再重复应用
+    const second = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: 3100,
+      since: 0,
+      tables: {
+        highlights: {
+          records: [
+            highlightRow({
+              id: "hl-1",
+              book_id: "remote-book-uuid",
+              book_hash: "hash-abc",
+              updated_at: 1000,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+    expect(second).toEqual({ applied: 0, skipped: 0 });
+
+    // 第三次:更新的记录(1000 → 3500)仍需应用
+    const third = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: 4000,
+      since: 0,
+      tables: {
+        highlights: {
+          records: [
+            highlightRow({
+              id: "hl-1",
+              book_id: "remote-book-uuid",
+              book_hash: "hash-abc",
+              text: "Updated text",
+              updated_at: 3500,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
+    });
+    expect(third).toEqual({ applied: 1, skipped: 0 });
+    expect(target.get("highlights", "hl-1")?.text).toBe("Updated text");
   });
 
   it("syncs reading_progress across devices by book hash", async () => {

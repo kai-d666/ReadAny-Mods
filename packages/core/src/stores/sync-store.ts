@@ -765,6 +765,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
             durationMs: 0,
           },
         });
+        // 同步完成后刷新绑定角标缓存(云端 hash 集合);静默失败,不影响主流程
+        void get().listCloudBooks().catch(() => null);
       } else {
         set({
           status: "error",

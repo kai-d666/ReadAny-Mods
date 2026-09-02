@@ -290,6 +290,10 @@ export async function applyChanges(
       }
       let applied = 0;
       let skipped = 0;
+      // 每设备应用指针:快照是覆盖式全量,重复同步只走指针之后的记录。
+      const lastApplied = options.forceApply
+        ? 0
+        : await getLastAppliedTs(db, payload.deviceId);
 
       // Keep this transaction-free. On some adapters, explicit BEGIN/COMMIT can
       // lose state across awaited calls and end with "cannot commit - no transaction is active".
@@ -300,12 +304,25 @@ export async function applyChanges(
 
         const { pk, timestampCol } = tableInfo;
         const exclude = tableInfo.excludeColumns ?? [];
+        // 指针过滤:已应用时间戳之前/等于的记录与墓碑不再重复处理
+        const freshRecords = tableData.records.filter(
+          (record) => (record[timestampCol] as number) > lastApplied,
+        );
+        const freshDeletedIds = tableData.deletedIds.filter(
+          (id) => (tableData.deletedTimestamps?.[id] ?? 0) > lastApplied,
+        );
+        if (freshRecords.length === 0 && freshDeletedIds.length === 0) {
+          console.log(
+            `[SimpleSync] Table ${tableName} from ${payload.deviceId}: already applied (pointer=${lastApplied}), skipping`,
+          );
+          continue;
+        }
         console.log(
-          `[SimpleSync] Applying table ${tableName}: ${tableData.records.length} record(s), ${tableData.deletedIds.length} deletion(s)`,
+          `[SimpleSync] Applying table ${tableName}: ${freshRecords.length} record(s), ${freshDeletedIds.length} deletion(s)`,
         );
         const allIdsToCheck = [
-          ...tableData.records.map((record) => record[pk]).filter((value) => value !== undefined),
-          ...tableData.deletedIds,
+          ...freshRecords.map((record) => record[pk]).filter((value) => value !== undefined),
+          ...freshDeletedIds,
         ];
         const existingRecords = await loadExistingRecordStates(
           db,
@@ -315,17 +332,17 @@ export async function applyChanges(
           allIdsToCheck,
         );
         const remoteRecordIds = new Set(
-          tableData.records
+          freshRecords
             .map((record) => record[pk])
             .filter((value) => value !== undefined)
             .map(String),
         );
         // 记录表按 book_hash 认亲:远端记录的书 id 是"对方设备的书 UUID",
         // 书行不跨设备,必须先映射到本地同 hash 的书,记录才有宿主。
-        const bookHashToLocalId = await buildBookHashMap(db, tableName, tableData.records);
+        const bookHashToLocalId = await buildBookHashMap(db, tableName, freshRecords);
         let processedRecords = 0;
 
-        for (const record of tableData.records) {
+        for (const record of freshRecords) {
           const pkValue = record[pk];
           const remoteTs = record[timestampCol] as number;
 
@@ -363,6 +380,11 @@ export async function applyChanges(
                   skipped++;
                   continue;
                 }
+              } else {
+                // 旧格式记录(无 book_hash)没有宿主,插入必然 FK 失败(759 次日志刷屏);
+                // 前置跳过,不再逐条试插。
+                skipped++;
+                continue;
               }
             }
             try {
@@ -387,13 +409,13 @@ export async function applyChanges(
           processedRecords++;
           if (processedRecords % 100 === 0) {
             console.log(
-              `[SimpleSync] Applying table ${tableName}: ${processedRecords}/${tableData.records.length} record(s) processed`,
+              `[SimpleSync] Applying table ${tableName}: ${processedRecords}/${freshRecords.length} record(s) processed`,
             );
             await yieldToEventLoop();
           }
         }
 
-        for (const deletedId of tableData.deletedIds) {
+        for (const deletedId of freshDeletedIds) {
           if (remoteRecordIds.has(String(deletedId))) {
             console.warn(
               `[SimpleSync] Ignoring stale tombstone for live ${tableName}/${deletedId} from device ${payload.deviceId}`,
@@ -429,9 +451,50 @@ export async function applyChanges(
         );
       }
 
+      // 全部表应用成功 → 推进该设备指针(下次快照只处理更新的记录)
+      if (!options.forceApply) {
+        await setLastAppliedTs(db, payload.deviceId, payload.timestamp);
+      }
+
       return { applied, skipped };
     }, "apply remote changes"),
   );
+}
+
+/**
+ * 每设备"最后已应用"指针(全局同步提速,2026-09-03):
+ * 设备快照是覆盖式全量,重复同步会对同一批记录反复走 DB 应用。
+ * 指针 = 已成功应用的 payload.timestamp,之后再收到的该设备快照中
+ * 更旧的记录/墓碑直接跳过(近似幂等,不回滚旧版本)。forceApply 忽略指针。
+ */
+async function getLastAppliedTs(
+  db: Awaited<ReturnType<typeof getDB>>,
+  deviceId: string,
+): Promise<number> {
+  try {
+    const rows = await db.select<{ value: string }>(
+      "SELECT value FROM sync_metadata WHERE key = ?",
+      [`last_applied_${deviceId}`],
+    );
+    return rows[0]?.value ? Number.parseInt(rows[0].value, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function setLastAppliedTs(
+  db: Awaited<ReturnType<typeof getDB>>,
+  deviceId: string,
+  ts: number,
+): Promise<void> {
+  try {
+    await db.execute(
+      "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES (?, ?)",
+      [`last_applied_${deviceId}`, String(ts)],
+    );
+  } catch {
+    // sync_metadata may not exist on older schema variants.
+  }
 }
 
 /**

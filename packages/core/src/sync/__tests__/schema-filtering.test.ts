@@ -42,6 +42,7 @@ describe("sync schema filtering (records tables)", () => {
         return [
           { name: "id" },
           { name: "book_id" },
+          { name: "book_hash" },
           { name: "cfi" },
           { name: "text" },
           { name: "updated_at" },
@@ -54,6 +55,10 @@ describe("sync schema filtering (records tables)", () => {
         sql.includes("FROM highlights")
       ) {
         return [];
+      }
+
+      if (sql.startsWith("SELECT id, file_hash FROM books WHERE file_hash IN")) {
+        return [{ id: "book-1", file_hash: "hash-abc" }];
       }
 
       if (sql.startsWith("SELECT updated_at FROM highlights WHERE id = ?")) {
@@ -76,6 +81,7 @@ describe("sync schema filtering (records tables)", () => {
             {
               id: "hl-1",
               book_id: "book-1",
+              book_hash: "hash-abc",
               cfi: "epubcfi(/6/2)",
               text: "Test highlight",
               updated_at: 1000,
@@ -93,9 +99,9 @@ describe("sync schema filtering (records tables)", () => {
     const [sql, params] = mockExecute.mock.calls.find((call) =>
       String(call[0]).includes("INSERT INTO highlights"),
     )!;
-    expect(sql).toContain("INSERT INTO highlights (id, book_id, cfi, text, updated_at)");
+    expect(sql).toContain("INSERT INTO highlights (id, book_id, book_hash, cfi, text, updated_at)");
     expect(sql).not.toContain("reading_status");
-    expect(params).toEqual(["hl-1", "book-1", "epubcfi(/6/2)", "Test highlight", 1000]);
+    expect(params).toEqual(["hl-1", "book-1", "hash-abc", "epubcfi(/6/2)", "Test highlight", 1000]);
   });
 
   it("simple sync applies a tied-timestamp remote soft delete", async () => {
@@ -104,6 +110,7 @@ describe("sync schema filtering (records tables)", () => {
         return [
           { name: "id" },
           { name: "book_id" },
+          { name: "book_hash" },
           { name: "cfi" },
           { name: "text" },
           { name: "updated_at" },
@@ -116,6 +123,10 @@ describe("sync schema filtering (records tables)", () => {
         sql.includes("FROM highlights")
       ) {
         return [{ id: "hl-1", timestamp: 1000, deleted_at: null }];
+      }
+
+      if (sql.startsWith("SELECT id, file_hash FROM books WHERE file_hash IN")) {
+        return [{ id: "book-1", file_hash: "hash-abc" }];
       }
 
       return [];
@@ -131,6 +142,7 @@ describe("sync schema filtering (records tables)", () => {
             {
               id: "hl-1",
               book_id: "book-1",
+              book_hash: "hash-abc",
               cfi: "epubcfi(/6/2)",
               text: "Deleted remotely",
               updated_at: 1000,
@@ -148,7 +160,7 @@ describe("sync schema filtering (records tables)", () => {
       String(call[0]).includes("INSERT INTO highlights"),
     );
     expect(insertCall?.[0]).toContain("deleted_at");
-    expect(insertCall?.[1]).toEqual(["hl-1", "book-1", "epubcfi(/6/2)", "Deleted remotely", 1000, 900]);
+    expect(insertCall?.[1]).toEqual(["hl-1", "book-1", "hash-abc", "epubcfi(/6/2)", "Deleted remotely", 1000, 900]);
   });
 
   it("simple sync keeps a tied-timestamp local soft delete over a live remote row", async () => {
@@ -157,6 +169,7 @@ describe("sync schema filtering (records tables)", () => {
         return [
           { name: "id" },
           { name: "book_id" },
+          { name: "book_hash" },
           { name: "cfi" },
           { name: "text" },
           { name: "updated_at" },
@@ -184,6 +197,7 @@ describe("sync schema filtering (records tables)", () => {
             {
               id: "hl-1",
               book_id: "book-1",
+              book_hash: "hash-abc",
               cfi: "epubcfi(/6/2)",
               text: "Live remotely",
               updated_at: 1000,
