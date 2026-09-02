@@ -101,6 +101,7 @@ function GroupCoverLayer({
             style={styles.coverImage}
             resizeMode="cover"
             resizeMethod="resize"
+            fadeDuration={150}
             onError={() => setError(true)}
           />
           <View style={bookStyles.spineOverlay} pointerEvents="none">

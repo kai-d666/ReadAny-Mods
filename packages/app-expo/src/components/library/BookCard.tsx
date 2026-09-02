@@ -20,12 +20,12 @@ import {
 } from "react-native";
 import { BookCardActionSheet } from "./BookCardActionSheet";
 import { makeStyles } from "./book-card-styles";
+import { coverUriCache, resolveCoverUri } from "@/lib/library/cover-cache";
 
-// 封面绝对路径缓存(bookId → file:// 绝对路径)。
+// 封面绝对路径缓存(bookId → file:// 绝对路径)→ 见 lib/library/cover-cache.ts。
 // 书库列表在导航(进入阅读页等)时会被整体卸载重挂,每次重挂都走异步解析
 // (getAppDataDir + joinPath,几十 ms)会让封面闪回占位块;缓存让重挂第一帧
 // 就能同步取到封面路径,消除闪烁。
-const coverUriCache = new Map<string, string>();
 
 const AnimatedLoader = () => {
   const spinValue = useRef(new Animated.Value(0)).current;
@@ -118,11 +118,7 @@ export const BookCard = memo(function BookCard({
     }
     (async () => {
       try {
-        const platform = getPlatformService();
-        const appData = await platform.getAppDataDir();
-        const absPath = await platform.joinPath(appData, raw);
-        coverUriCache.set(book.id, absPath);
-        setResolvedCoverUrl(absPath);
+        setResolvedCoverUrl(await resolveCoverUri(book.id, book.meta.coverUrl));
       } catch (err) {
         console.warn("[Library] Failed to resolve cover URL:", err);
         setResolvedCoverUrl(undefined);
@@ -244,6 +240,7 @@ export const BookCard = memo(function BookCard({
                 style={s.coverImage}
                 resizeMode="cover"
                 resizeMethod="resize"
+                fadeDuration={150}
                 onError={() => setImageError(true)}
               />
               {/* Book spine crease overlay — matches desktop .book-spine */}

@@ -35,6 +35,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 
 import { AnimatedSplash } from "@/components/splash/AnimatedSplash";
 import { AppExtractorWebView } from "@/components/rag/ExtractorWebView";
+import { CoverPrefetcher } from "@/components/library/CoverPrefetcher";
 import { rnSessionEventSource } from "@/hooks";
 import { setStreamingFetch } from "@readany/core/ai/llm-provider";
 import { initDatabase } from "@readany/core/db/database";
@@ -369,6 +370,9 @@ function AppInner() {
           {/* 章节提取器 WebView 常驻(App 级,启动 4s 后挂载):书库首次挂载
               不再新建 WebView+重执行 2MB foliate bundle(返回书库卡顿源头) */}
           <AppExtractorWebView />
+          {/* 首屏封面预载:数据预热完成后后台解码首屏 N 本封面进 Fresco
+              缓存,冷启动书库首帧封面即显示(无占位→封面的闪动) */}
+          <CoverPrefetcher />
           {/* 三键区域 30% 半透明黑背景:edge-to-edge 下系统忽略导航栏背景色,内容层自绘(全局) */}
           <NavBarScrim />
         </SafeAreaProvider>
