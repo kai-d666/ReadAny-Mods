@@ -6,6 +6,11 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
+// expo CLI 的 getMetroServerRoot 会把 serverRoot 提升到 workspace 根(readany-src),
+// export:embed 的入口就按 serverRoot 解析成 readany-src/index.js → 构建失败。
+// 锁回项目根:dev 与 export:embed 都以 packages/app-expo 为入口基准(2026-09-03 release 构建)。
+config.server.unstable_serverRoot = config.projectRoot;
+
 // 1. Watch the monorepo root so Metro can resolve workspace packages,
 // while preserving Expo's defaults for doctor/build compatibility.
 config.watchFolders = Array.from(new Set([...(config.watchFolders ?? []), monorepoRoot]));
