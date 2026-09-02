@@ -7,7 +7,8 @@ import { getPlatformService } from "@readany/core/services";
  */
 import type { Book } from "@readany/core/types";
 import { getBookProgressPercent } from "@readany/core/utils";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSyncStore } from "@readany/core/stores";
 import { useTranslation } from "react-i18next";
 import {
   Animated,
@@ -91,6 +92,12 @@ export const BookCard = memo(function BookCard({
   const colors = useColors();
   const s = makeStyles(colors, cardWidth);
   const { t } = useTranslation();
+  // 绑定角标:本地书 hash 命中云端书目(2026-09-03 用户方案"只有绑定的书会被同步")
+  const cloudHashes = useSyncStore((s) => s.cloudHashes);
+  const isCloudBound = useMemo(
+    () => !!book.fileHash && !!cloudHashes?.includes(book.fileHash.toLowerCase()),
+    [book.fileHash, cloudHashes],
+  );
   const [imageError, setImageError] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [actionAnchor, setActionAnchor] = useState<LayoutRectangle | null>(null);
@@ -345,12 +352,21 @@ export const BookCard = memo(function BookCard({
             </View>
           )}
 
-          {/* Vectorized badge */}
-          {book.isVectorized && !isVectorizing && (
-            <View style={s.vecBadge}>
-              <Text style={s.vecBadgeText}>{t("home.vec_indexed", "已索引")}</Text>
+          {/* Vectorized badge + 绑定(云端匹配)badge — 黄色绑定徽标排在已索引下方 */}
+          {(book.isVectorized && !isVectorizing) || isCloudBound ? (
+            <View style={s.badgeColumn}>
+              {book.isVectorized && !isVectorizing && (
+                <View style={s.vecBadge}>
+                  <Text style={s.vecBadgeText}>{t("home.vec_indexed", "已索引")}</Text>
+                </View>
+              )}
+              {isCloudBound && (
+                <View style={s.bindBadge}>
+                  <Text style={s.bindBadgeText}>{t("home.cloud_bound", "绑定")}</Text>
+                </View>
+              )}
             </View>
-          )}
+          ) : null}
 
           <View ref={menuTriggerRef} style={s.moreButtonWrap} pointerEvents="box-none">
             <TouchableOpacity

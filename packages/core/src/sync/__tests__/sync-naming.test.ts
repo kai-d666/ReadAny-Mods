@@ -88,18 +88,18 @@ describe("sync-naming", () => {
     });
 
     it("builds remote dir under REMOTE_BOOKS_ROOT", () => {
-      expect(buildBookRemoteDir(book)).toBe(`/readany/data/books/三体-${UUID}`);
+      expect(buildBookRemoteDir(book)).toBe(`/RA_dev/data/books/三体-${UUID}`);
     });
 
     it("builds remote file and cover paths inside the book dir", () => {
-      expect(buildBookRemoteFile(book, "epub")).toBe(`/readany/data/books/三体-${UUID}/三体.epub`);
-      expect(buildBookRemoteCover(book, "jpg")).toBe(`/readany/data/books/三体-${UUID}/三体.jpg`);
+      expect(buildBookRemoteFile(book, "epub")).toBe(`/RA_dev/data/books/三体-${UUID}/三体.epub`);
+      expect(buildBookRemoteCover(book, "jpg")).toBe(`/RA_dev/data/books/三体-${UUID}/三体.jpg`);
     });
 
     it("uses sanitized title in both folder and file names", () => {
       const dirty = { id: UUID, title: "Hello/World" };
       expect(buildBookRemoteFile(dirty, "epub")).toBe(
-        `/readany/data/books/Hello_World-${UUID}/Hello_World.epub`,
+        `/RA_dev/data/books/Hello_World-${UUID}/Hello_World.epub`,
       );
     });
 

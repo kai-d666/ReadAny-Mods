@@ -58,15 +58,15 @@ export interface SyncProgress {
 export type SyncProgressCallback = (progress: SyncProgress) => void;
 
 /** Remote directory structure constants */
-export const REMOTE_ROOT = "/readany";
-export const REMOTE_DATA = "/readany/data";
+export const REMOTE_ROOT = "/RA_dev";
+export const REMOTE_DATA = "/RA_dev/data";
 /** Legacy flat layout — still read for migration detection / orphan cleanup. */
-export const REMOTE_FILES = "/readany/data/file";
-export const REMOTE_COVERS = "/readany/data/cover";
+export const REMOTE_FILES = "/RA_dev/data/file";
+export const REMOTE_COVERS = "/RA_dev/data/cover";
 /** New layout: each book lives in its own folder under this root. */
-export const REMOTE_BOOKS_ROOT = "/readany/data/books";
+export const REMOTE_BOOKS_ROOT = "/RA_dev/data/books";
 /** Lightweight index for the canonical remote book/cover layout. */
-export const REMOTE_FILE_MANIFEST = "/readany/data/file-manifest.json";
+export const REMOTE_FILE_MANIFEST = "/RA_dev/data/file-manifest.json";
 
 /** Known file extensions used to disambiguate cover vs book inside a book folder. */
 export const COVER_EXTENSIONS = new Set<string>([

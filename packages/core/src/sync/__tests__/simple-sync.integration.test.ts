@@ -55,6 +55,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   highlights: [
     "id",
     "book_id",
+    "book_hash",
     "cfi",
     "text",
     "color",
@@ -66,6 +67,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   notes: [
     "id",
     "book_id",
+    "book_hash",
     "highlight_id",
     "cfi",
     "title",
@@ -75,7 +77,16 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "created_at",
     "updated_at",
   ],
-  bookmarks: ["id", "book_id", "cfi", "label", "chapter_title", "created_at", "updated_at"],
+  bookmarks: [
+    "id",
+    "book_id",
+    "book_hash",
+    "cfi",
+    "label",
+    "chapter_title",
+    "created_at",
+    "updated_at",
+  ],
   threads: [
     "id",
     "book_id",
@@ -93,6 +104,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
   reading_sessions: [
     "id",
     "book_id",
+    "book_hash",
     "started_at",
     "ended_at",
     "total_active_time",
@@ -101,6 +113,7 @@ const TABLE_COLUMNS: Record<string, string[]> = {
     "state",
     "updated_at",
   ],
+  reading_progress: ["book_hash", "cfi", "percent", "last_opened_at", "updated_at"],
 };
 
 const SYNC_TABLES = Object.keys(TABLE_COLUMNS);
@@ -198,13 +211,56 @@ class FakeSyncDb {
         .map(({ id, deleted_at }) => ({ id, deleted_at })) as T[];
     }
 
+    if (normalized.startsWith("SELECT id, file_hash FROM books WHERE file_hash IN")) {
+      const hashSet = new Set(params.map(String));
+      const bookRows = [...(this.tables.get("books")?.values() ?? [])];
+      return bookRows
+        .filter((row) => row.deleted_at == null && hashSet.has(String(row.file_hash)))
+        .map((row) => ({ id: row.id, file_hash: row.file_hash })) as T[];
+    }
+
+    const dupMatch = normalized.match(
+      /^SELECT id FROM (\w+) WHERE book_id = \? AND cfi = \? (?:AND|AND COALESCE\()/,
+    );
+    if (dupMatch) {
+      const [, dupTable] = dupMatch;
+      const [bookId, cfi] = params.map(String);
+      const rows = [...(this.tables.get(dupTable)?.values() ?? [])];
+      let hit = rows.find((row) => String(row.book_id) === bookId && String(row.cfi) === cfi);
+      if (hit && dupTable === "highlights") {
+        hit = rows.find(
+          (row) =>
+            String(row.book_id) === bookId &&
+            String(row.cfi) === cfi &&
+            String(row.text ?? "") === String(params[2] ?? ""),
+        );
+      }
+      if (hit && dupTable === "notes") {
+        hit = rows.find(
+          (row) =>
+            String(row.book_id) === bookId &&
+            String(row.cfi ?? "") === cfi &&
+            String(row.title ?? "") === String(params[2] ?? "") &&
+            String(row.content ?? "") === String(params[3] ?? ""),
+        );
+      }
+      if (hit && dupTable === "bookmarks") {
+        hit = rows.find(
+          (row) =>
+            String(row.book_id) === bookId &&
+            String(row.cfi) === cfi &&
+            String(row.label ?? "") === String(params[2] ?? ""),
+        );
+      }
+      return (hit ? [{ id: hit.id }] : []) as T[];
+    }
+
     const stateMatch = normalized.match(
       /^SELECT (\w+) AS id, (\w+) AS timestamp(.*?) FROM (\w+) WHERE (\w+) IN \(/,
     );
     if (stateMatch) {
       const [, pk, timestampCol, extraSelects, table] = stateMatch;
       const includeDeletedAt = extraSelects.includes("deleted_at AS deleted_at");
-      const includeCoverUrl = extraSelects.includes("cover_url AS cover_url");
       const ids = new Set(params.map(String));
       return [...(this.tables.get(table)?.values() ?? [])]
         .filter((row) => ids.has(String(row[pk])))
@@ -212,7 +268,6 @@ class FakeSyncDb {
           id: row[pk],
           timestamp: row[timestampCol] ?? 0,
           ...(includeDeletedAt ? { deleted_at: row.deleted_at ?? null } : {}),
-          ...(includeCoverUrl ? { cover_url: row.cover_url ?? null } : {}),
         })) as T[];
     }
 
@@ -409,17 +464,6 @@ function bookRow(overrides: Row = {}): Row {
   };
 }
 
-function groupRow(overrides: Row = {}): Row {
-  return {
-    id: "group-test",
-    name: "测试分组",
-    sort_order: 0,
-    created_at: 1000,
-    updated_at: 1000,
-    ...overrides,
-  };
-}
-
 function highlightRow(overrides: Row = {}): Row {
   return {
     id: "hl-1",
@@ -445,7 +489,7 @@ async function syncDevice(
   return runSimpleSync(backend);
 }
 
-describe("simple sync convergence", () => {
+describe("simple sync convergence (v2: records only)", () => {
   let now = 1000;
 
   beforeEach(() => {
@@ -463,42 +507,76 @@ describe("simple sync convergence", () => {
     dbMocks.currentDeviceId = "device-a";
   });
 
-  it("converges two devices after bootstrapping and interleaved edits", async () => {
+  it("converges highlight/note records across two devices (books stay local-only)", async () => {
     const backend = new MemoryBackend();
     const deviceA = new FakeSyncDb();
     const deviceB = new FakeSyncDb();
 
+    // 书行是本地拥有的:两台设备各自持有自己导入的书(本地同 id 仅为夹具 FK 需要)
     deviceA.insert("books", bookRow());
+    deviceB.insert("books", bookRow());
+
     deviceA.insert("highlights", highlightRow());
+    deviceA.insert("notes", {
+      id: "note-1",
+      book_id: "book-1",
+      highlight_id: null,
+      cfi: "epubcfi(/6/2)",
+      title: "",
+      content: "My note",
+      chapter_title: "Chapter 1",
+      tags: "[]",
+      created_at: 1000,
+      updated_at: 1000,
+    });
 
     now = 1100;
     await syncDevice("device-a", deviceA, backend);
 
     now = 1200;
     await syncDevice("device-b", deviceB, backend);
-    expect(deviceB.exportRecords()).toEqual(deviceA.exportRecords());
+    expect(deviceB.get("highlights", "hl-1")).toBeTruthy();
+    expect(deviceB.get("notes", "note-1")).toBeTruthy();
+
+    // 书行不跨设备搬:device-b 的书库不会带上 device-a 的书行之外的东西
+    expect(deviceB.tables.get("books")?.size).toBe(1);
 
     now = 1300;
-    deviceB.patch("books", "book-1", { title: "Remote title", updated_at: now });
-
-    now = 1400;
-    await syncDevice("device-b", deviceB, backend);
-
-    now = 1500;
     deviceA.patch("highlights", "hl-1", { text: "Local highlight", updated_at: now });
 
-    now = 1600;
+    now = 1400;
     await syncDevice("device-a", deviceA, backend);
 
-    now = 1700;
+    now = 1500;
     await syncDevice("device-b", deviceB, backend);
-
-    expect(deviceA.get("books", "book-1")?.title).toBe("Remote title");
     expect(deviceB.get("highlights", "hl-1")?.text).toBe("Local highlight");
-    expect(deviceB.exportRecords()).toEqual(deviceA.exportRecords());
+    expect(deviceA.get("books", "book-1")?.title).toBe("Original");
   });
 
-  it("applies parent tables before child tables even when remote JSON keys are child-first", async () => {
+  it("ignores books table in remote payloads entirely (no insert, no delete, no overwrite)", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow({ title: "Local", updated_at: 2500 }));
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        books: {
+          records: [bookRow({ updated_at: 9999, title: "Remote overwrite" })],
+          deletedIds: [],
+        },
+      },
+    });
+
+    // books 不在 SYNC_TABLES:远端 payload 对该表的一切都被忽略
+    expect(result).toEqual({ applied: 0, skipped: 0 });
+    expect(target.get("books", "book-1")?.title).toBe("Local");
+  });
+
+  it("does not upsert highlights whose remote book_id is missing locally (FK guard)", async () => {
     const target = new FakeSyncDb();
     dbMocks.currentDb = target;
     dbMocks.currentDeviceId = "device-local";
@@ -509,46 +587,14 @@ describe("simple sync convergence", () => {
       since: 0,
       tables: {
         highlights: {
-          records: [highlightRow()],
-          deletedIds: [],
-        },
-        books: {
-          records: [bookRow()],
+          records: [highlightRow({ book_id: "remote-book-uuid", updated_at: 9999 })],
           deletedIds: [],
         },
       },
     });
 
-    expect(result).toEqual({ applied: 2, skipped: 0 });
-    expect(target.get("books", "book-1")).toBeTruthy();
-    expect(target.get("highlights", "hl-1")).toBeTruthy();
-  });
-
-  it("localizes synced book file paths and keeps remote books downloadable", async () => {
-    const target = new FakeSyncDb();
-    dbMocks.currentDb = target;
-    dbMocks.currentDeviceId = "device-local";
-
-    const result = await applyChanges({
-      deviceId: "device-remote",
-      timestamp: now,
-      since: 0,
-      tables: {
-        books: {
-          records: [
-            bookRow({
-              file_path: "file:///data/user/0/com.readany.app/files/books/source-device.epub",
-              sync_status: "local",
-            }),
-          ],
-          deletedIds: [],
-        },
-      },
-    });
-
-    expect(result).toEqual({ applied: 1, skipped: 0 });
-    expect(target.get("books", "book-1")?.file_path).toBe("books/book-1.epub");
-    expect(target.get("books", "book-1")?.sync_status).toBe("remote");
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("highlights", "hl-1")).toBeUndefined();
   });
 
   it("keeps a newer local record when an older remote tombstone arrives", async () => {
@@ -577,6 +623,7 @@ describe("simple sync convergence", () => {
 
   it("ignores a stale tombstone when the same payload still contains a live record", async () => {
     const target = new FakeSyncDb();
+    target.insert("books", bookRow());
     dbMocks.currentDb = target;
     dbMocks.currentDeviceId = "device-local";
 
@@ -585,24 +632,38 @@ describe("simple sync convergence", () => {
       timestamp: now,
       since: 0,
       tables: {
-        books: {
-          records: [bookRow({ updated_at: 1000 })],
-          deletedIds: ["book-1"],
-          deletedTimestamps: { "book-1": 2000 },
+        notes: {
+          records: [
+            {
+              id: "note-1",
+              book_id: "book-1",
+              highlight_id: null,
+              cfi: "epubcfi(/6/2)",
+              title: "",
+              content: "Live note",
+              chapter_title: null,
+              tags: "[]",
+              created_at: 1000,
+              updated_at: 1000,
+            },
+          ],
+          deletedIds: ["note-1"],
+          deletedTimestamps: { "note-1": 2000 },
         },
       },
     });
 
     expect(result).toEqual({ applied: 1, skipped: 1 });
-    expect(target.get("books", "book-1")?.title).toBe("Original");
+    expect(target.get("notes", "note-1")?.content).toBe("Live note");
   });
 
   it("does not upload stale tombstones for records that still exist locally", async () => {
     const source = new FakeSyncDb();
-    source.insert("books", bookRow({ updated_at: 1000 }));
-    source.tombstones.set("books:book-1", {
-      id: "book-1",
-      table_name: "books",
+    source.insert("books", bookRow({}));
+    source.insert("highlights", highlightRow({ updated_at: 1000 }));
+    source.tombstones.set("highlights:hl-1", {
+      id: "hl-1",
+      table_name: "highlights",
       deleted_at: 2000,
     });
     dbMocks.currentDb = source;
@@ -610,12 +671,13 @@ describe("simple sync convergence", () => {
 
     const payload = await collectChanges(0);
 
-    expect(payload.tables.books?.records).toHaveLength(1);
-    expect(payload.tables.books?.deletedIds).toEqual([]);
+    expect(payload.tables.highlights?.records).toHaveLength(1);
+    expect(payload.tables.highlights?.deletedIds).toEqual([]);
   });
 
-  it("keeps a remote group tombstone from being resurrected by an older device snapshot", async () => {
+  it("keeps a remote record tombstone from being resurrected by an older device snapshot", async () => {
     const target = new FakeSyncDb();
+    target.insert("books", bookRow());
     dbMocks.currentDb = target;
     dbMocks.currentDeviceId = "device-local";
 
@@ -624,10 +686,10 @@ describe("simple sync convergence", () => {
       timestamp: 3000,
       since: 0,
       tables: {
-        book_groups: {
+        highlights: {
           records: [],
-          deletedIds: ["group-test"],
-          deletedTimestamps: { "group-test": 3000 },
+          deletedIds: ["hl-1"],
+          deletedTimestamps: { "hl-1": 3000 },
         },
       },
     });
@@ -637,8 +699,8 @@ describe("simple sync convergence", () => {
       timestamp: 2000,
       since: 0,
       tables: {
-        book_groups: {
-          records: [groupRow({ updated_at: 2000 })],
+        highlights: {
+          records: [highlightRow({ updated_at: 2000 })],
           deletedIds: [],
         },
       },
@@ -646,22 +708,23 @@ describe("simple sync convergence", () => {
 
     expect(deleted).toEqual({ applied: 1, skipped: 0 });
     expect(staleRecord).toEqual({ applied: 0, skipped: 1 });
-    expect(target.get("book_groups", "group-test")).toBeUndefined();
-    expect(target.tombstones.get("book_groups:group-test")?.deleted_at).toBe(3000);
+    expect(target.get("highlights", "hl-1")).toBeUndefined();
+    expect(target.tombstones.get("highlights:hl-1")?.deleted_at).toBe(3000);
   });
 
   it("uploads a refreshed snapshot after receiving remote-only changes", async () => {
     const backend = new MemoryBackend();
     const deviceB = new FakeSyncDb();
+    deviceB.insert("books", bookRow());
     deviceB.syncMetadata.set("last_sync_at", "2000");
 
-    backend.jsonFiles.set("/readany/sync/device-a.json", {
+    backend.jsonFiles.set("/RA_dev/sync/device-a.json", {
       deviceId: "device-a",
       timestamp: 1000,
       since: 0,
       tables: {
-        books: {
-          records: [bookRow({ updated_at: 1000 })],
+        highlights: {
+          records: [highlightRow({ updated_at: 1000 })],
           deletedIds: [],
         },
       },
@@ -671,15 +734,14 @@ describe("simple sync convergence", () => {
     const result = await syncDevice("device-b", deviceB, backend);
 
     expect(result.success).toBe(true);
-    expect(result.changes).toBe(1);
-    expect(backend.jsonFiles.has("/readany/sync/device-device-b.json")).toBe(true);
+    expect(deviceB.get("highlights", "hl-1")).toBeTruthy();
     expect(
       (
-        backend.jsonFiles.get("/readany/sync/device-device-b.json") as {
+        backend.jsonFiles.get("/RA_dev/sync/device-device-b.json") as {
           tables: Record<string, unknown>;
         }
       ).tables,
-    ).toHaveProperty("books");
+    ).toHaveProperty("highlights");
   });
 
   it("downloads remote snapshots using the listed path", async () => {
@@ -693,9 +755,9 @@ describe("simple sync convergence", () => {
 
       async getJSON<T>(path: string): Promise<T | null> {
         if (path === "/logical/device-a.json") {
-          return super.getJSON<T>("/readany/sync/device-a.json");
+          return super.getJSON<T>("/RA_dev/sync/device-a.json");
         }
-        if (path === "/readany/sync/device-a.json") {
+        if (path === "/RA_dev/sync/device-a.json") {
           throw new Error("should use listed path");
         }
         return super.getJSON<T>(path);
@@ -704,14 +766,15 @@ describe("simple sync convergence", () => {
 
     const backend = new AliasPathBackend();
     const deviceB = new FakeSyncDb();
+    deviceB.insert("books", bookRow());
 
-    backend.jsonFiles.set("/readany/sync/device-a.json", {
+    backend.jsonFiles.set("/RA_dev/sync/device-a.json", {
       deviceId: "device-a",
       timestamp: 1000,
       since: 0,
       tables: {
-        books: {
-          records: [bookRow({ updated_at: 1000 })],
+        highlights: {
+          records: [highlightRow({ updated_at: 1000 })],
           deletedIds: [],
         },
       },
@@ -721,7 +784,7 @@ describe("simple sync convergence", () => {
     const result = await syncDevice("device-b", deviceB, backend);
 
     expect(result.success).toBe(true);
-    expect(deviceB.get("books", "book-1")).toBeTruthy();
+    expect(deviceB.get("highlights", "hl-1")).toBeTruthy();
   });
 
   it("downloads remote snapshots from the device index when directory listing is empty", async () => {
@@ -733,24 +796,25 @@ describe("simple sync convergence", () => {
 
     const backend = new EmptyListBackend();
     const deviceB = new FakeSyncDb();
+    deviceB.insert("books", bookRow());
 
-    backend.jsonFiles.set("/readany/sync/index.json", {
+    backend.jsonFiles.set("/RA_dev/sync/index.json", {
       version: 1,
       updatedAt: 1000,
       devices: {
         "device-a": {
-          path: "/readany/sync/device-a.json",
+          path: "/RA_dev/sync/device-a.json",
           timestamp: 1000,
         },
       },
     });
-    backend.jsonFiles.set("/readany/sync/device-a.json", {
+    backend.jsonFiles.set("/RA_dev/sync/device-a.json", {
       deviceId: "device-a",
       timestamp: 1000,
       since: 0,
       tables: {
-        books: {
-          records: [bookRow({ updated_at: 1000 })],
+        highlights: {
+          records: [highlightRow({ updated_at: 1000 })],
           deletedIds: [],
         },
       },
@@ -760,14 +824,14 @@ describe("simple sync convergence", () => {
     const result = await syncDevice("device-b", deviceB, backend);
 
     expect(result.success).toBe(true);
-    expect(deviceB.get("books", "book-1")).toBeTruthy();
-    expect(backend.jsonFiles.get("/readany/sync/index.json")).toMatchObject({
+    expect(deviceB.get("highlights", "hl-1")).toBeTruthy();
+    expect(backend.jsonFiles.get("/RA_dev/sync/index.json")).toMatchObject({
       devices: {
         "device-a": {
-          path: "/readany/sync/device-a.json",
+          path: "/RA_dev/sync/device-a.json",
         },
         "device-b": {
-          path: "/readany/sync/device-device-b.json",
+          path: "/RA_dev/sync/device-device-b.json",
         },
       },
     });
@@ -778,48 +842,58 @@ describe("simple sync convergence", () => {
     const local = new FakeSyncDb();
     local.insert("books", bookRow({ title: "Local", updated_at: 3000 }));
 
-    backend.jsonFiles.set("/readany/sync/device-locked.json", {
+    backend.jsonFiles.set("/RA_dev/sync/device-locked.json", {
       deviceId: "locked",
       timestamp: 1000,
       since: 0,
       tables: {
-        books: {
-          records: [bookRow({ id: "remote-book", title: "Locked remote", updated_at: 1000 })],
+        notes: {
+          records: [
+            {
+              id: "note-remote",
+              book_id: "book-1",
+              highlight_id: null,
+              cfi: "epubcfi(/6/2)",
+              title: "",
+              content: "Locked remote note",
+              chapter_title: null,
+              tags: "[]",
+              created_at: 1000,
+              updated_at: 1000,
+            },
+          ],
           deletedIds: [],
         },
       },
     });
-    backend.unreadableJsonPaths.add("/readany/sync/device-locked.json");
+    backend.unreadableJsonPaths.add("/RA_dev/sync/device-locked.json");
 
     now = 4000;
     const result = await syncDevice("device-local", local, backend);
 
     expect(result.success).toBe(true);
-    expect(local.get("books", "remote-book")).toBeUndefined();
-    expect(backend.jsonFiles.has("/readany/sync/device-device-local.json")).toBe(true);
+    expect(local.get("notes", "note-remote")).toBeUndefined();
+    expect(backend.jsonFiles.has("/RA_dev/sync/device-device-local.json")).toBe(true);
   });
 
-  it("preserves custom cover paths from remote book snapshots", async () => {
-    const backend = new MemoryBackend();
-    const local = new FakeSyncDb();
-    local.insert(
-      "books",
-      bookRow({
-        cover_url: "covers/book-1.jpg",
-        updated_at: 1000,
-      }),
-    );
+  it("maps remote record book_id to the local book by hash (cross-device attach)", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow({ id: "local-book-1", file_hash: "hash-abc" }));
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
 
-    backend.jsonFiles.set("/readany/sync/device-remote.json", {
-      deviceId: "remote",
-      timestamp: 2500,
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
       since: 0,
       tables: {
-        books: {
+        highlights: {
           records: [
-            bookRow({
-              cover_url: "covers/book-1-custom-123.jpg",
-              updated_at: 2500,
+            highlightRow({
+              id: "hl-remote",
+              book_id: "remote-book-uuid",
+              book_hash: "hash-abc",
+              updated_at: 9999,
             }),
           ],
           deletedIds: [],
@@ -827,36 +901,27 @@ describe("simple sync convergence", () => {
       },
     });
 
-    now = 3000;
-    const result = await syncDevice("device-local", local, backend);
-
-    expect(result.success).toBe(true);
-    expect(local.get("books", "book-1")?.cover_url).toBe("covers/book-1-custom-123.jpg");
+    expect(result).toEqual({ applied: 1, skipped: 0 });
+    expect(target.get("highlights", "hl-remote")?.book_id).toBe("local-book-1");
   });
 
-  it("keeps a local custom cover when applying newer remote metadata with the old canonical cover", async () => {
-    const backend = new MemoryBackend();
-    const local = new FakeSyncDb();
-    local.insert(
-      "books",
-      bookRow({
-        cover_url: "covers/book-1-custom-123.jpg",
-        title: "Local title",
-        updated_at: 2000,
-      }),
-    );
+  it("skips remote record when its book hash is not present locally (no host book)", async () => {
+    const target = new FakeSyncDb();
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
 
-    backend.jsonFiles.set("/readany/sync/device-remote.json", {
-      deviceId: "remote",
-      timestamp: 2500,
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
       since: 0,
       tables: {
-        books: {
+        highlights: {
           records: [
-            bookRow({
-              cover_url: "covers/book-1.jpg",
-              title: "Remote title",
-              updated_at: 2500,
+            highlightRow({
+              id: "hl-remote",
+              book_id: "remote-book-uuid",
+              book_hash: "hash-unknown",
+              updated_at: 9999,
             }),
           ],
           deletedIds: [],
@@ -864,14 +929,69 @@ describe("simple sync convergence", () => {
       },
     });
 
-    now = 3000;
-    const result = await syncDevice("device-local", local, backend);
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("highlights", "hl-remote")).toBeUndefined();
+  });
 
-    expect(result.success).toBe(true);
-    expect(local.get("books", "book-1")).toMatchObject({
-      cover_url: "covers/book-1-custom-123.jpg",
-      title: "Remote title",
-      updated_at: 2500,
+  it("deduplicates a remote highlight at the same book position", async () => {
+    const target = new FakeSyncDb();
+    target.insert("books", bookRow({ id: "local-book-1", file_hash: "hash-abc" }));
+    target.insert(
+      "highlights",
+      highlightRow({ id: "hl-local", book_id: "local-book-1", cfi: "epubcfi(/6/2)", text: "Marked text" }),
+    );
+    dbMocks.currentDb = target;
+    dbMocks.currentDeviceId = "device-local";
+
+    const result = await applyChanges({
+      deviceId: "device-remote",
+      timestamp: now,
+      since: 0,
+      tables: {
+        highlights: {
+          records: [
+            highlightRow({
+              id: "hl-remote",
+              book_id: "remote-book-uuid",
+              book_hash: "hash-abc",
+              cfi: "epubcfi(/6/2)",
+              text: "Marked text",
+              updated_at: 9999,
+            }),
+          ],
+          deletedIds: [],
+        },
+      },
     });
+
+    expect(result).toEqual({ applied: 0, skipped: 1 });
+    expect(target.get("highlights", "hl-remote")).toBeUndefined();
+    expect(target.get("highlights", "hl-local")).toBeTruthy();
+  });
+
+  it("syncs reading_progress across devices by book hash", async () => {
+    const backend = new MemoryBackend();
+    const deviceA = new FakeSyncDb();
+    const deviceB = new FakeSyncDb();
+    deviceA.insert("books", bookRow({ id: "book-1", file_hash: "hash-abc" }));
+    deviceB.insert("books", bookRow({ id: "local-book-1", file_hash: "hash-abc" }));
+
+    deviceA.insert("reading_progress", {
+      book_hash: "hash-abc",
+      cfi: "epubcfi(/6/14)",
+      percent: 0.42,
+      last_opened_at: 1000,
+      updated_at: 1000,
+    });
+
+    now = 1100;
+    await syncDevice("device-a", deviceA, backend);
+
+    now = 1200;
+    await syncDevice("device-b", deviceB, backend);
+    expect(deviceB.get("reading_progress", "hash-abc")?.cfi).toBe("epubcfi(/6/14)");
+    expect(deviceB.get("reading_progress", "hash-abc")?.percent).toBe(0.42);
+    // 书行仍不跨设备
+    expect(deviceB.get("books", "book-1")).toBeUndefined();
   });
 });

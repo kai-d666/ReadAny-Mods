@@ -53,6 +53,10 @@ import { getPlatformService } from "@readany/core/services";
 import { getCSSFontFace, useFontStore } from "@readany/core/stores";
 import type { Book, ReadSettings, TOCItem } from "@readany/core/types";
 import { getBook } from "@readany/core/db/database";
+import {
+  getReadingProgressForBook,
+  saveReadingProgressForBook,
+} from "@readany/core/db/progress-queries";
 import { eventBus } from "@readany/core/utils/event-bus";
 import { throttle } from "@readany/core/utils/throttle";
 import * as DocumentPicker from "expo-document-picker";
@@ -422,6 +426,11 @@ export function ReaderScreen({ route, navigation }: Props) {
         progress: prog,
         currentCfi: cfi,
       });
+      // 跨设备进度:reading_progress 按内容哈希(同步重构,书行不再搬,
+      // 进度靠 hash 认亲,Koodo 式,2026-09-03)
+      void saveReadingProgressForBook(bId, { cfi, percent: prog }).catch((err: Error) =>
+        console.error("Failed to save reading progress:", err),
+      );
     }, 5000),
   ).current;
   const {
@@ -1267,6 +1276,10 @@ export function ReaderScreen({ route, navigation }: Props) {
             }),
           { attempts: 10, initialDelayMs: 150 },
         ).catch((err: Error) => console.error("Failed to save progress on unmount:", err));
+        void saveReadingProgressForBook(bookId, {
+          cfi: lastCfiRef.current,
+          percent: progressRef.current,
+        }).catch((err: Error) => console.error("Failed to save reading progress on unmount:", err));
       }
       const { useSyncStore } = require("@readany/core/stores/sync-store");
       useSyncStore.getState().syncNow?.();
@@ -1286,7 +1299,15 @@ export function ReaderScreen({ route, navigation }: Props) {
         const platform = getPlatformService();
         const appData = await platform.getAppDataDir();
         const absPath = await platform.joinPath(appData, book.filePath);
-        const lastLocation = book.currentCfi || undefined;
+        // 本设备 current_cfi 优先(更鲜);为空时兜底取跨设备进度(按 book hash)
+        let lastLocation = book.currentCfi || undefined;
+        if (!lastLocation) {
+          try {
+            lastLocation = (await getReadingProgressForBook(book.fileHash))?.cfi || undefined;
+          } catch (err) {
+            console.error("Failed to read reading progress:", err);
+          }
+        }
         const fileName = book.filePath.split("/").pop() || "book.epub";
         const mimeType = BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream";
 

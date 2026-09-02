@@ -12,7 +12,7 @@ function createBackend(): S3Backend {
     region: "auto",
     bucket: "readany-test",
     accessKeyId: "access-key",
-    remoteRoot: "apps/readany",
+    remoteRoot: "apps/ra_dev",
     autoSync: false,
     syncIntervalMins: 30,
     wifiOnly: false,
@@ -28,27 +28,27 @@ describe("s3-backend path helpers", () => {
   });
 
   it("maps ReadAny logical paths into the default S3 prefix", () => {
-    expect(normalizeS3Key("readany", "/readany/sync/device-a.json")).toBe(
+    expect(normalizeS3Key("readany", "/RA_dev/sync/device-a.json")).toBe(
       "readany/sync/device-a.json",
     );
     expect(normalizeS3Key("readany", "sync/device-a.json")).toBe("readany/sync/device-a.json");
   });
 
   it("maps ReadAny logical paths into a custom S3 prefix", () => {
-    expect(normalizeS3Key("/apps/readany/", "/readany/data/books/book.epub")).toBe(
-      "apps/readany/data/books/book.epub",
+    expect(normalizeS3Key("/apps/ra_dev/", "/RA_dev/data/books/book.epub")).toBe(
+      "apps/ra_dev/data/books/book.epub",
     );
-    expect(normalizeS3Key("apps/readany", "data/books/book.epub")).toBe(
-      "apps/readany/data/books/book.epub",
+    expect(normalizeS3Key("apps/ra_dev", "data/books/book.epub")).toBe(
+      "apps/ra_dev/data/books/book.epub",
     );
   });
 
   it("converts S3 keys back to ReadAny logical paths", () => {
-    expect(s3KeyToLogicalPath("apps/readany", "apps/readany/sync/device-a.json")).toBe(
-      "/readany/sync/device-a.json",
+    expect(s3KeyToLogicalPath("apps/ra_dev", "apps/ra_dev/sync/device-a.json")).toBe(
+      "/RA_dev/sync/device-a.json",
     );
-    expect(s3KeyToLogicalPath("apps/readany", "apps/readany/data/books/")).toBe(
-      "/readany/data/books",
+    expect(s3KeyToLogicalPath("apps/ra_dev", "apps/ra_dev/data/books/")).toBe(
+      "/RA_dev/data/books",
     );
   });
 
@@ -57,14 +57,14 @@ describe("s3-backend path helpers", () => {
     const send = vi.fn(async (command: ListObjectsV2Command) => {
       expect(command.input).toMatchObject({
         Bucket: "readany-test",
-        Prefix: "apps/readany/sync/",
+        Prefix: "apps/ra_dev/sync/",
         Delimiter: "/",
       });
       return {
         Contents: [
-          { Key: "apps/readany/sync/", Size: 0 },
+          { Key: "apps/ra_dev/sync/", Size: 0 },
           {
-            Key: "apps/readany/sync/device-remote.json",
+            Key: "apps/ra_dev/sync/device-remote.json",
             Size: "42",
             LastModified: "2026-06-02T00:00:00.000Z",
           },
@@ -73,10 +73,10 @@ describe("s3-backend path helpers", () => {
     });
     Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
 
-    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+    await expect(backend.listDir("/RA_dev/sync")).resolves.toEqual([
       {
         name: "device-remote.json",
-        path: "/readany/sync/device-remote.json",
+        path: "/RA_dev/sync/device-remote.json",
         size: 42,
         lastModified: Date.parse("2026-06-02T00:00:00.000Z"),
         isDirectory: false,
@@ -91,14 +91,14 @@ describe("s3-backend path helpers", () => {
       .fn()
       .mockResolvedValueOnce({ Contents: [] })
       .mockResolvedValueOnce({
-        Contents: [{ Key: "apps/readany/sync/device-remote.json", Size: 7 }],
+        Contents: [{ Key: "apps/ra_dev/sync/device-remote.json", Size: 7 }],
       });
     Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
 
-    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+    await expect(backend.listDir("/RA_dev/sync")).resolves.toEqual([
       {
         name: "device-remote.json",
-        path: "/readany/sync/device-remote.json",
+        path: "/RA_dev/sync/device-remote.json",
         size: 7,
         lastModified: 0,
         isDirectory: false,
@@ -117,14 +117,14 @@ describe("s3-backend path helpers", () => {
       .mockResolvedValueOnce({ Contents: [] })
       .mockResolvedValueOnce({ Contents: [] })
       .mockResolvedValueOnce({
-        Contents: [{ Key: "apps/readany/sync/device-remote.json", Size: 9 }],
+        Contents: [{ Key: "apps/ra_dev/sync/device-remote.json", Size: 9 }],
       });
     Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
 
-    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+    await expect(backend.listDir("/RA_dev/sync")).resolves.toEqual([
       {
         name: "device-remote.json",
-        path: "/readany/sync/device-remote.json",
+        path: "/RA_dev/sync/device-remote.json",
         size: 9,
         lastModified: 0,
         isDirectory: false,
@@ -132,7 +132,7 @@ describe("s3-backend path helpers", () => {
     ]);
 
     expect(send).toHaveBeenCalledTimes(3);
-    expect((send.mock.calls[2]?.[0] as ListObjectsCommand).input.Prefix).toBe("apps/readany/sync/");
+    expect((send.mock.calls[2]?.[0] as ListObjectsCommand).input.Prefix).toBe("apps/ra_dev/sync/");
     expect((send.mock.calls[2]?.[0] as ListObjectsCommand).input.Delimiter).toBe("/");
   });
 
@@ -146,16 +146,16 @@ describe("s3-backend path helpers", () => {
       .mockResolvedValueOnce({ Contents: [] })
       .mockResolvedValueOnce({
         Contents: [
-          { Key: "apps/readany/data/file-manifest.json", Size: 100 },
-          { Key: "apps/readany/sync/device-remote.json", Size: 11 },
+          { Key: "apps/ra_dev/data/file-manifest.json", Size: 100 },
+          { Key: "apps/ra_dev/sync/device-remote.json", Size: 11 },
         ],
       });
     Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
 
-    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+    await expect(backend.listDir("/RA_dev/sync")).resolves.toEqual([
       {
         name: "device-remote.json",
-        path: "/readany/sync/device-remote.json",
+        path: "/RA_dev/sync/device-remote.json",
         size: 11,
         lastModified: 0,
         isDirectory: false,
@@ -163,7 +163,7 @@ describe("s3-backend path helpers", () => {
     ]);
 
     expect(send).toHaveBeenCalledTimes(5);
-    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/readany/");
+    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/ra_dev/");
     expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Delimiter).toBeUndefined();
   });
 
@@ -177,16 +177,16 @@ describe("s3-backend path helpers", () => {
       .mockRejectedValueOnce(new Error("The specified key does not exist"))
       .mockResolvedValueOnce({
         Contents: [
-          { Key: "apps/readany/data/file-manifest.json", Size: 100 },
-          { Key: "apps/readany/sync/device-remote.json", Size: 13 },
+          { Key: "apps/ra_dev/data/file-manifest.json", Size: 100 },
+          { Key: "apps/ra_dev/sync/device-remote.json", Size: 13 },
         ],
       });
     Object.assign(backend as unknown as { client: { send: typeof send } }, { client: { send } });
 
-    await expect(backend.listDir("/readany/sync")).resolves.toEqual([
+    await expect(backend.listDir("/RA_dev/sync")).resolves.toEqual([
       {
         name: "device-remote.json",
-        path: "/readany/sync/device-remote.json",
+        path: "/RA_dev/sync/device-remote.json",
         size: 13,
         lastModified: 0,
         isDirectory: false,
@@ -194,7 +194,7 @@ describe("s3-backend path helpers", () => {
     ]);
 
     expect(send).toHaveBeenCalledTimes(5);
-    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/readany/");
+    expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Prefix).toBe("apps/ra_dev/");
     expect((send.mock.calls[4]?.[0] as ListObjectsV2Command).input.Delimiter).toBeUndefined();
   });
 });

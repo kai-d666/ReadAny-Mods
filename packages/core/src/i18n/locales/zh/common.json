@@ -48,6 +48,7 @@
   },
   "sidebar": {
     "library": "书库",
+    "cloud_library": "云书库",
     "chat": "对话",
     "notes": "笔记",
     "skills": "技能",

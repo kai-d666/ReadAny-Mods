@@ -21,6 +21,12 @@ import {
 import type { ISyncBackend } from "../sync/sync-backend";
 import { createSyncBackend, getSecretKeyForBackend } from "../sync/sync-backend-factory";
 import type { SyncDirection, SyncProgress, SyncResult, SyncStatusType } from "../sync/sync-types";
+import {
+  cleanupGhostBooks,
+  dedupeDuplicateBooksByHash,
+} from "../sync/book-dedupe";
+import type { DedupeBooksReport, GhostCleanupReport } from "../sync/book-dedupe";
+import type { CloudBookEntry } from "../sync/cloud-library";
 import { sanitizeWebDavRemoteRoot, sanitizeWebDavUrl } from "../sync/webdav-client";
 import { eventBus } from "../utils/event-bus";
 
@@ -102,6 +108,9 @@ export interface SyncState {
   config: SyncConfig | null;
   isConfigured: boolean;
   backendType: "webdav" | "s3" | "lan" | null;
+  /** 云端书目 hash 缓存(绑定角标数据源):云书库页/上传后刷新;null=未知 */
+  cloudHashes: string[] | null;
+  setCloudHashes: (hashes: string[] | null) => void;
 
   // Runtime state
   status: SyncStatusType;
@@ -154,6 +163,24 @@ export interface SyncState {
     resolvedDirection?: "upload" | "download",
     useIncremental?: boolean,
   ) => Promise<SyncResult | null>;
+  /** 清理云端幽灵(remote 无文件、新云端目录不存在的记录)+ 存量重复书 */
+  cleanupGhosts: () => Promise<
+    { ghost: GhostCleanupReport; dedupe: DedupeBooksReport } | { error: string }
+  >;
+  /** 云书库:列出云端书目(本地已有同 hash 书 → localBookId) */
+  listCloudBooks: () => Promise<CloudBookEntry[] | { error: string }>;
+  /** 云书库:上传一本书到云端(绑定);已存在同 hash → skipped */
+  uploadCloudBook: (
+    bookId: string,
+  ) => Promise<{ ok: boolean; error?: string; skipped?: boolean } | { error: string }>;
+  /** 云书库:下载云端书文件到本地临时文件(交由 UI 走导入去重入库) */
+  downloadCloudBook: (
+    fileHash: string,
+  ) => Promise<{ ok: boolean; error?: string; localPath?: string; fileName?: string } | { error: string }>;
+  /** 云书库:删除云端书(文件+封面) */
+  deleteCloudBook: (
+    fileHash: string,
+  ) => Promise<{ ok: boolean; error?: string } | { error: string }>;
   /** Run sync using an explicitly provided backend (e.g. for LAN sync) */
   syncWithBackend: (
     backend: ISyncBackend,
@@ -171,6 +198,23 @@ export interface SyncState {
   setWifiOnly: (enabled: boolean) => Promise<void>;
   setNotifyOnComplete: (enabled: boolean) => Promise<void>;
   resetSync: () => Promise<void>;
+}
+
+/** 取已配置的 backend;未配置/凭据缺失 → 统一错误对象(云书库 4 个 action 共用) */
+async function requireConfiguredBackend(
+  state: SyncState,
+): Promise<ISyncBackend | { error: string }> {
+  if (!state.isConfigured || !state.config) return { error: "Sync not configured" };
+  const platform = getPlatformService();
+  const secretKey =
+    state.config.type !== "lan" ? getSecretKeyForBackend(state.config.type) : null;
+  const secret = secretKey ? await platform.kvGetItem(secretKey) : null;
+  if (state.config.type !== "lan" && !secret) return { error: "No credentials configured" };
+  try {
+    return createSyncBackend(state.config, secret || "");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 function normalizeSyncConfig(config: SyncConfig): SyncConfig {
@@ -286,6 +330,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   config: null,
   isConfigured: false,
   backendType: null,
+  cloudHashes: null,
+  setCloudHashes: (hashes) => set({ cloudHashes: hashes }),
   status: "idle",
   lastSyncAt: null,
   lastResult: null,
@@ -579,6 +625,75 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         return result;
       }
     });
+  },
+
+  cleanupGhosts: async () => {
+    const state = get();
+    if (!state.isConfigured || !state.config) return { error: "Sync not configured" };
+    const platform = getPlatformService();
+    const secretKey =
+      state.config.type !== "lan" ? getSecretKeyForBackend(state.config.type) : null;
+    const secret = secretKey ? await platform.kvGetItem(secretKey) : null;
+    if (state.config.type !== "lan" && !secret) return { error: "No credentials configured" };
+    try {
+      const backend = createSyncBackend(state.config, secret || "");
+      const ghost = await cleanupGhostBooks(backend);
+      const dedupe = await dedupeDuplicateBooksByHash();
+      return { ghost, dedupe };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  /** 构造已配置的 sync backend;未配置/无凭据 → { error } */
+  listCloudBooks: async () => {
+    const state = get();
+    const backend = await requireConfiguredBackend(state);
+    if ("error" in backend) return backend;
+    try {
+      const { listRemoteBooks } = await import("../sync/cloud-library");
+      const entries = await listRemoteBooks(backend);
+      set({ cloudHashes: entries.map((e) => e.fileHash) });
+      return entries;
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  uploadCloudBook: async (bookId) => {
+    const state = get();
+    const backend = await requireConfiguredBackend(state);
+    if ("error" in backend) return backend;
+    try {
+      const { uploadBookToCloud } = await import("../sync/cloud-library");
+      return await uploadBookToCloud(backend, bookId);
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  downloadCloudBook: async (fileHash) => {
+    const state = get();
+    const backend = await requireConfiguredBackend(state);
+    if ("error" in backend) return backend;
+    try {
+      const { downloadRemoteBookToLocal } = await import("../sync/cloud-library");
+      return await downloadRemoteBookToLocal(backend, fileHash);
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+
+  deleteCloudBook: async (fileHash) => {
+    const state = get();
+    const backend = await requireConfiguredBackend(state);
+    if ("error" in backend) return backend;
+    try {
+      const { deleteRemoteBookFromCloud } = await import("../sync/cloud-library");
+      return await deleteRemoteBookFromCloud(backend, fileHash);
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
   },
 
   syncSimple: async (backend: ISyncBackend, resolvedDirection?: "upload" | "download") => {

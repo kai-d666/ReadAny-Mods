@@ -137,7 +137,8 @@ describe("highlight-queries", () => {
       expect(sql).toContain("INSERT INTO highlights");
       expect(params[0]).toBe("hl-1");
       expect(params[1]).toBe("book-1");
-      expect(params[4]).toBe("yellow");
+      expect(params[2]).toBeNull(); // book_hash(文件 hash 由书行解析)
+      expect(params[5]).toBe("yellow");
     });
   });
 

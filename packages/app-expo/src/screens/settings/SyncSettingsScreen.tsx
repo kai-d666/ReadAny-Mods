@@ -72,7 +72,6 @@ export default function SyncSettingsScreen() {
     saveS3Config,
     syncNow,
     syncWithBackend,
-    forceFullSync,
     setAutoSync,
     setSyncIntervalMins,
     resetSync,
@@ -84,14 +83,14 @@ export default function SyncSettingsScreen() {
   const [url, setUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [remoteRoot, setRemoteRoot] = useState("readany");
+  const [remoteRoot, setRemoteRoot] = useState("RA_dev");
   const [allowInsecure, setAllowInsecure] = useState(false);
 
   // S3 state
   const [s3Endpoint, setS3Endpoint] = useState("");
   const [s3Region, setS3Region] = useState("auto");
   const [s3Bucket, setS3Bucket] = useState("");
-  const [s3RemoteRoot, setS3RemoteRoot] = useState("readany");
+  const [s3RemoteRoot, setS3RemoteRoot] = useState("RA_dev");
   const [s3AccessKeyId, setS3AccessKeyId] = useState("");
   const [s3SecretAccessKey, setS3SecretAccessKey] = useState("");
   const [s3PathStyle, setS3PathStyle] = useState(false);
@@ -100,7 +99,7 @@ export default function SyncSettingsScreen() {
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
   const [testError, setTestError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [syncIntervalInput, setSyncIntervalInput] = useState("30");
 
   const isBusy = status !== "idle" && status !== "error";
@@ -132,7 +131,7 @@ export default function SyncSettingsScreen() {
       if (config.type === "webdav") {
         setUrl(config.url);
         setUsername(config.username);
-        setRemoteRoot(config.remoteRoot ?? "readany");
+        setRemoteRoot(config.remoteRoot ?? "RA_dev");
         setAllowInsecure(config.allowInsecure ?? false);
         setSyncIntervalInput(String(config.syncIntervalMins ?? 30));
         getPlatformService()
@@ -144,7 +143,7 @@ export default function SyncSettingsScreen() {
         setS3Endpoint(config.endpoint);
         setS3Region(config.region);
         setS3Bucket(config.bucket);
-        setS3RemoteRoot(config.remoteRoot ?? "readany");
+        setS3RemoteRoot(config.remoteRoot ?? "RA_dev");
         setS3AccessKeyId(config.accessKeyId);
         setS3PathStyle(config.pathStyle ?? false);
         setSyncIntervalInput(String(config.syncIntervalMins ?? 30));
@@ -166,7 +165,7 @@ export default function SyncSettingsScreen() {
         if (cancelled || savedConfig?.type !== "webdav") return;
         setUrl(savedConfig.url);
         setUsername(savedConfig.username);
-        setRemoteRoot(savedConfig.remoteRoot ?? "readany");
+        setRemoteRoot(savedConfig.remoteRoot ?? "RA_dev");
         setAllowInsecure(savedConfig.allowInsecure ?? false);
         setSyncIntervalInput(String(savedConfig.syncIntervalMins ?? 30));
         platform.kvGetItem(SYNC_SECRET_KEYS.webdav).then((pw) => {
@@ -179,7 +178,7 @@ export default function SyncSettingsScreen() {
         setS3Endpoint(savedConfig.endpoint);
         setS3Region(savedConfig.region);
         setS3Bucket(savedConfig.bucket);
-        setS3RemoteRoot(savedConfig.remoteRoot ?? "readany");
+        setS3RemoteRoot(savedConfig.remoteRoot ?? "RA_dev");
         setS3AccessKeyId(savedConfig.accessKeyId);
         setS3PathStyle(savedConfig.pathStyle ?? false);
         setSyncIntervalInput(String(savedConfig.syncIntervalMins ?? 30));
@@ -318,12 +317,12 @@ export default function SyncSettingsScreen() {
           setUrl("");
           setUsername("");
           setPassword("");
-          setRemoteRoot("readany");
+          setRemoteRoot("RA_dev");
           setAllowInsecure(false);
           setS3Endpoint("");
           setS3Region("auto");
           setS3Bucket("");
-          setS3RemoteRoot("readany");
+          setS3RemoteRoot("RA_dev");
           setS3AccessKeyId("");
           setS3SecretAccessKey("");
           setS3PathStyle(false);
@@ -332,27 +331,6 @@ export default function SyncSettingsScreen() {
       },
     ]);
   }, [t, resetSync]);
-
-  const handleForceFullSync = useCallback(
-    (direction: "upload" | "download") => {
-      const isUpload = direction === "upload";
-      Alert.alert(
-        t(isUpload ? "settings.syncForceUpload" : "settings.syncForceDownload"),
-        t(isUpload ? "settings.syncForceUploadConfirm" : "settings.syncForceDownloadConfirm"),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          {
-            text: t("common.confirm"),
-            style: "destructive",
-            onPress: () => {
-              void forceFullSync(direction);
-            },
-          },
-        ],
-      );
-    },
-    [forceFullSync, t],
-  );
 
   const formatLastSync = (ts: number | null) => {
     if (!ts) return t("settings.syncNever");
@@ -735,26 +713,56 @@ export default function SyncSettingsScreen() {
                 </TouchableOpacity>
                 {showAdvanced && (
                   <View style={styles.card}>
-                    <View style={styles.btnRow}>
-                      <TouchableOpacity
-                        style={[styles.uploadBtn, isBusy && styles.btnDisabled]}
-                        onPress={() => handleForceFullSync("upload")}
-                        disabled={isBusy}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.uploadBtnText}>{t("settings.syncForceUpload")}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.downloadBtn, isBusy && styles.btnDisabled]}
-                        onPress={() => handleForceFullSync("download")}
-                        disabled={isBusy}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.downloadBtnText}>
-                          {t("settings.syncForceDownload")}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
+                    {/* 存量重复清理:按内容哈希删云端幽灵记录(仅无本地文件且无标注的) */}
+                    <TouchableOpacity
+                      style={[styles.uploadBtn, isBusy && styles.btnDisabled]}
+                      onPress={() => {
+                        Alert.alert(
+                          t("settings.syncDedupeConfirmTitle", "清理重复书籍"),
+                          t(
+                            "settings.syncDedupeConfirmMsg",
+                            "将按内容哈希删除书库中的重复记录(仅删除无本地文件、无高亮的云端幽灵记录),确定继续?",
+                          ),
+                          [
+                            { text: t("common.cancel", "取消"), style: "cancel" },
+                            {
+                              text: t("settings.syncDedupeRun", "清理"),
+                              onPress: async () => {
+                                const { useSyncStore } = await import("@readany/core/stores");
+                                const result = await useSyncStore.getState().cleanupGhosts();
+                                if ("error" in result) {
+                                  Alert.alert(
+                                    t("settings.syncDedupeFailed", "清理失败"),
+                                    result.error,
+                                  );
+                                  return;
+                                }
+                                // 清理直接作用于数据库——刷新书库 store,界面同步消失
+                                const { useLibraryStore } = await import(
+                                  "@/stores/library-store"
+                                );
+                                await useLibraryStore.getState().loadBooks();
+                                Alert.alert(
+                                  t("settings.syncDedupeDoneTitle", "清理完成"),
+                                  t("settings.syncGhostDoneMsg", {
+                                    defaultValue:
+                                      "已删除 {{removed}} 条幽灵记录;云端保留 {{keptRemote}} 本待下载;无法判定 {{uncertain}} 条。",
+                                    removed: result.ghost.removed + result.dedupe.removed,
+                                    keptRemote: result.ghost.keptRemoteIds.length,
+                                    uncertain: result.ghost.uncertainIds.length,
+                                  }),
+                                );
+                              },
+                            },
+                          ],
+                        );
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.uploadBtnText}>
+                        {t("settings.syncDedupeBooks", "清理重复书籍")}
+                      </Text>
+                    </TouchableOpacity>
                     <Text style={styles.resetDesc}>{t("settings.syncForceUploadDesc")}</Text>
                     <Text style={styles.resetDesc}>{t("settings.syncForceDownloadDesc")}</Text>
                     <TouchableOpacity

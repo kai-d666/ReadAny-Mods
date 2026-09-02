@@ -1,5 +1,6 @@
 import { sortAnnotationsByPosition } from "../reader/annotation-order";
 import type { Highlight } from "../types";
+import { resolveBookHash } from "./book-hash";
 import { getDB, getDeviceId, insertTombstone, nextSyncVersion, nextUpdatedAt } from "./db-core";
 
 /** Extended highlight with book info for notes page */
@@ -153,11 +154,13 @@ export async function insertHighlight(highlight: Highlight): Promise<void> {
   const database = await getDB();
   const deviceId = await getDeviceId();
   const syncVersion = await nextSyncVersion(database, "highlights");
+  const bookHash = await resolveBookHash(database, highlight.bookId);
   await database.execute(
-    "INSERT INTO highlights (id, book_id, cfi, text, color, note, chapter_title, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO highlights (id, book_id, book_hash, cfi, text, color, note, chapter_title, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       highlight.id,
       highlight.bookId,
+      bookHash,
       highlight.cfi,
       highlight.text,
       highlight.color,

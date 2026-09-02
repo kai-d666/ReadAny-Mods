@@ -17,7 +17,7 @@ import {
 import { REMOTE_BOOKS_ROOT } from "./sync-types";
 import { collectChanges, type DeviceSyncPayload } from "./simple-sync";
 
-const LAN_SYNC_DIR = "/readany/sync";
+const LAN_SYNC_DIR = "/RA_dev/sync";
 
 function getLanDeviceSnapshotPath(deviceId: string): string {
   return `${LAN_SYNC_DIR}/device-${deviceId}.json`;
@@ -49,7 +49,7 @@ class LocalFsBackend implements ISyncBackend {
     // /readany/data/file/*                        -> local books/*    (legacy layout)
     // /readany/data/cover/*                       -> local covers/*   (legacy layout)
 
-    if (path === "/readany/data/readany.db") {
+    if (path === "/RA_dev/data/readany.db") {
       return await adapter.getDatabasePath();
     }
 
@@ -69,18 +69,18 @@ class LocalFsBackend implements ISyncBackend {
       return adapter.joinPath(dataDir, targetSubdir, ext ? `${bookId}.${ext}` : bookId);
     }
 
-    if (path.startsWith("/readany/data/file")) {
-      const subPath = path.substring("/readany/data/file".length);
+    if (path.startsWith("/RA_dev/data/file")) {
+      const subPath = path.substring("/RA_dev/data/file".length);
       return adapter.joinPath(dataDir, "books", subPath);
     }
 
-    if (path.startsWith("/readany/data/cover")) {
-      const subPath = path.substring("/readany/data/cover".length);
+    if (path.startsWith("/RA_dev/data/cover")) {
+      const subPath = path.substring("/RA_dev/data/cover".length);
       return adapter.joinPath(dataDir, "covers", subPath);
     }
 
-    if (path.startsWith("/readany/data/")) {
-      const subPath = path.substring("/readany/data/".length);
+    if (path.startsWith("/RA_dev/data/")) {
+      const subPath = path.substring("/RA_dev/data/".length);
       return adapter.joinPath(dataDir, subPath);
     }
 

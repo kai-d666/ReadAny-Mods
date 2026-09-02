@@ -166,6 +166,17 @@ async function getMobileFileStat(path: string): Promise<{ size: number; md5?: st
   };
 }
 
+/** 内容 SHA-256(与同步 v2 同一轨道,native adapter 快速实现) */
+async function sha256File(path: string): Promise<string | null> {
+  try {
+    const { hashFileSafe } = await import("@readany/core/sync/sync-files");
+    return await hashFileSafe(path);
+  } catch (e) {
+    console.warn("[Library] Failed to hash imported file:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 async function extractMobileImportMetadata(params: {
   filePath: string;
   format: Book["format"];
@@ -864,7 +875,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           const format: Book["format"] = formatMap[ext || ""] || "epub";
           const fileName = originalName;
           const platform = getPlatformService();
-          const { size: fileSize, md5: fileHash } = await getMobileFileStat(filePath);
+          const { size: fileSize } = await getMobileFileStat(filePath);
+          // 导入即算内容 SHA-256(2026-09-03 同步重构修复):旧路径 md5 已废弃,
+          // 返回 undefined → 书行 file_hash 为空,重装/重新下载后按 hash 的
+          // 进度恢复/去重/绑定角标全部失效。
+          const fileHash = (await sha256File(filePath)) ?? undefined;
 
           const existingDuplicate = findDuplicateBookByHash(duplicateIndex, fileHash);
           if (existingDuplicate) {

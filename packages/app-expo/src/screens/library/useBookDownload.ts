@@ -65,18 +65,22 @@ export function useBookDownload({ loadBooks, onSuccess }: UseBookDownloadOptions
         });
         await loadBooks();
 
-        if (outcome === "not-found") {
-          Alert.alert(
-            t("common.error", "错误"),
-            t(
-              "library.downloadNotFound",
-              "远端没有这本书的文件，可能源设备还未上传成功。请回到那台设备重新打开/同步一次，或在此处重新导入。",
-            ),
-          );
-          return false;
-        }
-        if (outcome === "error") {
-          Alert.alert(t("common.error", "错误"), t("library.downloadFailed", "下载失败，请重试"));
+        if (!outcome.ok) {
+          const err = (outcome.error ?? "").toLowerCase();
+          if (err.includes("not found") || err.includes("no content hash")) {
+            Alert.alert(
+              t("common.error", "错误"),
+              t(
+                "library.downloadNotFound",
+                "远端没有这本书的文件，可能源设备还未上传成功。请回到那台设备重新打开/同步一次，或在此处重新导入。",
+              ),
+            );
+          } else {
+            Alert.alert(
+              t("common.error", "错误"),
+              `${t("library.downloadFailed", "下载失败，请重试")}: ${outcome.error ?? ""}`,
+            );
+          }
           return false;
         }
 

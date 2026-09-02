@@ -66,7 +66,7 @@ const baseConfig: SyncConfig = {
   type: "webdav",
   url: "http://example.com",
   username: "alice",
-  remoteRoot: "readany",
+  remoteRoot: "RA_dev",
   autoSync: false,
   syncIntervalMins: 30,
   wifiOnly: false,
@@ -218,7 +218,7 @@ describe("useSyncStore", () => {
       type: "webdav",
       url: "https://dav.example.com/root",
       username: "alice",
-      remoteRoot: "readany",
+      remoteRoot: "RA_dev",
     });
   });
 

@@ -57,14 +57,14 @@ export function SyncSettings() {
   const [webdavUrl, setWebdavUrl] = useState("");
   const [webdavUsername, setWebdavUsername] = useState("");
   const [webdavPassword, setWebdavPassword] = useState("");
-  const [webdavRemoteRoot, setWebdavRemoteRoot] = useState("readany");
+  const [webdavRemoteRoot, setWebdavRemoteRoot] = useState("RA_dev");
   const [webdavAllowInsecure, setWebdavAllowInsecure] = useState(false);
 
   // S3 state
   const [s3Endpoint, setS3Endpoint] = useState("");
   const [s3Region, setS3Region] = useState("auto");
   const [s3Bucket, setS3Bucket] = useState("");
-  const [s3RemoteRoot, setS3RemoteRoot] = useState("readany");
+  const [s3RemoteRoot, setS3RemoteRoot] = useState("RA_dev");
   const [s3AccessKeyId, setS3AccessKeyId] = useState("");
   const [s3SecretAccessKey, setS3SecretAccessKey] = useState("");
   const [s3PathStyle, setS3PathStyle] = useState(false);
@@ -93,7 +93,7 @@ export function SyncSettings() {
       if (config.type === "webdav") {
         setWebdavUrl(config.url);
         setWebdavUsername(config.username);
-        setWebdavRemoteRoot(config.remoteRoot ?? "readany");
+        setWebdavRemoteRoot(config.remoteRoot ?? "RA_dev");
         setWebdavAllowInsecure(config.allowInsecure ?? false);
         setSyncIntervalInput(String(config.syncIntervalMins ?? 30));
         getPlatformService()
@@ -105,7 +105,7 @@ export function SyncSettings() {
         setS3Endpoint(config.endpoint);
         setS3Region(config.region);
         setS3Bucket(config.bucket);
-        setS3RemoteRoot(config.remoteRoot ?? "readany");
+        setS3RemoteRoot(config.remoteRoot ?? "RA_dev");
         setS3AccessKeyId(config.accessKeyId);
         setS3PathStyle(config.pathStyle ?? false);
         setSyncIntervalInput(String(config.syncIntervalMins ?? 30));
@@ -127,7 +127,7 @@ export function SyncSettings() {
         if (cancelled || savedConfig?.type !== "webdav") return;
         setWebdavUrl(savedConfig.url);
         setWebdavUsername(savedConfig.username);
-        setWebdavRemoteRoot(savedConfig.remoteRoot ?? "readany");
+        setWebdavRemoteRoot(savedConfig.remoteRoot ?? "RA_dev");
         setWebdavAllowInsecure(savedConfig.allowInsecure ?? false);
         setSyncIntervalInput(String(savedConfig.syncIntervalMins ?? 30));
         platform.kvGetItem("sync_webdav_password").then((pw) => {
@@ -140,7 +140,7 @@ export function SyncSettings() {
         setS3Endpoint(savedConfig.endpoint);
         setS3Region(savedConfig.region);
         setS3Bucket(savedConfig.bucket);
-        setS3RemoteRoot(savedConfig.remoteRoot ?? "readany");
+        setS3RemoteRoot(savedConfig.remoteRoot ?? "RA_dev");
         setS3AccessKeyId(savedConfig.accessKeyId);
         setS3PathStyle(savedConfig.pathStyle ?? false);
         setSyncIntervalInput(String(savedConfig.syncIntervalMins ?? 30));
@@ -305,11 +305,11 @@ export function SyncSettings() {
       setWebdavUrl("");
       setWebdavUsername("");
       setWebdavPassword("");
-      setWebdavRemoteRoot("readany");
+      setWebdavRemoteRoot("RA_dev");
       setS3Endpoint("");
       setS3Region("auto");
       setS3Bucket("");
-      setS3RemoteRoot("readany");
+      setS3RemoteRoot("RA_dev");
       setS3AccessKeyId("");
       setS3SecretAccessKey("");
     }
@@ -779,6 +779,46 @@ export function SyncSettings() {
               className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {isBusy ? t("settings.syncSyncing") : t("settings.syncNow")}
+            </button>
+          )}
+          {/* 存量重复清理:按内容哈希删云端幽灵记录(仅无本地文件且无标注的) */}
+          {!isLanContext && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    t(
+                      "settings.syncDedupeConfirmMsg",
+                      "将按内容哈希删除书库中的重复记录(仅删除无本地文件、无高亮的云端幽灵记录),确定继续?",
+                    ),
+                  )
+                ) {
+                  return;
+                }
+                try {
+                  const { useSyncStore } = await import("@readany/core/stores");
+                  const result = await useSyncStore.getState().cleanupGhosts();
+                  if ("error" in result) {
+                    window.alert(result.error);
+                    return;
+                  }
+                  window.alert(
+                    t("settings.syncGhostDoneMsg", {
+                      defaultValue:
+                        "已删除 {{removed}} 条幽灵记录;云端保留 {{keptRemote}} 本待下载;无法判定 {{uncertain}} 条。",
+                      removed: result.ghost.removed + result.dedupe.removed,
+                      keptRemote: result.ghost.keptRemoteIds.length,
+                      uncertain: result.ghost.uncertainIds.length,
+                    }),
+                  );
+                } catch (err) {
+                  window.alert(err instanceof Error ? err.message : String(err));
+                }
+              }}
+              className="mt-2 rounded-md border border-dashed px-3 py-1.5 text-sm text-muted-foreground"
+            >
+              {t("settings.syncDedupeBooks", "清理重复书籍")}
             </button>
           )}
         </div>

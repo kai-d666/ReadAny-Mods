@@ -1,16 +1,18 @@
 import { GroupPickerSheet } from "@/components/library/GroupPickerSheet";
 import {
   CheckIcon,
+  CloudUploadIcon,
   DatabaseIcon,
   FolderInputIcon,
   HashIcon,
   InfoIcon,
   Trash2Icon,
 } from "@/components/ui/Icon";
+import { useSyncStore } from "@readany/core/stores";
 import { useLibraryStore } from "@/stores/library-store";
 import { type ThemeColors, fontSize, fontWeight, radius, spacing, useColors } from "@/styles/theme";
 import type { Book } from "@readany/core/types";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -62,6 +64,23 @@ export function BookCardActionSheet({
     setShowGroupPicker(true);
   };
 
+  /** 单书小菜单 → 上传云端(绑定),2026-09-03 用户方案 */
+  const handleUploadCloud = useCallback(async () => {
+    const result = await useSyncStore.getState().uploadCloudBook(book.id);
+    if ("error" in result || !result.ok) {
+      Alert.alert(
+        t("home.uploadCloud", "上传云端"),
+        "error" in result ? result.error : "上传云端失败，请检查同步配置",
+      );
+    } else if (result.skipped) {
+      Alert.alert(t("home.uploadCloud", "上传云端"), t("home.cloudAlreadyBound", "这本书已经在云书库了"));
+    } else {
+      Alert.alert(t("home.uploadCloud", "上传云端"), t("home.cloudUploaded", "已同步到云书库，其他设备可在云书库页看到"));
+    }
+    // 刷新绑定角标缓存
+    await useSyncStore.getState().listCloudBooks().catch(() => null);
+  }, [book.id, t]);
+
   const items = [
     onShowDetails
       ? {
@@ -93,6 +112,15 @@ export function BookCardActionSheet({
           },
         }
       : null,
+    {
+      key: "uploadCloud",
+      icon: <CloudUploadIcon size={18} color={colors.foreground} />,
+      label: t("home.uploadCloud", "上传云端"),
+      onPress: () => {
+        onClose();
+        void handleUploadCloud();
+      },
+    },
     onVectorize
       ? {
           key: "vectorize",

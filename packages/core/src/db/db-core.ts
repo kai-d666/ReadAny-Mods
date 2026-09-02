@@ -380,6 +380,7 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS highlights (
       id TEXT PRIMARY KEY,
       book_id TEXT NOT NULL,
+      book_hash TEXT,
       cfi TEXT NOT NULL,
       text TEXT NOT NULL,
       color TEXT NOT NULL DEFAULT 'yellow',
@@ -395,6 +396,7 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS notes (
       id TEXT PRIMARY KEY,
       book_id TEXT NOT NULL,
+      book_hash TEXT,
       highlight_id TEXT,
       cfi TEXT,
       title TEXT NOT NULL DEFAULT '',
@@ -411,6 +413,7 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS bookmarks (
       id TEXT PRIMARY KEY,
       book_id TEXT NOT NULL,
+      book_hash TEXT,
       cfi TEXT NOT NULL,
       label TEXT,
       chapter_title TEXT,
@@ -485,6 +488,7 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS reading_sessions (
       id TEXT PRIMARY KEY,
       book_id TEXT NOT NULL,
+      book_hash TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER,
       total_active_time INTEGER DEFAULT 0,
@@ -493,6 +497,16 @@ export async function initDatabase(): Promise<void> {
       state TEXT DEFAULT 'active',
       updated_at INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    )
+  `);
+
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS reading_progress (
+      book_hash TEXT PRIMARY KEY,
+      cfi TEXT DEFAULT '',
+      percent REAL DEFAULT 0,
+      last_opened_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -634,6 +648,45 @@ export async function initDatabase(): Promise<void> {
         );
       } catch {
         // Column already exists
+      }
+
+      // --- Sync rework (Koodo-style, 2026-09-03): 记录表 book_hash + reading_progress ---
+      // (migrations.ts v14 的运行时等价物:移动端 DB 演进走本段,迁移目录仅桌面体系)
+      for (const table of ["highlights", "notes", "bookmarks", "reading_sessions"]) {
+        try {
+          await database.execute(`ALTER TABLE ${table} ADD COLUMN book_hash TEXT`);
+        } catch {
+          // Column already exists
+        }
+      }
+      await database.execute(`
+    CREATE TABLE IF NOT EXISTS reading_progress (
+      book_hash TEXT PRIMARY KEY,
+      cfi TEXT DEFAULT '',
+      percent REAL DEFAULT 0,
+      last_opened_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+      {
+        const backfills = [
+          "UPDATE highlights SET book_hash = (SELECT file_hash FROM books WHERE id = highlights.book_id)",
+          "UPDATE notes SET book_hash = (SELECT file_hash FROM books WHERE id = notes.book_id)",
+          "UPDATE bookmarks SET book_hash = (SELECT file_hash FROM books WHERE id = bookmarks.book_id)",
+          "UPDATE reading_sessions SET book_hash = (SELECT file_hash FROM books WHERE id = reading_sessions.book_id)",
+          `INSERT OR IGNORE INTO reading_progress (book_hash, cfi, percent, last_opened_at, updated_at)
+           SELECT file_hash, COALESCE(current_cfi, ''), COALESCE(progress, 0),
+                  COALESCE(last_opened_at, 0), COALESCE(updated_at, 0)
+           FROM books
+           WHERE file_hash IS NOT NULL AND file_hash != ''`,
+        ];
+        for (const sql of backfills) {
+          try {
+            await database.execute(sql);
+          } catch {
+            // Backfill may fail on schemas without file_hash — non-fatal
+          }
+        }
       }
 
       try {

@@ -225,6 +225,22 @@ export const CloudIcon = icon(() => (
   <Path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
 ));
 
+export const CloudUploadIcon = icon(() => (
+  <>
+    <Path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+    <Path d="M12 12v9" />
+    <Path d="m16 16-4-4-4 4" />
+  </>
+));
+
+export const CloudDownloadIcon = icon(() => (
+  <>
+    <Path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+    <Path d="M12 12v9" />
+    <Path d="m8 16 4 4 4-4" />
+  </>
+));
+
 export const DatabaseIcon = icon(() => (
   <>
     <Path d="M12 3c4.97 0 9 1.34 9 3s-4.03 3-9 3-9-1.34-9-3 4.03-3 9-3Z" />

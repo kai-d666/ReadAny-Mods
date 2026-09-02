@@ -121,6 +121,35 @@ const migrations: Migration[] = [
       "ALTER TABLE threads ADD COLUMN memory_message_count INTEGER DEFAULT 0",
     ],
   },
+  {
+    version: 14,
+    description:
+      "Sync rework (Koodo-style): book_hash on record tables + reading_progress table",
+    // 记录按文件内容哈希跨设备关联:书行不再进快照,记录靠 book_hash 认亲。
+    // reading_progress 承接原 books.progress/current_cfi 的跨设备职责。
+    up: [
+      "ALTER TABLE highlights ADD COLUMN book_hash TEXT",
+      "ALTER TABLE notes ADD COLUMN book_hash TEXT",
+      "ALTER TABLE bookmarks ADD COLUMN book_hash TEXT",
+      "ALTER TABLE reading_sessions ADD COLUMN book_hash TEXT",
+      `CREATE TABLE IF NOT EXISTS reading_progress (
+        book_hash TEXT PRIMARY KEY,
+        cfi TEXT DEFAULT '',
+        percent REAL DEFAULT 0,
+        last_opened_at INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT 0
+      )`,
+      "UPDATE highlights SET book_hash = (SELECT file_hash FROM books WHERE id = highlights.book_id)",
+      "UPDATE notes SET book_hash = (SELECT file_hash FROM books WHERE id = notes.book_id)",
+      "UPDATE bookmarks SET book_hash = (SELECT file_hash FROM books WHERE id = bookmarks.book_id)",
+      "UPDATE reading_sessions SET book_hash = (SELECT file_hash FROM books WHERE id = reading_sessions.book_id)",
+      `INSERT OR IGNORE INTO reading_progress (book_hash, cfi, percent, last_opened_at, updated_at)
+       SELECT file_hash, COALESCE(current_cfi, ''), COALESCE(progress, 0),
+              COALESCE(last_opened_at, 0), COALESCE(updated_at, 0)
+       FROM books
+       WHERE file_hash IS NOT NULL AND file_hash != ''`,
+    ],
+  },
 ];
 
 /** Run pending migrations */

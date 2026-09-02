@@ -25,8 +25,8 @@ import Animated, {
  */
 const OPEN_T = { duration: 220, easing: Easing.out(Easing.cubic) };
 const CLOSE_T = { duration: 180, easing: Easing.out(Easing.cubic) };
-/** 开→关阈值:从全开位下拉超过屏高 10% 即收回(用户指定 10) */
-const CLOSE_THRESHOLD = 0.1;
+/** 开→关阈值:从全开位下拉超过屏高 15% 即收回(防误关,原 10 偏灵敏) */
+const CLOSE_THRESHOLD = 0.15;
 
 interface PullDownHostProps {
   /** Layer1 内容(render prop:第 1 页内容的 scrollY 交给它绑定到内容 onScroll) */
@@ -118,10 +118,11 @@ export function PullDownHost({ children, layer2 }: PullDownHostProps) {
         const horizontal = Math.abs(e.translationX) > Math.abs(e.translationY) * 1.4;
         if (horizontal) return; // 横向不作任何事(详情仅经「查看详情」按钮)
         const now = drag.value;
-        // 关→开:拖过 30% 或快甩;开→关:从全开位下拉超过屏高 27% 即收回(零晃动 timing)
+        // 关→开:拖过 40% 或快甩(速度>600 且已拖 10%);开→关:再从全开位
+        // 下拉超过 15% 即收回(2026-09-03 用户反馈过灵敏,慢拖/关闭收紧,快甩保持原值)
         const open = panelOpenSV.value
           ? now > screenH * (1 - CLOSE_THRESHOLD) || e.velocityY > 600
-          : now > screenH * 0.3 || (e.velocityY > 600 && now > screenH * 0.1);
+          : now > screenH * 0.43 || (e.velocityY > 600 && now > screenH * 0.2);
         drag.value = withTiming(open ? screenH : 0, open ? OPEN_T : CLOSE_T);
         panelOpenSV.value = open;
         runOnJS(setPanelOpen)(open);

@@ -2118,8 +2118,13 @@
           try {
             await el.init({ lastLocation: msg.lastLocation });
           } catch (err) {
-            console.warn('[WebView] Failed to init with lastLocation, going to start:', err);
-            await el.goToFraction(0);
+            // 兜底:init 定位失败时显式跳转原位置(否则会静默落在书首,污染进度)
+            console.warn('[WebView] Failed to init with lastLocation, falling back to goTo:', err);
+            try {
+              await el.goTo(msg.lastLocation);
+            } catch {
+              await el.goToFraction(0);
+            }
           }
         } else {
           await el.goToFraction(0);

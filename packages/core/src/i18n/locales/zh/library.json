@@ -186,6 +186,10 @@
     "vec_queued": "排队中",
     "manageTags": "管理标签",
     "remote": "需下载",
-    "downloading": "下载中"
+    "downloading": "下载中",
+    "cloud_bound": "绑定",
+    "uploadCloud": "上传云端",
+    "cloudAlreadyBound": "这本书已经在云书库了",
+    "cloudUploaded": "已同步到云书库，其他设备可在云书库页看到"
   }
 }

@@ -160,12 +160,13 @@ describe("session-queries", () => {
       expect(sql).toContain("INSERT INTO reading_sessions");
       expect(params[0]).toBe("session-1");
       expect(params[1]).toBe("book-1");
-      expect(params[2]).toBe(1000); // startedAt
-      expect(params[3]).toBe(2000); // endedAt
-      expect(params[4]).toBe(900);  // totalActiveTime
-      expect(params[5]).toBe(10);   // pagesRead
-      expect(params[6]).toBe(15000); // charactersRead
-      expect(params[7]).toBe("STOPPED"); // state
+      expect(params[2]).toBeNull(); // book_hash
+      expect(params[3]).toBe(1000); // startedAt
+      expect(params[4]).toBe(2000); // endedAt
+      expect(params[5]).toBe(900);  // totalActiveTime
+      expect(params[6]).toBe(10);   // pagesRead
+      expect(params[7]).toBe(15000); // charactersRead
+      expect(params[8]).toBe("STOPPED"); // state
     });
   });
 

@@ -46,7 +46,9 @@ export class WebDavBackend implements ISyncBackend {
 
   private resolvePath(path: string): string {
     const remoteRoot = this.getRemoteRoot();
-    const resolved = path.replace(/^\/readany(?=\/|$)/, `/${remoteRoot}`);
+    // 逻辑根名已从 /readany 迁移到 /RA_dev;兼容两种旧/新字面量,统一映射到
+    // 用户配置的远端根(config.remoteRoot),保证自定义/旧根也能正常工作。
+    const resolved = path.replace(/^\/(?:readany|RA_dev)(?=\/|$)/, `/${remoteRoot}`);
     if (
       this.baseUrlAlreadyIncludesRemoteRoot() &&
       (resolved === `/${remoteRoot}` || resolved.startsWith(`/${remoteRoot}/`))

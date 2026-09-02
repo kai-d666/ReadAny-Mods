@@ -127,10 +127,11 @@ describe("bookmark-queries", () => {
       expect(sql).toContain("updated_at");
       expect(params[0]).toBe("bm-1");
       expect(params[1]).toBe("book-1");
-      expect(params[2]).toBe("epubcfi(/6/2!/4/2/10)");
-      expect(params[3]).toBe("Important part");
-      expect(params[5]).toBe(1000);
-      expect(params[6]).toBe(1500);
+      expect(params[2]).toBeNull(); // book_hash
+      expect(params[3]).toBe("epubcfi(/6/2!/4/2/10)");
+      expect(params[4]).toBe("Important part");
+      expect(params[6]).toBe(1000);
+      expect(params[7]).toBe(1500);
     });
   });
 

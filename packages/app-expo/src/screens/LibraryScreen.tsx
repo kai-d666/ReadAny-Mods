@@ -12,6 +12,8 @@ import {
   CheckCheckIcon,
   ChevronLeftIcon,
   ClockIcon,
+  CloudIcon,
+  CloudUploadIcon,
   DatabaseIcon,
   FolderInputIcon,
   FolderMinusIcon,
@@ -23,6 +25,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "@/components/ui/Icon";
+import { CloudLibraryView } from "@/screens/library/CloudLibraryView";
 import { SyncButton } from "@/components/ui/SyncButton";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { openMobileBook } from "@/lib/library/open-mobile-book";
@@ -189,6 +192,8 @@ export function LibraryScreen() {
   const [isPickingImport, setIsPickingImport] = useState(false);
   const [pendingLocalImport, setPendingLocalImport] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
+  /** 书库页顶部切换:library(本地书库)/cloud(云书库),用户 2026-09-03 方案 */
+  const [libraryView, setLibraryView] = useState<"library" | "cloud">("library");
   const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
   const [showGroupPicker, setShowGroupPicker] = useState(false);
   const [batchTagBookIds, setBatchTagBookIds] = useState<string[]>([]);
@@ -702,6 +707,28 @@ export function LibraryScreen() {
     exitSelectionMode();
   }, [selectedBookIds, books, handleVectorize, exitSelectionMode]);
 
+  /** 多选 → 上传云端(绑定):逐本上传,报告结果(2026-09-03 用户方案) */
+  const handleBatchUploadCloud = useCallback(async () => {
+    if (selectedBookIds.size === 0) return;
+    const ids = [...selectedBookIds];
+    let ok = 0;
+    let failed = 0;
+    for (const id of ids) {
+      const result = await useSyncStore.getState().uploadCloudBook(id);
+      if ("error" in result) {
+        failed++;
+      } else if (result.ok) {
+        ok++;
+      } else {
+        failed++;
+      }
+    }
+    // 刷新绑定角标(云端 hash 缓存)
+    await useSyncStore.getState().listCloudBooks().catch(() => null);
+    exitSelectionMode();
+    Alert.alert("上传云端", failed > 0 ? `已上传 ${ok} 本,失败 ${failed} 本,请重试` : `已上传云端 ${ok} 本`);
+  }, [selectedBookIds, exitSelectionMode]);
+
   const openGroupNameModal = useCallback((mode: "create" | "rename", group?: BookGroup) => {
     setGroupNameInput(group?.name ?? "");
     setGroupNameModal({ mode, group });
@@ -875,6 +902,12 @@ export function LibraryScreen() {
                 <TouchableOpacity style={s.headerBtn} onPress={handleBatchVectorize}>
                   <DatabaseIcon size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.headerBtn}
+                  onPress={() => void handleBatchUploadCloud()}
+                >
+                  <CloudUploadIcon size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
                 <TouchableOpacity style={s.headerBtn} onPress={handleBatchDelete}>
                   <Trash2Icon size={18} color={colors.destructive} />
                 </TouchableOpacity>
@@ -891,12 +924,23 @@ export function LibraryScreen() {
                   </TouchableOpacity>
                 )}
                 <Text style={s.headerTitle} numberOfLines={1}>
-                  {activeGroup?.name ?? t("sidebar.library", "书库")}
+                  {activeGroup?.name ?? (libraryView === "cloud" ? t("sidebar.cloud_library", "云书库") : t("sidebar.library", "书库"))}
                 </Text>
+                {!activeGroup && (
+                  <TouchableOpacity
+                    style={s.headerBtn}
+                    onPress={() => setLibraryView(libraryView === "cloud" ? "library" : "cloud")}
+                  >
+                    <CloudIcon
+                      size={18}
+                      color={libraryView === "cloud" ? colors.primary : colors.mutedForeground}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
               <View style={s.headerActions}>
                 <SyncButton size={18} color={colors.mutedForeground} />
-                {hasBooks && (
+                {hasBooks && libraryView === "library" && (
                   <TouchableOpacity
                     style={s.headerBtn}
                     onPress={() => {
@@ -915,12 +959,12 @@ export function LibraryScreen() {
                     />
                   </TouchableOpacity>
                 )}
-                {hasBooks && (
+                {hasBooks && libraryView === "library" && (
                   <TouchableOpacity style={s.headerBtn} onPress={() => setShowSort(!showSort)}>
                     <SortAscIcon size={18} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 )}
-                {hasBooks && (
+                {hasBooks && libraryView === "library" && (
                   <TouchableOpacity
                     style={s.headerBtn}
                     onPress={() => {
@@ -1080,6 +1124,9 @@ export function LibraryScreen() {
       </Modal>
 
       {/* Content */}
+      {libraryView === "cloud" ? (
+        <CloudLibraryView onImported={() => void loadBooks()} />
+      ) : (
       <View style={s.content}>
         <View style={s.contentInner}>
           {!isLoaded && (
@@ -1147,6 +1194,7 @@ export function LibraryScreen() {
           )}
         </View>
       </View>
+      )}
 
       <Modal
         visible={!!groupNameModal}

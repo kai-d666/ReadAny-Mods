@@ -1,5 +1,6 @@
 import { sortAnnotationsByPosition } from "../reader/annotation-order";
 import type { Bookmark } from "../types";
+import { resolveBookHash } from "./book-hash";
 import { getDB, getDeviceId, insertTombstone, nextSyncVersion } from "./db-core";
 
 export async function getBookmarks(bookId: string): Promise<Bookmark[]> {
@@ -29,11 +30,13 @@ export async function insertBookmark(bookmark: Bookmark): Promise<void> {
   const deviceId = await getDeviceId();
   const syncVersion = await nextSyncVersion(database, "bookmarks");
   const updatedAt = Math.max(Date.now(), bookmark.createdAt);
+  const bookHash = await resolveBookHash(database, bookmark.bookId);
   await database.execute(
-    "INSERT INTO bookmarks (id, book_id, cfi, label, chapter_title, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO bookmarks (id, book_id, book_hash, cfi, label, chapter_title, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       bookmark.id,
       bookmark.bookId,
+      bookHash,
       bookmark.cfi,
       bookmark.label || null,
       bookmark.chapterTitle || null,

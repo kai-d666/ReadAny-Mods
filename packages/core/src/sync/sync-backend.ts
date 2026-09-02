@@ -128,8 +128,10 @@ export const DEFAULT_SYNC_CONFIG = {
   notifyOnComplete: true,
 } as const;
 
-export const DEFAULT_WEBDAV_REMOTE_ROOT = "readany";
-export const DEFAULT_S3_REMOTE_ROOT = "readany";
+// 默认远端根目录与旧版(未修复同步逻辑)隔离:新版默认写入 RA_dev,
+// 旧版本(fix 前的 bundle)仍用 /readany,两套云端数据互不干扰。
+export const DEFAULT_WEBDAV_REMOTE_ROOT = "RA_dev";
+export const DEFAULT_S3_REMOTE_ROOT = "RA_dev";
 
 /** Secret keys for each backend type */
 export const SYNC_SECRET_KEYS = {

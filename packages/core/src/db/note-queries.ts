@@ -1,5 +1,6 @@
 import { sortAnnotationsByPosition } from "../reader/annotation-order";
 import type { Note } from "../types";
+import { resolveBookHash } from "./book-hash";
 import {
   getDB,
   getDeviceId,
@@ -72,11 +73,13 @@ export async function insertNote(note: Note): Promise<void> {
   const database = await getDB();
   const deviceId = await getDeviceId();
   const syncVersion = await nextSyncVersion(database, "notes");
+  const bookHash = await resolveBookHash(database, note.bookId);
   await database.execute(
-    "INSERT INTO notes (id, book_id, highlight_id, cfi, title, content, chapter_title, tags, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO notes (id, book_id, book_hash, highlight_id, cfi, title, content, chapter_title, tags, created_at, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       note.id,
       note.bookId,
+      bookHash,
       note.highlightId || null,
       note.cfi || null,
       note.title,

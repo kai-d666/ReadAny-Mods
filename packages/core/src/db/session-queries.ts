@@ -1,4 +1,5 @@
 import type { ReadingSession } from "../types/reading";
+import { resolveBookHash } from "./book-hash";
 import { getDB, getDeviceId, nextSyncVersion, nextUpdatedAt } from "./db-core";
 
 type ReadingSessionRow = {
@@ -143,17 +144,19 @@ export async function insertReadingSession(session: ReadingSession): Promise<voi
   const database = await getDB();
   const now = Date.now();
   // 并行取无依赖的写入元数据(各跨 JNI,串行时每次 focus 保存多 ~百 ms)
-  const [deviceId, syncVersion] = await Promise.all([
+  const [deviceId, syncVersion, bookHash] = await Promise.all([
     getDeviceId(),
     nextSyncVersion(database, "reading_sessions"),
+    resolveBookHash(database, session.bookId),
   ]);
   // UPSERT: a session can be re-saved (e.g. saveCurrentSession racing stopSession)
   // with the same id — id is the PK. Conflict → update instead of failing.
   await database.execute(
-    "INSERT INTO reading_sessions (id, book_id, started_at, ended_at, total_active_time, pages_read, characters_read, state, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ended_at = excluded.ended_at, total_active_time = excluded.total_active_time, pages_read = excluded.pages_read, characters_read = excluded.characters_read, state = excluded.state, updated_at = excluded.updated_at, sync_version = excluded.sync_version, last_modified_by = excluded.last_modified_by",
+    "INSERT INTO reading_sessions (id, book_id, book_hash, started_at, ended_at, total_active_time, pages_read, characters_read, state, updated_at, sync_version, last_modified_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ended_at = excluded.ended_at, total_active_time = excluded.total_active_time, pages_read = excluded.pages_read, characters_read = excluded.characters_read, state = excluded.state, updated_at = excluded.updated_at, sync_version = excluded.sync_version, last_modified_by = excluded.last_modified_by",
     [
       session.id,
       session.bookId,
+      bookHash,
       session.startedAt,
       session.endedAt || null,
       session.totalActiveTime,

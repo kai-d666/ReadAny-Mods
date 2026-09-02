@@ -48,6 +48,7 @@
   },
   "sidebar": {
     "library": "Library",
+    "cloud_library": "Cloud Library",
     "chat": "Chat",
     "notes": "Notes",
     "skills": "Skills",

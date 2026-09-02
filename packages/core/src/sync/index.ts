@@ -1,6 +1,15 @@
 export { WebDavClient } from "./webdav-client";
 export { syncFiles, downloadBookFile } from "./sync-files";
 export type { SyncFilesOptions } from "./sync-files";
+export {
+  listRemoteBooks,
+  downloadRemoteBookToLocal,
+  uploadBookToCloud,
+  deleteRemoteBookFromCloud,
+} from "./cloud-library";
+export type { CloudBookEntry } from "./cloud-library";
+export { dedupeDuplicateBooksByHash, cleanupGhostBooks } from "./book-dedupe";
+export type { DedupeBooksReport, GhostCleanupReport } from "./book-dedupe";
 export { parallelLimit } from "./sync-transfer";
 export { runSimpleSync, collectChanges, applyChanges } from "./simple-sync";
 export { setSyncAdapter, getSyncAdapter } from "./sync-adapter";

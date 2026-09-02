@@ -174,9 +174,10 @@ describe("note-queries", () => {
       expect(sql).toContain("INSERT INTO notes");
       expect(params[0]).toBe("note-1");
       expect(params[1]).toBe("book-1");
-      expect(params[2]).toBe("hl-1"); // highlightId
-      expect(params[4]).toBe("My Note"); // title
-      expect(params[7]).toBe('["important","review"]'); // tags serialized
+      expect(params[2]).toBeNull(); // book_hash
+      expect(params[3]).toBe("hl-1"); // highlightId
+      expect(params[5]).toBe("My Note"); // title
+      expect(params[8]).toBe('["important","review"]'); // tags serialized
     });
   });
 

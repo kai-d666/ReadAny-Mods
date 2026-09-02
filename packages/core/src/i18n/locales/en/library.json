@@ -186,6 +186,10 @@
     "vec_queued": "Queued",
     "manageTags": "Manage Tags",
     "remote": "Download required",
-    "downloading": "Downloading"
+    "downloading": "Downloading",
+    "cloud_bound": "Bound",
+    "uploadCloud": "Upload to Cloud",
+    "cloudAlreadyBound": "This book is already in the cloud library",
+    "cloudUploaded": "Synced to the cloud library. Other devices can download it from the cloud library."
   }
 }

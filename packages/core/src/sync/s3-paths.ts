@@ -20,10 +20,9 @@ export function sanitizeS3RemoteRoot(remoteRoot: string): string {
 export function normalizeS3Key(remoteRoot: string, path: string): string {
   const root = sanitizeS3RemoteRoot(remoteRoot) || DEFAULT_S3_REMOTE_ROOT;
   let normalized = stripControlChars(path).trim().replace(/^\/+/, "");
-  if (normalized === root || normalized.startsWith(`${root}/`)) {
-    return normalized;
-  }
-  normalized = normalized.replace(/^readany(?=\/|$)/, root);
+  // 剥掉逻辑根字面(兼容旧 /readany 与新 /RA_dev),再拼用户配置的远端根,
+  // 避免"双根拼接"(旧逻辑根只认 readany 时,新根 /RA_dev 会叠成 readany/RA_dev/…)
+  normalized = normalized.replace(/^(?:readany|RA_dev)(?=\/|$)/, root);
   if (normalized === root || normalized.startsWith(`${root}/`)) {
     return normalized;
   }
@@ -33,9 +32,9 @@ export function normalizeS3Key(remoteRoot: string, path: string): string {
 export function s3KeyToLogicalPath(remoteRoot: string, key: string): string {
   const root = sanitizeS3RemoteRoot(remoteRoot) || DEFAULT_S3_REMOTE_ROOT;
   const normalizedKey = key.replace(/\/+$/, "");
-  if (normalizedKey === root) return "/readany";
+  if (normalizedKey === root) return "/RA_dev";
   if (normalizedKey.startsWith(`${root}/`)) {
-    return `/readany/${normalizedKey.slice(root.length + 1)}`;
+    return `/RA_dev/${normalizedKey.slice(root.length + 1)}`;
   }
   return `/${normalizedKey}`;
 }

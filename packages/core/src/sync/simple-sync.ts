@@ -7,6 +7,13 @@
  * 2. Pull all other devices' files and apply changes (last-write-wins per record)
  * 3. Push local changes since last sync
  * 4. Tombstones for deletions
+ *
+ * v2 终局语义(2026-09-03 用户拍板,照 Koodo):
+ * - 同步只传"人类阅读记录"(高亮/笔记/书签/阅读会话)。
+ * - **books 不进快照**:书库=本地拥有(导入 + 云书库手动下载),书行永不跨设备搬,
+ *   重复/幽灵/吃书/双三体全部从结构上根除。
+ * - AI 对话(threads/messages/skills)不进同步;书库组织(分组/标签)本地化。
+ * - 记录的 book_id 是"本地书 UUID",跨设备靠【同步重构-1b】的 book_hash 映射关联。
  */
 
 import {
@@ -17,7 +24,6 @@ import {
 } from "../db/database";
 import { runSerializedDbTask } from "../db/write-retry";
 import { getPlatformService } from "../services/platform";
-import { canonicalBookCoverPath, canonicalBookFilePath } from "./local-book-paths";
 import type { ISyncBackend } from "./sync-backend";
 import type { SyncFilesOptions } from "./sync-files";
 import type { SyncProgress } from "./sync-types";
@@ -32,7 +38,6 @@ interface SyncTableConfig {
 interface ExistingRecordState {
   timestamp: number;
   deletedAt?: number | null;
-  coverUrl?: string | null;
 }
 
 export interface SimpleSyncOptions {
@@ -42,29 +47,24 @@ export interface SimpleSyncOptions {
   fileSyncOptions?: SyncFilesOptions;
 }
 
-/** Tables included in sync, with their primary key and timestamp column */
+/** Tables included in sync — 人类阅读记录 only(2026-09-03 用户拍板)
+ * - books/threads/messages/skills/tags/book_tags/book_groups 均不进快照
+ *   (书库=本地拥有;AI 对话与书库组织本地化;详情见文件头注释)
+ * - reading_progress:跨设备阅读进度(按内容哈希),承接原 books.progress 的跨设备职责
+ */
 const SYNC_TABLES: SyncTableConfig[] = [
-  { name: "book_groups", pk: "id", timestampCol: "updated_at" },
-  // is_vectorized and vectorize_progress are local-only (chunks live in readany_local.db)
-  {
-    name: "books",
-    pk: "id",
-    timestampCol: "updated_at",
-    excludeColumns: ["is_vectorized", "vectorize_progress"],
-  },
   { name: "highlights", pk: "id", timestampCol: "updated_at" },
   { name: "notes", pk: "id", timestampCol: "updated_at" },
   { name: "bookmarks", pk: "id", timestampCol: "updated_at" },
-  { name: "threads", pk: "id", timestampCol: "updated_at" },
-  { name: "messages", pk: "id", timestampCol: "created_at" },
-  { name: "skills", pk: "id", timestampCol: "updated_at" },
-  { name: "tags", pk: "id", timestampCol: "updated_at" },
-  { name: "book_tags", pk: "id", timestampCol: "updated_at" },
   { name: "reading_sessions", pk: "id", timestampCol: "updated_at" },
+  { name: "reading_progress", pk: "book_hash", timestampCol: "updated_at" },
 ];
 
+/** 记录表(带 book_hash):跨设备靠 hash 认亲,远端 book_id 改写为本地书 id */
+const RECORD_TABLES = new Set(["highlights", "notes", "bookmarks", "reading_sessions"]);
+
 /** Remote directory for per-device sync files */
-const SYNC_DIR = "/readany/sync";
+const SYNC_DIR = "/RA_dev/sync";
 const SYNC_INDEX_PATH = `${SYNC_DIR}/index.json`;
 
 /** Build the remote path for a device's changeset file */
@@ -320,6 +320,9 @@ export async function applyChanges(
             .filter((value) => value !== undefined)
             .map(String),
         );
+        // 记录表按 book_hash 认亲:远端记录的书 id 是"对方设备的书 UUID",
+        // 书行不跨设备,必须先映射到本地同 hash 的书,记录才有宿主。
+        const bookHashToLocalId = await buildBookHashMap(db, tableName, tableData.records);
         let processedRecords = 0;
 
         for (const record of tableData.records) {
@@ -335,13 +338,35 @@ export async function applyChanges(
           if (!options.forceApply && !shouldApplyRemoteRecord(record, timestampCol, localState)) {
             skipped++;
           } else {
+            let recordToApply = safeRecord;
+            if (RECORD_TABLES.has(tableName)) {
+              const remoteHash = typeof record.book_hash === "string" ? record.book_hash : "";
+              if (remoteHash) {
+                const localBookId = bookHashToLocalId.get(remoteHash);
+                if (!localBookId) {
+                  console.log(
+                    `[SimpleSync] Skipping ${tableName}/${String(pkValue)}: book hash ${remoteHash.slice(0, 12)}… is not present locally`,
+                  );
+                  skipped++;
+                  continue;
+                }
+                if (String(safeRecord.book_id) !== localBookId) {
+                  recordToApply = { ...safeRecord, book_id: localBookId };
+                }
+                if (
+                  !options.forceApply &&
+                  (await isDuplicateRecord(db, tableName, localBookId, recordToApply))
+                ) {
+                  console.log(
+                    `[SimpleSync] Skipping duplicate ${tableName}/${String(pkValue)} at cfi ${String(recordToApply.cfi ?? "")}`,
+                  );
+                  skipped++;
+                  continue;
+                }
+              }
+            }
             try {
-              await upsertRecord(
-                db,
-                tableName,
-                preserveLocalCustomBookCover(safeRecord, localState),
-                pk,
-              );
+              await upsertRecord(db, tableName, recordToApply, pk);
               applied++;
               existingRecords.set(String(pkValue), {
                 timestamp: remoteTs,
@@ -409,14 +434,87 @@ export async function applyChanges(
   );
 }
 
+/**
+ * 记录表远端 book_hash → 本地同 hash 书 id 的映射(一次批量查询)。
+ * 映射不到 = 本地还没有这本书 → 该记录无宿主,跳过(与 Koodo 一致:
+ * 记录只依附于"我已拥有的书")。
+ */
+async function buildBookHashMap(
+  db: Awaited<ReturnType<typeof getDB>>,
+  tableName: string,
+  records: Record<string, unknown>[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!RECORD_TABLES.has(tableName)) return map;
+
+  const hashes = new Set<string>();
+  for (const record of records) {
+    const hash = record.book_hash;
+    if (typeof hash === "string" && hash) hashes.add(hash);
+  }
+  if (hashes.size === 0) return map;
+
+  const chunkSize = 200;
+  for (let offset = 0; offset < hashes.size; offset += chunkSize) {
+    const chunk = [...hashes].slice(offset, offset + chunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = await db.select<{ id: string; file_hash: string }>(
+      `SELECT id, file_hash FROM books WHERE file_hash IN (${placeholders}) AND deleted_at IS NULL`,
+      chunk,
+    );
+    for (const row of rows) map.set(row.file_hash, row.id);
+  }
+  return map;
+}
+
+/**
+ * 同书同位置的记录去重:同一本书(按 hash)两端各自标了同一位置时,
+ * 远端那一条不应再插一份。键=书 id+cfi+内容标识;reading_sessions 天然独立不去重。
+ */
+async function isDuplicateRecord(
+  db: Awaited<ReturnType<typeof getDB>>,
+  tableName: string,
+  bookId: string,
+  record: Record<string, unknown>,
+): Promise<boolean> {
+  const cfi = typeof record.cfi === "string" ? record.cfi : "";
+  if (!cfi) return false;
+
+  if (tableName === "highlights") {
+    const text = String(record.text ?? "");
+    const rows = await db.select<{ id: string }>(
+      "SELECT id FROM highlights WHERE book_id = ? AND cfi = ? AND text = ? LIMIT 1",
+      [bookId, cfi, text],
+    );
+    return rows.length > 0;
+  }
+  if (tableName === "bookmarks") {
+    const label = String(record.label ?? "");
+    const rows = await db.select<{ id: string }>(
+      "SELECT id FROM bookmarks WHERE book_id = ? AND cfi = ? AND COALESCE(label, '') = ? LIMIT 1",
+      [bookId, cfi, label],
+    );
+    return rows.length > 0;
+  }
+  if (tableName === "notes") {
+    const title = String(record.title ?? "");
+    const content = String(record.content ?? "");
+    const rows = await db.select<{ id: string }>(
+      "SELECT id FROM notes WHERE book_id = ? AND COALESCE(cfi, '') = ? AND title = ? AND content = ? LIMIT 1",
+      [bookId, cfi, title, content],
+    );
+    return rows.length > 0;
+  }
+  return false;
+}
+
 async function upsertRecord(
   db: Awaited<ReturnType<typeof getDB>>,
   table: string,
   record: Record<string, unknown>,
   pk: string,
 ): Promise<void> {
-  const localRecord = table === "books" ? localizeSyncedBookRecord(record) : record;
-  const filteredRecord = await filterRecordToExistingColumns(db, table, localRecord);
+  const filteredRecord = await filterRecordToExistingColumns(db, table, record);
   const columns = Object.keys(filteredRecord);
   if (columns.length === 0 || !columns.includes(pk)) return;
 
@@ -441,48 +539,6 @@ async function upsertRecord(
      ON CONFLICT(${pk}) DO UPDATE SET ${updateSet}`,
     values,
   );
-}
-
-function localizeSyncedBookRecord(record: Record<string, unknown>): Record<string, unknown> {
-  const id = record.id;
-  const filePath = canonicalBookFilePath(id, record.file_path, record.format);
-  if (!filePath) return record;
-
-  return {
-    ...record,
-    file_path: filePath,
-    cover_url: canonicalBookCoverPath(id, record.cover_url),
-    sync_status: "remote",
-  };
-}
-
-function preserveLocalCustomBookCover(
-  record: Record<string, unknown>,
-  localState: ExistingRecordState | undefined,
-): Record<string, unknown> {
-  const bookId = typeof record.id === "string" ? record.id : "";
-  const localCoverUrl = localState?.coverUrl;
-  if (!bookId || !isCustomCoverPath(bookId, localCoverUrl)) return record;
-
-  const remoteCoverUrl = record.cover_url;
-  if (isCustomCoverPath(bookId, remoteCoverUrl)) return record;
-  if (!isCanonicalCoverPath(bookId, remoteCoverUrl)) return record;
-
-  console.log(
-    `[SimpleSync] Preserving local custom cover for book ${bookId} while applying remote metadata`,
-  );
-  return {
-    ...record,
-    cover_url: localCoverUrl,
-  };
-}
-
-function isCustomCoverPath(bookId: string, value: unknown): value is string {
-  return typeof value === "string" && value.startsWith(`covers/${bookId}-custom-`);
-}
-
-function isCanonicalCoverPath(bookId: string, value: unknown): value is string {
-  return typeof value === "string" && value.startsWith(`covers/${bookId}.`);
 }
 
 function normalizeDeletedAt(value: unknown): number | null | undefined {
@@ -555,8 +611,6 @@ async function loadExistingRecordStates(
 
   const columns = await getTableColumns(db, tableName);
   const deletedAtSelect = columns.has("deleted_at") ? ", deleted_at AS deleted_at" : "";
-  const coverUrlSelect =
-    tableName === "books" && columns.has("cover_url") ? ", cover_url AS cover_url" : "";
 
   const chunkSize = 200;
   for (let offset = 0; offset < ids.length; offset += chunkSize) {
@@ -566,9 +620,8 @@ async function loadExistingRecordStates(
       id: string;
       timestamp: number | null;
       deleted_at?: number | null;
-      cover_url?: string | null;
     }>(
-      `SELECT ${pk} AS id, ${timestampCol} AS timestamp${deletedAtSelect}${coverUrlSelect} FROM ${tableName} WHERE ${pk} IN (${placeholders})`,
+      `SELECT ${pk} AS id, ${timestampCol} AS timestamp${deletedAtSelect} FROM ${tableName} WHERE ${pk} IN (${placeholders})`,
       chunk,
     );
 
@@ -576,7 +629,6 @@ async function loadExistingRecordStates(
       states.set(String(row.id), {
         timestamp: row.timestamp ?? 0,
         deletedAt: normalizeDeletedAt(row.deleted_at),
-        coverUrl: row.cover_url,
       });
     }
   }

@@ -29,7 +29,7 @@ vi.mock("../../services/platform", () => ({
 
 const { applyChanges } = await import("../simple-sync");
 
-describe("sync schema filtering", () => {
+describe("sync schema filtering (records tables)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dbMocks.getDB.mockResolvedValue(mockDb);
@@ -38,25 +38,25 @@ describe("sync schema filtering", () => {
     dbMocks.getDeviceId.mockResolvedValue("device-local");
 
     mockSelect.mockImplementation(async (sql: string) => {
-      if (sql.startsWith("PRAGMA table_info(books)")) {
+      if (sql.startsWith("PRAGMA table_info(highlights)")) {
         return [
           { name: "id" },
-          { name: "title" },
+          { name: "book_id" },
+          { name: "cfi" },
+          { name: "text" },
           { name: "updated_at" },
           { name: "deleted_at" },
-          { name: "sync_version" },
-          { name: "last_modified_by" },
         ];
       }
 
       if (
         sql.startsWith("SELECT id AS id, updated_at AS timestamp") &&
-        sql.includes("FROM books")
+        sql.includes("FROM highlights")
       ) {
         return [];
       }
 
-      if (sql.startsWith("SELECT updated_at FROM books WHERE id = ?")) {
+      if (sql.startsWith("SELECT updated_at FROM highlights WHERE id = ?")) {
         return [];
       }
 
@@ -71,11 +71,13 @@ describe("sync schema filtering", () => {
       timestamp: Date.now(),
       since: 0,
       tables: {
-        books: {
+        highlights: {
           records: [
             {
-              id: "book-1",
-              title: "Test Book",
+              id: "hl-1",
+              book_id: "book-1",
+              cfi: "epubcfi(/6/2)",
+              text: "Test highlight",
               updated_at: 1000,
               reading_status: "reading",
             },
@@ -88,23 +90,32 @@ describe("sync schema filtering", () => {
     expect(result).toEqual({ applied: 1, skipped: 0 });
     expect(mockExecute).toHaveBeenCalled();
 
-    const [sql, params] = mockExecute.mock.calls[0];
-    expect(sql).toContain("INSERT INTO books (id, title, updated_at)");
+    const [sql, params] = mockExecute.mock.calls.find((call) =>
+      String(call[0]).includes("INSERT INTO highlights"),
+    )!;
+    expect(sql).toContain("INSERT INTO highlights (id, book_id, cfi, text, updated_at)");
     expect(sql).not.toContain("reading_status");
-    expect(params).toEqual(["book-1", "Test Book", 1000]);
+    expect(params).toEqual(["hl-1", "book-1", "epubcfi(/6/2)", "Test highlight", 1000]);
   });
 
   it("simple sync applies a tied-timestamp remote soft delete", async () => {
     mockSelect.mockImplementation(async (sql: string) => {
-      if (sql.startsWith("PRAGMA table_info(books)")) {
-        return [{ name: "id" }, { name: "title" }, { name: "updated_at" }, { name: "deleted_at" }];
+      if (sql.startsWith("PRAGMA table_info(highlights)")) {
+        return [
+          { name: "id" },
+          { name: "book_id" },
+          { name: "cfi" },
+          { name: "text" },
+          { name: "updated_at" },
+          { name: "deleted_at" },
+        ];
       }
 
       if (
         sql.startsWith("SELECT id AS id, updated_at AS timestamp") &&
-        sql.includes("FROM books")
+        sql.includes("FROM highlights")
       ) {
-        return [{ id: "book-1", timestamp: 1000, deleted_at: null }];
+        return [{ id: "hl-1", timestamp: 1000, deleted_at: null }];
       }
 
       return [];
@@ -115,11 +126,13 @@ describe("sync schema filtering", () => {
       timestamp: Date.now(),
       since: 0,
       tables: {
-        books: {
+        highlights: {
           records: [
             {
-              id: "book-1",
-              title: "Deleted remotely",
+              id: "hl-1",
+              book_id: "book-1",
+              cfi: "epubcfi(/6/2)",
+              text: "Deleted remotely",
               updated_at: 1000,
               deleted_at: 900,
             },
@@ -132,23 +145,30 @@ describe("sync schema filtering", () => {
     expect(result).toEqual({ applied: 1, skipped: 0 });
 
     const insertCall = mockExecute.mock.calls.find((call) =>
-      String(call[0]).includes("INSERT INTO books"),
+      String(call[0]).includes("INSERT INTO highlights"),
     );
     expect(insertCall?.[0]).toContain("deleted_at");
-    expect(insertCall?.[1]).toEqual(["book-1", "Deleted remotely", 1000, 900]);
+    expect(insertCall?.[1]).toEqual(["hl-1", "book-1", "epubcfi(/6/2)", "Deleted remotely", 1000, 900]);
   });
 
   it("simple sync keeps a tied-timestamp local soft delete over a live remote row", async () => {
     mockSelect.mockImplementation(async (sql: string) => {
-      if (sql.startsWith("PRAGMA table_info(books)")) {
-        return [{ name: "id" }, { name: "title" }, { name: "updated_at" }, { name: "deleted_at" }];
+      if (sql.startsWith("PRAGMA table_info(highlights)")) {
+        return [
+          { name: "id" },
+          { name: "book_id" },
+          { name: "cfi" },
+          { name: "text" },
+          { name: "updated_at" },
+          { name: "deleted_at" },
+        ];
       }
 
       if (
         sql.startsWith("SELECT id AS id, updated_at AS timestamp") &&
-        sql.includes("FROM books")
+        sql.includes("FROM highlights")
       ) {
-        return [{ id: "book-1", timestamp: 1000, deleted_at: 900 }];
+        return [{ id: "hl-1", timestamp: 1000, deleted_at: 900 }];
       }
 
       return [];
@@ -159,11 +179,13 @@ describe("sync schema filtering", () => {
       timestamp: Date.now(),
       since: 0,
       tables: {
-        books: {
+        highlights: {
           records: [
             {
-              id: "book-1",
-              title: "Live remotely",
+              id: "hl-1",
+              book_id: "book-1",
+              cfi: "epubcfi(/6/2)",
+              text: "Live remotely",
               updated_at: 1000,
               deleted_at: null,
             },
@@ -175,7 +197,7 @@ describe("sync schema filtering", () => {
 
     expect(result).toEqual({ applied: 0, skipped: 1 });
     expect(mockExecute).not.toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO books"),
+      expect.stringContaining("INSERT INTO highlights"),
       expect.anything(),
     );
   });
