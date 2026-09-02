@@ -13,6 +13,14 @@ import { REMOTE_BOOKS_ROOT, REMOTE_COVERS, REMOTE_DATA, REMOTE_FILES } from "./s
 import { WebDavClient, sanitizeWebDavRemoteRoot } from "./webdav-client";
 
 /**
+ * 目录探活缓存(同步提速,2026-09-03):backend 实例每次同步都新建,
+ * 实例级 directoriesEnsured 形同虚设——每轮同步重复 ~7 次 PROPFIND/MKCOL ≈ 1s。
+ * 按远端根做模块级缓存(30 分钟窗口):目录幂等存在,窗口内直接跳过。
+ */
+const ensuredDirectoryKeys = new Map<string, number>();
+const DIRECTORY_CHECK_TTL = 30 * 60 * 1000;
+
+/**
  * WebDAV backend implementation.
  * Uses the existing WebDavClient for all operations.
  */
@@ -73,6 +81,12 @@ export class WebDavBackend implements ISyncBackend {
 
   async ensureDirectories(): Promise<void> {
     if (this.directoriesEnsured) return;
+    const cacheKey = `${this.config.url}|${this.config.username}|${this.getRemoteRoot()}`;
+    const lastChecked = ensuredDirectoryKeys.get(cacheKey) ?? 0;
+    if (Date.now() - lastChecked < DIRECTORY_CHECK_TTL) {
+      this.directoriesEnsured = true;
+      return;
+    }
 
     // Create directories for the new simple sync (JSON-based)
     await this.client.ensureDirectory(this.resolvePath("/readany/sync"));
@@ -83,6 +97,7 @@ export class WebDavBackend implements ISyncBackend {
     await this.client.mkcol(this.resolvePath(REMOTE_FILES));
     await this.client.mkcol(this.resolvePath(REMOTE_COVERS));
     this.directoriesEnsured = true;
+    ensuredDirectoryKeys.set(cacheKey, Date.now());
   }
 
   async put(path: string, data: Uint8Array): Promise<void> {

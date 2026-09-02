@@ -958,7 +958,9 @@ export async function runSimpleSync(
           const existing = await backend
             .getJSON<DeviceSyncPayload>(deviceSyncPath(localDeviceId))
             .catch(() => null);
-          if (!existing || now - existing.timestamp > 5 * 60 * 1000) {
+          // 保活窗口从 5 分钟放宽到 30 分钟:无变更时省去每次 ~600ms 的全量快照上传
+          // (快照本就全量覆盖在云端,晚接入设备照样能拉到最新)
+          if (!existing || now - existing.timestamp > 30 * 60 * 1000) {
             await saveDeviceSnapshot(backend, localDeviceId, await getSnapshotPayload());
           }
         }
