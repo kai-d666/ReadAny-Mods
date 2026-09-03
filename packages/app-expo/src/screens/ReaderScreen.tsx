@@ -482,7 +482,18 @@ export function ReaderScreen({ route, navigation }: Props) {
     NativeModules.ReaderSystemBars as never,
   );
   useEffect(() => {
+    console.log(
+      "[ReaderSystemBars] module:",
+      NativeModules.ReaderSystemBars ? "PRESENT" : "UNDEFINED",
+      "chrome:",
+      readerChromeVisible,
+    );
     readerSystemBarsRef.current?.setEnabled?.(readerChromeVisible);
+  }, [readerChromeVisible]);
+  // 最新 chrome 状态镜像(跨 AppState 监听读取,避免重订阅)
+  const readerChromeVisibleRef = useRef(readerChromeVisible);
+  useEffect(() => {
+    readerChromeVisibleRef.current = readerChromeVisible;
   }, [readerChromeVisible]);
   // 退出阅读器恢复系统栏
   useEffect(() => {
@@ -617,11 +628,24 @@ export function ReaderScreen({ route, navigation }: Props) {
   const isFocused = useIsFocused();
   const [appActive, setAppActive] = useState(true);
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (s: AppStateStatus) =>
-      setAppActive(s === "active"),
-    );
+    const sub = AppState.addEventListener("change", (s: AppStateStatus) => {
+      setAppActive(s === "active");
+      // 后台恢复时系统会把"滑动临时出"的系统栏重新显示;原生 MainActivity 焦点重发
+      // 已覆盖此场景,这里按 AppState 再补发一次(两路互为保险)
+      if (s === "active") {
+        readerSystemBarsRef.current?.setEnabled?.(readerChromeVisibleRef.current);
+      }
+    });
     return () => sub.remove();
   }, []);
+
+  // 阅读器加载完成时再重发一次系统栏状态:冷启动期窗口 insets 会被系统重置数次
+  // (每次都把三键重新放出来),此点一定在最后一次重置之后 → 确定性收尾
+  useEffect(() => {
+    if (webViewReady) {
+      readerSystemBarsRef.current?.setEnabled?.(readerChromeVisibleRef.current);
+    }
+  }, [webViewReady]);
 
   // Load reader HTML asset (共享预下载:App 启动时已后台下载,这里秒取)
   useEffect(() => {

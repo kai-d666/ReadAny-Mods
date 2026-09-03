@@ -31,6 +31,31 @@ class MainActivity : ReactActivity() {
     return super.dispatchKeyEvent(event)
   }
 
+  /**
+   * 系统栏焦点重发(2026-09-04,修三键显示 bug):
+   * 沉浸模式下(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE)窗口失焦时系统会把三键/状态栏
+   * 重新显示,重新聚焦后不会自动再藏。冷启动 focus 迟到、退后台回前台都会触发。
+   * 每次获得焦点时重发 ReaderSystemBars 最近一次请求的显隐状态(见 ReaderSystemBarsModule)。
+   */
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) {
+      ReaderSystemBarsModule.reapplyOnFocus?.invoke()
+    }
+  }
+
+  /**
+   * 启动期/回前台延迟兜底:冷启动时 splash→AppTheme 切换、edge-to-edge 初始化会在
+   * 焦点事件之后重置窗口 insets,把系统栏重新放出来且不再有 focus 通知。
+   * onResume 后错峰重发两档(已处于目标状态时是 no-op),把复活的系统栏按 lastEnabled 收起。
+   */
+  override fun onResume() {
+    super.onResume()
+    ReaderSystemBarsModule.scheduleReapply(window.decorView, 500)
+    ReaderSystemBarsModule.scheduleReapply(window.decorView, 1500)
+    ReaderSystemBarsModule.scheduleReapply(window.decorView, 3000)
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     // Set the theme to AppTheme BEFORE onCreate to support
     // coloring the background, status bar, and navigation bar.
