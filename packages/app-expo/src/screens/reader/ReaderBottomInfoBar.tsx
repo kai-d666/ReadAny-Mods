@@ -6,13 +6,14 @@
  */
 import { View, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSettingsStore } from "@/stores";
 import { useColors } from "@/styles/theme";
 import { makeStyles } from "./reader-styles";
 
 /** 底栏恒定背景色(原图取样 194,189,169);顶栏复用 */
 export const BOTTOM_BAR_BG = "#C2BDA9";
-/** 底栏普通文字色(原图取样 35,30,10);顶栏复用 */
-export const BOTTOM_BAR_FG = "#231E0A";
+/** 底栏普通文字色(灰,用户 2026-09-04:两栏字体灰色);顶栏复用 */
+export const BOTTOM_BAR_FG = "#6A655B";
 /** (电量) 胶囊底色(原图取样 66,61,41) */
 const BOTTOM_BAR_CAPSULE_BG = "#423D29";
 /** 胶囊内浅字 */
@@ -43,6 +44,8 @@ export function ReaderBottomInfoBar({
   const colors = useColors();
   const s = makeStyles(colors);
   const insets = useSafeAreaInsets();
+  // 底栏背景条显示(开发者模式开关,默认开)
+  const showBarBg = useSettingsStore((s) => s.devFlags?.readerBottomBarBackground ?? true);
   const batteryNumber = batteryLevel == null ? "--" : `${Math.round(batteryLevel * 100)}`;
   const percentText = (progress * 100).toFixed(1);
   const middle =
@@ -63,7 +66,7 @@ export function ReaderBottomInfoBar({
         flexDirection: "row",
         alignItems: "center",
         paddingHorizontal: 25,
-        backgroundColor: BOTTOM_BAR_BG,
+        backgroundColor: showBarBg ? BOTTOM_BAR_BG : "transparent",
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>

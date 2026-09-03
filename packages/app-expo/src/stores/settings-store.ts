@@ -20,7 +20,13 @@ export interface SettingsState {
   hasCompletedOnboarding: boolean;
   showOnboardingGuide: boolean;
   /** 开发者模式开关(入口:长按底部导航「我的」5s 振动进入) */
-  devFlags: { skipSplashAnimation: boolean };
+  devFlags: {
+    skipSplashAnimation: boolean;
+    /** 阅读器顶栏背景条显示(开发者调试) */
+    readerTopBarBackground: boolean;
+    /** 阅读器底栏背景条显示(开发者调试) */
+    readerBottomBarBackground: boolean;
+  };
   _hasHydrated: boolean;
   _apiKeysLoaded: boolean;
 
@@ -125,7 +131,14 @@ function migrateSettingsState(state: SettingsState): SettingsState {
     };
   }
   if (!next.devFlags) {
-    next = { ...next, devFlags: { skipSplashAnimation: false } };
+    next = {
+      ...next,
+      devFlags: {
+        skipSplashAnimation: false,
+        readerTopBarBackground: true,
+        readerBottomBarBackground: true,
+      },
+    };
   }
   return next;
 }
@@ -470,7 +483,11 @@ export const useSettingsStore = create<SettingsState>()(
       settingsUpdatedAt: 0,
       hasCompletedOnboarding: false,
       showOnboardingGuide: true,
-      devFlags: { skipSplashAnimation: false },
+      devFlags: {
+        skipSplashAnimation: false,
+        readerTopBarBackground: true,
+        readerBottomBarBackground: true,
+      },
       _hasHydrated: false,
       _apiKeysLoaded: false,
 

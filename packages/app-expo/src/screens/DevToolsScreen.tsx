@@ -15,6 +15,8 @@ export default function DevToolsScreen() {
   const { colors } = useTheme();
   const { devFlags, setDevFlag } = useSettingsStore();
   const skipSplash = devFlags.skipSplashAnimation;
+  const topBarBg = devFlags.readerTopBarBackground;
+  const bottomBarBg = devFlags.readerBottomBarBackground;
   const s = makeStyles(colors);
 
   return (
@@ -34,6 +36,37 @@ export default function DevToolsScreen() {
               <Switch
                 value={!skipSplash}
                 onValueChange={(v) => setDevFlag("skipSplashAnimation", !v)}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+          </View>
+          <View style={s.section}>
+            <Text style={[s.sectionTitle, { color: colors.mutedForeground }]}>
+              阅读器调试
+            </Text>
+            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rowTitle, { color: colors.foreground }]}>顶栏背景显示</Text>
+                <Text style={[s.rowDesc, { color: colors.mutedForeground }]}>
+                  阅读器顶栏(书名条)的卡其背景显示开关,关闭后仅留书名文字。
+                </Text>
+              </View>
+              <Switch
+                value={topBarBg}
+                onValueChange={(v) => setDevFlag("readerTopBarBackground", v)}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rowTitle, { color: colors.foreground }]}>底栏背景显示</Text>
+                <Text style={[s.rowDesc, { color: colors.mutedForeground }]}>
+                  阅读器底栏(电量/时间/章节/进度条)的卡其背景显示开关,关闭后仅留信息文字。
+                </Text>
+              </View>
+              <Switch
+                value={bottomBarBg}
+                onValueChange={(v) => setDevFlag("readerBottomBarBackground", v)}
                 trackColor={{ true: colors.primary }}
               />
             </View>

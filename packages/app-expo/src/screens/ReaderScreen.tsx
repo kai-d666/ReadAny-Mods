@@ -471,6 +471,8 @@ export function ReaderScreen({ route, navigation }: Props) {
   // 状态栏随 UI 可见性:控制栏或任一面板打开 → 显示;纯阅读 → 隐藏(组件式 StatusBar,见下方 JSX)
   const readerChromeVisible =
     showControls || showTOC || showSettings || showSearch || showNotebook || showTranslation;
+  // 顶栏背景条显示(开发者模式开关,默认开)
+  const readerTopBarBg = useSettingsStore((s) => s.devFlags?.readerTopBarBackground ?? true);
   const { readerClock, batteryLevel, isBatteryCharging, stableTopInset, insets } =
     useReaderSystemInfo({ isIPadLayout, baseTopInset });
 
@@ -1667,7 +1669,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   // 基准高度用屏幕物理全尺寸(screenH),不用 useWindowDimensions:
   // vivo 上沉浸模式切换后 window 尺寸不更新,winH 会停在"全屏减系统栏"的旧值,
   // 导致底部留白;screenH 是屏幕物理高(竖屏锁定,恒定),始终覆盖到屏幕底
-  const readerWebViewHeight = Math.max(screenHeight - readerTopMargin - 22, 200);
+  const readerWebViewHeight = Math.max(screenHeight - readerTopMargin - 16, 200);
   const batteryLabel = batteryLevel == null ? "--%" : `${Math.round(batteryLevel * 100)}%`;
   const selectionPopoverSelection = selection
     ? {
@@ -1751,11 +1753,27 @@ export function ReaderScreen({ route, navigation }: Props) {
         )}
 
         {/* ─── Top Info Bar(顶栏:小字书名;top 锁定基线(状态栏隐藏时的留白值),
-             不随系统状态栏 insets 在 24/108 间跳动——位置仍与原来一致,2026-09-04) ─── */}
+             不随系统状态栏 insets 在 24/108 间跳动——位置仍与原来一致,2026-09-04;
+             背景卡其=先装颜色便于调整区域大小/位置) ─── */}
         {chromeReady && !showSearch && !showControls && showTopTitleProgress && (
-          <View style={[s.topInfoBar, { top: baseTopInset }]}>
+          <View
+            style={[
+              s.topInfoBar,
+              {
+                top: 0,
+                backgroundColor: readerTopBarBg ? BOTTOM_BAR_BG : "transparent",
+                paddingVertical: 3,
+              },
+            ]}
+          >
             <View style={s.topInfoRow}>
-              <Text style={s.topInfoText} numberOfLines={1}>
+              <Text
+                style={[
+                  s.topInfoText,
+                  { fontWeight: "600", fontSize: 16, color: BOTTOM_BAR_FG },
+                ]}
+                numberOfLines={1}
+              >
                 {bookTitle}
               </Text>
             </View>
