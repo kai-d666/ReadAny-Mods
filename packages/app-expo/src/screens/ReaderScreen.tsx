@@ -75,6 +75,7 @@ import {
   type AppStateStatus,
   Easing,
   Modal,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -175,7 +176,6 @@ import {
   SCREEN_WIDTH,
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
-import { SystemBars } from "react-native-edge-to-edge";
 import { ReaderBottomInfoBar } from "./reader/ReaderBottomInfoBar";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
@@ -469,6 +469,21 @@ export function ReaderScreen({ route, navigation }: Props) {
   const { readerClock, batteryLevel, isBatteryCharging, stableTopInset, insets } =
     useReaderSystemInfo({ isIPadLayout, baseTopInset });
 
+  // 系统栏(状态栏+三键)一次调用同步显隐(自研 ReaderSystemBars 模块):
+  // 双栏合入单个系统动画;面板切换点已先行调用(见 toggleControls),此处按状态兜底
+  const readerSystemBarsRef = useRef<{ setEnabled?: (v: boolean) => void }>(
+    NativeModules.ReaderSystemBars as never,
+  );
+  useEffect(() => {
+    readerSystemBarsRef.current?.setEnabled?.(readerChromeVisible);
+  }, [readerChromeVisible]);
+  // 退出阅读器恢复系统栏
+  useEffect(() => {
+    return () => {
+      readerSystemBarsRef.current?.setEnabled?.(true);
+    };
+  }, []);
+
   // ── Bookmark ───────────────────────────────────────────────────────────────
   const bookmark = useReaderBookmark({
     bookId,
@@ -634,6 +649,9 @@ export function ReaderScreen({ route, navigation }: Props) {
       );
     } catch (e) { /* bridge 尚未就绪 */ }
     setShowControls(willShow);
+    // 系统栏(状态栏+三键)与控制栏动画同步起跑:先于动画调用一次原生 hide/show(systemBars),
+    // 两栏合入同一个系统 insets 动画,避免"工具栏先消失、三键几十 ms 后消失"的二段式
+    readerSystemBarsRef.current?.setEnabled?.(willShow);
     Animated.timing(toolbarAnim, {
       toValue: willShow ? 0 : TOOLBAR_HIDE_OFFSET,
       duration: 180,
@@ -642,7 +660,6 @@ export function ReaderScreen({ route, navigation }: Props) {
     }).start();
 
     if (willShow) {
-      // 三键由 SystemBars 恒藏,面板打开不再弹三键
       if (controlsTimer.current) clearTimeout(controlsTimer.current);
       controlsTimer.current = setTimeout(() => {
         setShowControls(false);
@@ -1671,13 +1688,6 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   return (
     <View style={s.container}>
-      {/* 系统栏(edge-to-edge 下用 react-native-edge-to-edge 的 SystemBars,
-          native 模块每次实例化强制重放状态,不受 RN StatusBar diff/栈时序影响):
-          状态栏与三键一体联动——纯阅读全隐藏,控制栏/面板打开时全显示;
-          退出阅读器组件卸载后由 SystemBars 栈回默认(显示)。
-          (原 expo-navigation-bar 单独管三键会与 SystemBars 的 navigationBar 重放互抢,
-          已交给 SystemBars 一体化。) */}
-      <SystemBars style="auto" hidden={{ statusBar: !readerChromeVisible, navigationBar: !readerChromeVisible }} />
       <Animated.View
         style={[s.readerStage, { transform: [{ translateY: readerPullAnim }] }]}
         pointerEvents="box-none"
