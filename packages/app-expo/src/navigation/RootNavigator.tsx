@@ -104,7 +104,11 @@ export function RootNavigator() {
               name="Reader"
               component={ReaderScreen}
               initialParams={initialResumeBook ? { bookId: initialResumeBook } : undefined}
-              options={{ animation: "slide_from_right" }}
+              // statusBarHidden: react-native-screens(ScreenWindowTraits)在每次屏幕切换时
+              // 按 Screen.isStatusBarHidden 重放状态栏——不设则默认 false 会硬把状态栏拉回显示,
+              // 抵消 JS <StatusBar hidden>。设为 true 让 traits 层保持隐藏;
+              // 面板打开时的即时显示由 ReaderScreen 内 <StatusBar hidden={!chromeVisible}/> 控制。
+              options={{ animation: "slide_from_right", statusBarHidden: true }}
             />
             <Stack.Screen
               name="BookDetails"

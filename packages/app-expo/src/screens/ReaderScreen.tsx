@@ -175,6 +175,7 @@ import {
   SCREEN_WIDTH,
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
+import { SystemBars } from "react-native-edge-to-edge";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
 import { useReaderSearch } from "./reader/useReaderSearch";
@@ -254,7 +255,6 @@ export function ReaderScreen({ route, navigation }: Props) {
   }, [navigation]);
   const isWideLayout = SCREEN_WIDTH >= 768;
   const isIPadLayout = Platform.OS === "ios" && Platform.isPad;
-  const shouldToggleSystemStatusBar = !isIPadLayout;
   const baseTopInset = Platform.OS === "ios" ? 20 : 24;
 
   // State
@@ -462,8 +462,11 @@ export function ReaderScreen({ route, navigation }: Props) {
   const book = storeBook ?? dbBook;
 
   // ── System info (clock/battery/statusBar/SafeArea) ─────────────────────────
+  // 状态栏随 UI 可见性:控制栏或任一面板打开 → 显示;纯阅读 → 隐藏(组件式 StatusBar,见下方 JSX)
+  const readerChromeVisible =
+    showControls || showTOC || showSettings || showSearch || showNotebook || showTranslation;
   const { readerClock, batteryLevel, isBatteryCharging, stableTopInset, insets } =
-    useReaderSystemInfo({ showSearch, isIPadLayout, shouldToggleSystemStatusBar, baseTopInset });
+    useReaderSystemInfo({ isIPadLayout, baseTopInset });
 
   // ── Bookmark ───────────────────────────────────────────────────────────────
   const bookmark = useReaderBookmark({
@@ -1638,10 +1641,13 @@ export function ReaderScreen({ route, navigation }: Props) {
   });
 
   const isPanelOpen = showTOC || showSettings || showSearch || showNotebook || showTranslation;
+  // 顶部 margin 固定基线(状态栏显隐不变):面板打开状态栏出现时若跟着 insets.top 变,
+  // webview 高度会收缩 → foliate 重排(老问题"页面被压缩一下")。固定后:
+  // 面板打开时状态栏/工具栏以 overlay 覆盖内容顶部,webview 恒定不重排。
   const readerTopMargin = !showSearch
     ? showTopTitleProgress
-      ? layoutTopInset + 30
-      : layoutTopInset
+      ? baseTopInset + 30
+      : baseTopInset
     : 0;
   // WebView 渲染高度固定 = 窗口高 - 顶部 margin,不随系统三键显隐变化:
   // 尺寸恒定 → foliate 不重排 → 无抖动。文字延伸到底部,三键/信息条都是
@@ -1676,6 +1682,10 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   return (
     <View style={s.container}>
+      {/* 状态栏:纯阅读隐藏,出现控制栏/面板时显示
+          使用 react-native-edge-to-edge 的 SystemBars(edge-to-edge 下官方推荐,
+          native 模块每次实例化会强制重放隐藏状态,不受 RN StatusBar diff/栈时序影响) */}
+      <SystemBars style="auto" hidden={!readerChromeVisible} />
       <Animated.View
         style={[s.readerStage, { transform: [{ translateY: readerPullAnim }] }]}
         pointerEvents="box-none"
@@ -1768,8 +1778,9 @@ export function ReaderScreen({ route, navigation }: Props) {
             style={[
               s.topToolbarBar,
               {
-                paddingTop: layoutTopInset,
-                minHeight: layoutTopInset + topToolbarRowHeight,
+                // 面板打开时状态栏显示,用实时 insets.top 定位工具栏高度
+                paddingTop: insets.top,
+                minHeight: insets.top + topToolbarRowHeight,
               },
             ]}
           >
@@ -2089,7 +2100,7 @@ export function ReaderScreen({ route, navigation }: Props) {
 
       {/* ─── Search Bar ─── */}
       {showSearch && (
-        <View style={[s.searchBarWrap, { paddingTop: layoutTopInset }]}>
+        <View style={[s.searchBarWrap, { paddingTop: insets.top }]}>
           <View style={s.searchBarRow}>
             <View style={s.searchInputWrap}>
               <SearchIcon size={16} color={colors.mutedForeground} />
