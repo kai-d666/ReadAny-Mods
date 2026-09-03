@@ -1,12 +1,24 @@
 /**
- * ReaderBottomInfoBar — 阅读器底部信息条(沉浸阅读态),仿系统状态栏的页内版。
- * 三段式:左 = (电量百分数) 当前时间 HH:mm;中 = 章节 (页/总页);右 = 全书进度%。
- * 自身完成 absolute 定位(基于 insets),背景为半透明浅灰底条,中段 flex 居中。
+ * ReaderBottomInfoBar — 阅读器底部信息条,照静读天下样式(原图取样):
+ * 全宽直边条(无左右留白/无圆角/贴底),背景 #C2BDA9(比页面暗一档,卡其灰);
+ * 文字 10sp 深棕黑 #231E0A;左段 (电量) 为深褐胶囊 #423D29 浅字 + 时间。
+ * 三段:左 = (电量) 当前时间 HH:mm;中 = 章节 (页/总页);右 = 全书进度%。
  */
 import { View, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/styles/theme";
 import { makeStyles } from "./reader-styles";
+
+/** 底栏恒定背景色(原图取样 194,189,169);顶栏复用 */
+export const BOTTOM_BAR_BG = "#C2BDA9";
+/** 底栏普通文字色(原图取样 35,30,10);顶栏复用 */
+export const BOTTOM_BAR_FG = "#231E0A";
+/** (电量) 胶囊底色(原图取样 66,61,41) */
+const BOTTOM_BAR_CAPSULE_BG = "#423D29";
+/** 胶囊内浅字 */
+const BOTTOM_BAR_CAPSULE_FG = "#E1DCC8";
+/** 底栏总高(含 padding),ReaderScreen 预留位与此一致 */
+export const READER_BOTTOM_BAR_HEIGHT = 16;
 
 interface ReaderBottomInfoBarProps {
   /** 0..1 电量 */
@@ -37,35 +49,56 @@ export function ReaderBottomInfoBar({
     currentPage > 0 && totalPages > 0
       ? `${chapterLabel} (${currentPage}/${totalPages})`
       : `${chapterLabel} (${percentText}%)`;
+  const textStyle = { fontSize: 10, color: BOTTOM_BAR_FG, fontVariant: ["tabular-nums" as const] };
 
   return (
     <View
       pointerEvents="none"
       style={{
         position: "absolute",
-        left: (insets.left ?? 0) + 18,
-        right: (insets.right ?? 0) + 18,
-        // 三键由阅读器永隐藏(沉浸),insets.bottom 残留旧值会把底栏浮高,固定贴底 6
-        bottom: 6,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: READER_BOTTOM_BAR_HEIGHT,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 10,
-        paddingVertical: 3,
+        paddingHorizontal: 25,
+        backgroundColor: BOTTOM_BAR_BG,
       }}
     >
-      <Text style={s.bottomInfoText}>
-        ({batteryNumber}) {clock}
-      </Text>
-      <Text
-        style={[
-          s.bottomInfoText,
-          { flex: 1, textAlign: "center", marginHorizontal: 10 },
-        ]}
-        numberOfLines={1}
-      >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+        {/* (电量) 电池描边图标:左侧正极小凸起 + 描边框 + 数字 */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 0 }}>
+          <View
+            style={{
+              width: 1.5,
+              height: 5,
+              backgroundColor: BOTTOM_BAR_FG,
+              borderTopRightRadius: 1,
+              borderBottomRightRadius: 1,
+              marginRight: -0.5,
+            }}
+          />
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: BOTTOM_BAR_FG,
+              borderRadius: 2,
+              paddingHorizontal: 2,
+              paddingVertical: 0,
+            }}
+          >
+            <Text style={{ fontSize: 9, lineHeight: 10, color: BOTTOM_BAR_FG }}>
+              {batteryNumber}
+            </Text>
+          </View>
+        </View>
+        <Text style={textStyle}>{clock}</Text>
+      </View>
+      <Text style={[textStyle, { flex: 1, textAlign: "center", marginHorizontal: 8 }]} numberOfLines={1}>
         {middle}
       </Text>
-      <Text style={s.bottomInfoText}>{percentText}%</Text>
+      <Text style={textStyle}>{percentText}%</Text>
     </View>
   );
 }

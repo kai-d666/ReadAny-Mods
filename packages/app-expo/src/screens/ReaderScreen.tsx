@@ -176,7 +176,12 @@ import {
   SCREEN_WIDTH,
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
-import { ReaderBottomInfoBar } from "./reader/ReaderBottomInfoBar";
+import {
+  BOTTOM_BAR_BG,
+  BOTTOM_BAR_FG,
+  READER_BOTTOM_BAR_HEIGHT,
+  ReaderBottomInfoBar,
+} from "./reader/ReaderBottomInfoBar";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
 import { useReaderSearch } from "./reader/useReaderSearch";
@@ -654,7 +659,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     readerSystemBarsRef.current?.setEnabled?.(willShow);
     Animated.timing(toolbarAnim, {
       toValue: willShow ? 0 : TOOLBAR_HIDE_OFFSET,
-      duration: 180,
+      duration: 260,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
@@ -665,7 +670,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         setShowControls(false);
         Animated.timing(toolbarAnim, {
           toValue: TOOLBAR_HIDE_OFFSET,
-          duration: 180,
+          duration: 260,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }).start();
@@ -965,7 +970,7 @@ export function ReaderScreen({ route, navigation }: Props) {
 
       Animated.timing(readerPullAnim, {
         toValue: 0,
-        duration: 180,
+        duration: 260,
         useNativeDriver: true,
       }).start();
     },
@@ -1655,13 +1660,14 @@ export function ReaderScreen({ route, navigation }: Props) {
       ? baseTopInset + 30
       : baseTopInset
     : 0;
-  // WebView 渲染高度固定 = 窗口高 - 顶部 margin,不随系统三键显隐变化:
-  // 尺寸恒定 → foliate 不重排 → 无抖动。文字延伸到底部,三键/信息条都是
-  // overlay 浮在内容上(edge-to-edge 常态),不留无文字空白区
+  // WebView 渲染高度固定 = 窗口高 - 顶部 margin - 底部信息条预留位,不随系统三键显隐变化:
+  // 尺寸恒定 → foliate 不重排 → 无抖动。底部信息条(章节/进度/时间/电量)占用独立
+  // 预留空间,正文不再与信息条文字重合(2026-09-04 用户反馈)。
+  // 预留恒定(信息条只在阅读态显示,面板开时也不变高),避免重排。
   // 基准高度用屏幕物理全尺寸(screenH),不用 useWindowDimensions:
   // vivo 上沉浸模式切换后 window 尺寸不更新,winH 会停在"全屏减系统栏"的旧值,
   // 导致底部留白;screenH 是屏幕物理高(竖屏锁定,恒定),始终覆盖到屏幕底
-  const readerWebViewHeight = Math.max(screenHeight - readerTopMargin, 200);
+  const readerWebViewHeight = Math.max(screenHeight - readerTopMargin - 22, 200);
   const batteryLabel = batteryLevel == null ? "--%" : `${Math.round(batteryLevel * 100)}%`;
   const selectionPopoverSelection = selection
     ? {
@@ -1744,9 +1750,10 @@ export function ReaderScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {/* ─── Top Info Bar(顶栏:当前版本暂只显示书名;页数/进度已移到底部信息条) ─── */}
+        {/* ─── Top Info Bar(顶栏:小字书名;top 锁定基线(状态栏隐藏时的留白值),
+             不随系统状态栏 insets 在 24/108 间跳动——位置仍与原来一致,2026-09-04) ─── */}
         {chromeReady && !showSearch && !showControls && showTopTitleProgress && (
-          <View style={[s.topInfoBar, { top: layoutTopInset }]}>
+          <View style={[s.topInfoBar, { top: baseTopInset }]}>
             <View style={s.topInfoRow}>
               <Text style={s.topInfoText} numberOfLines={1}>
                 {bookTitle}
@@ -2064,7 +2071,7 @@ export function ReaderScreen({ route, navigation }: Props) {
                   setShowControls(false);
                   Animated.timing(toolbarAnim, {
                     toValue: TOOLBAR_HIDE_OFFSET,
-                    duration: 180,
+                    duration: 260,
                     easing: Easing.out(Easing.cubic),
                     useNativeDriver: true,
                   }).start();
@@ -2161,7 +2168,7 @@ export function ReaderScreen({ route, navigation }: Props) {
                 setShowControls(true);
                 Animated.timing(toolbarAnim, {
                   toValue: 0,
-                  duration: 180,
+                  duration: 260,
                   easing: Easing.out(Easing.cubic),
                   useNativeDriver: true,
                 }).start();
