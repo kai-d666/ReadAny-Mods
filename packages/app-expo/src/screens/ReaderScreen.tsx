@@ -176,6 +176,7 @@ import {
 } from "./reader/reader-constants";
 import { BatteryIcon, ListIcon, SettingsIcon } from "./reader/reader-icons";
 import { SystemBars } from "react-native-edge-to-edge";
+import { ReaderBottomInfoBar } from "./reader/ReaderBottomInfoBar";
 import { makeStyles, noteTooltipMdStyles } from "./reader/reader-styles";
 import { useReaderBookmark } from "./reader/useReaderBookmark";
 import { useReaderSearch } from "./reader/useReaderSearch";
@@ -641,10 +642,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     }).start();
 
     if (willShow) {
-      // 三键先行:单击瞬间同步弹三键(与控制栏动画并行),不等 React 渲染 + useEffect,
-      // 避免"控制栏先落位、三键后弹出"的错位窗口;下方 useEffect 幂等兜底
-      NavigationBar.setVisibilityAsync("visible").catch(() => {});
-      NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
+      // 三键由 SystemBars 恒藏,面板打开不再弹三键
       if (controlsTimer.current) clearTimeout(controlsTimer.current);
       controlsTimer.current = setTimeout(() => {
         setShowControls(false);
@@ -1432,16 +1430,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   }, [themeMode, webViewReady]);
 
   // 沉浸式全屏:进入阅读隐藏系统三键导航栏;控制栏/搜索显示时恢复
-  // 注意:仅在页面聚焦时管理导航栏,否则书内聊天(BookChat)等覆盖页会与这里打架
-  useEffect(() => {
-    if (!webViewReady || !isFocused) return;
-    if (showControls || showSearch) {
-      NavigationBar.setVisibilityAsync("visible").catch(() => {});
-    } else {
-      NavigationBar.setBehaviorAsync("overlay-swipe").catch(() => {});
-      NavigationBar.setVisibilityAsync("hidden").catch(() => {});
-    }
-  }, [showControls, showSearch, webViewReady, isFocused]);
+  // 三键恒藏由上方 SystemBars(navigationBar: true)统一管理,不再在此随面板显隐
 
   // 退出阅读器恢复导航栏
   useEffect(() => {
@@ -1682,10 +1671,13 @@ export function ReaderScreen({ route, navigation }: Props) {
 
   return (
     <View style={s.container}>
-      {/* 状态栏:纯阅读隐藏,出现控制栏/面板时显示
-          使用 react-native-edge-to-edge 的 SystemBars(edge-to-edge 下官方推荐,
-          native 模块每次实例化会强制重放隐藏状态,不受 RN StatusBar diff/栈时序影响) */}
-      <SystemBars style="auto" hidden={!readerChromeVisible} />
+      {/* 系统栏(edge-to-edge 下用 react-native-edge-to-edge 的 SystemBars,
+          native 模块每次实例化强制重放状态,不受 RN StatusBar diff/栈时序影响):
+          状态栏与三键一体联动——纯阅读全隐藏,控制栏/面板打开时全显示;
+          退出阅读器组件卸载后由 SystemBars 栈回默认(显示)。
+          (原 expo-navigation-bar 单独管三键会与 SystemBars 的 navigationBar 重放互抢,
+          已交给 SystemBars 一体化。) */}
+      <SystemBars style="auto" hidden={{ statusBar: !readerChromeVisible, navigationBar: !readerChromeVisible }} />
       <Animated.View
         style={[s.readerStage, { transform: [{ translateY: readerPullAnim }] }]}
         pointerEvents="box-none"
@@ -1742,15 +1734,12 @@ export function ReaderScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {/* ─── Top Info Bar (always visible) ─── */}
+        {/* ─── Top Info Bar(顶栏:当前版本暂只显示书名;页数/进度已移到底部信息条) ─── */}
         {chromeReady && !showSearch && !showControls && showTopTitleProgress && (
           <View style={[s.topInfoBar, { top: layoutTopInset }]}>
             <View style={s.topInfoRow}>
               <Text style={s.topInfoText} numberOfLines={1}>
-                {currentChapter || bookTitle}
-              </Text>
-              <Text style={s.topInfoPageText}>
-                {currentPage > 0 && totalPages > 0 ? `${currentPage}/${totalPages}` : `${percent}%`}
+                {bookTitle}
               </Text>
             </View>
           </View>
@@ -1979,29 +1968,14 @@ export function ReaderScreen({ route, navigation }: Props) {
       )}
 
       {!showSearch && !showControls && showBottomTimeBattery && (
-        <View
-          pointerEvents="none"
-          style={[
-            s.bottomInfoBar,
-            {
-              left: insets.left + 18,
-              right: insets.right + 18,
-              bottom: Math.max(insets.bottom, 8) + 4,
-            },
-          ]}
-        >
-          <Text style={s.bottomInfoText}>{readerClock}</Text>
-          <View style={s.bottomInfoSide}>
-            <BatteryIcon
-              width={22}
-              height={11}
-              color={colors.mutedForeground}
-              level={batteryLevel}
-              charging={isBatteryCharging}
-            />
-            <Text style={s.bottomInfoText}>{batteryLabel}</Text>
-          </View>
-        </View>
+        <ReaderBottomInfoBar
+          batteryLevel={batteryLevel}
+          clock={readerClock}
+          chapterLabel={currentChapter || bookTitle}
+          currentPage={currentPage}
+          totalPages={totalPages}
+          progress={progress}
+        />
       )}
 
       {/* ─── Bottom Toolbar ─── */}
