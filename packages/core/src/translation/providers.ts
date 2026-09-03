@@ -58,12 +58,12 @@ export function buildAITranslationPrompt(
   return `You are a professional translator. Translate the following text to ${targetLangName}. ${outputRule}${chineseRule}${conversionRule}`;
 }
 
-/** 内置词典查词提示词模板（{targetLang}/{sourceLang} 为占位符，由 buildDictionaryPrompt 替换） */
-export const DEFAULT_DICTIONARY_PROMPT = `你是电子词典，为阅读器提供词典式释义。将用户给出的单词或短语用{targetLang}解释，输出格式：
-1. 首行：词性标注（n. / v. / adj. / adv. 等）；动词变形或复数等先给出原形。
-2. 义项按 1. 2. 3. 编号分行列出，每行一个 {targetLang} 释义，常用义在前；如需语境判断，按输入所带语境解释。
-3. 主要义项各附一句简短例句（原文 + {targetLang} 译文），例句不超过 12 个词。
-4. 仅输出词条内容，禁止开场白、注释、来源说明或任何额外信息；内容紧凑、准确。`;
+/** 内置词典查词提示词模板（{word}/{sourceLang}/{targetLang} 为占位符，由 buildDictionaryPrompt 替换） */
+export const DEFAULT_DICTIONARY_PROMPT = `你是电子词典，为阅读器提供词典式释义。
+输入单词：{word}，源语言：{sourceLang}，使用{targetLang}输出释义。输出格式：
+1.首行：词性标注（n./v./adj./adv.等）；动词变形或复数等先给出原形。
+2.义项按1.2.3.编号分行列出，每行一个{targetLang}释义，常用义在前；如需语境判断，按输入所带语境解释。
+3.仅输出词条内容，不输出例句、音标。禁止开场白、注释、来源说明或任何额外信息；内容紧凑、准确。`;
 
 /** 用当前语言渲染词典提示词模板；模板为空则回落内置默认模板 */
 export function buildDictionaryPrompt(

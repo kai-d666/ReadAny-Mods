@@ -10,6 +10,7 @@ import {
   type DictionaryMethod,
   type TranslatorName,
 } from "@readany/core/types/translation";
+import { DEFAULT_DICTIONARY_PROMPT } from "@readany/core/translation/providers";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -231,25 +232,14 @@ export default function TranslationSettingsScreen() {
                           style={styles.promptInput}
                           multiline
                           value={translationConfig.dictionaryPrompt ?? ""}
-                          placeholder={t("settings.dictionaryPromptPlaceholder")}
+                          placeholder={DEFAULT_DICTIONARY_PROMPT}
                           placeholderTextColor={colors.mutedForeground}
                           onChangeText={(v) => updateTranslationConfig({ dictionaryPrompt: v })}
                           textAlignVertical="top"
                         />
-                        <View style={styles.promptRow}>
-                          <Text style={[styles.hintText, styles.promptRowText]}>
-                            {t("settings.dictionaryPromptDesc")}
-                          </Text>
-                          <TouchableOpacity
-                            style={styles.resetBtn}
-                            onPress={() => updateTranslationConfig({ dictionaryPrompt: "" })}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.resetBtnText}>
-                              {t("settings.dictionaryPromptReset")}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
+                        <Text style={[styles.hintText, styles.promptRowText]}>
+                          {t("settings.dictionaryPromptDesc")}
+                        </Text>
                       </View>
                     )}
                   </View>

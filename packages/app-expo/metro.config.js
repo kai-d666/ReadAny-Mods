@@ -4,12 +4,14 @@ const path = require("node:path");
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, "../..");
 
-const config = getDefaultConfig(projectRoot);
+// NOTE(2026-09-03): 曾为修 export:embed 加过 config.server.unstable_serverRoot=projectRoot,
+// 结果 dev 端懒加载模块虚拟路径(基于 workspace 根相对,如 node_modules/expo-sqlite/...)
+// 从 app-expo 解析失败(App bootstrap: Unable to resolve module)。已回退,
+// serverRoot 保持 @expo/metro-config 自动提升的 workspace 根(见索引《安卓调试注意事项》,
+// dev 的正确形态)。若 export:embed 复发,应只对该命令设 EXPO_NO_METRO_WORKSPACE_ROOT=1,
+// 不要全局覆盖 serverRoot。
 
-// expo CLI 的 getMetroServerRoot 会把 serverRoot 提升到 workspace 根(readany-src),
-// export:embed 的入口就按 serverRoot 解析成 readany-src/index.js → 构建失败。
-// 锁回项目根:dev 与 export:embed 都以 packages/app-expo 为入口基准(2026-09-03 release 构建)。
-config.server.unstable_serverRoot = config.projectRoot;
+const config = getDefaultConfig(projectRoot);
 
 // 1. Watch the monorepo root so Metro can resolve workspace packages,
 // while preserving Expo's defaults for doctor/build compatibility.

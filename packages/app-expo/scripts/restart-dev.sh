@@ -22,7 +22,8 @@ if ! watchman version >/dev/null 2>&1; then
 fi
 
 APP_DIR="/d/MCU/7-Claude code/Project/ReadAny/readany-src/packages/app-expo"
-DEVICE="adb-3430047082003V2-E4wJpC (2)._adb-tls-connect._tcp"  # 无线调试 serial;变了就改这里
+# 无线调试 serial;变了就改这里。2026-09-03 起走 adb tcpip 5555 固定端口(比 mDNS 随机端口稳)
+DEVICE="${ADB_DEVICE:-192.168.10.101:5555}"
 PKG="com.readany.app.dev.debug"
 
 echo "==> Killing old Metro (node on :8081)..."
