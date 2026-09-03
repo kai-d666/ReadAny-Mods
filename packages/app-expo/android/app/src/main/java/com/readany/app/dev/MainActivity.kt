@@ -47,10 +47,12 @@ class MainActivity : ReactActivity() {
   /**
    * 启动期/回前台延迟兜底:冷启动时 splash→AppTheme 切换、edge-to-edge 初始化会在
    * 焦点事件之后重置窗口 insets,把系统栏重新放出来且不再有 focus 通知。
-   * onResume 后错峰重发两档(已处于目标状态时是 no-op),把复活的系统栏按 lastEnabled 收起。
+   * onResume 后错峰重发三档(已处于目标状态时是 no-op),把复活的系统栏按 lastEnabled 收起。
+   * 另挂 insets 监听器:系统栏"刚出现的那一帧"就立即收走(把回前台的闪动压到最小)。
    */
   override fun onResume() {
     super.onResume()
+    ReaderSystemBarsModule.attachDecorViewWatcher(window.decorView)
     ReaderSystemBarsModule.scheduleReapply(window.decorView, 500)
     ReaderSystemBarsModule.scheduleReapply(window.decorView, 1500)
     ReaderSystemBarsModule.scheduleReapply(window.decorView, 3000)
