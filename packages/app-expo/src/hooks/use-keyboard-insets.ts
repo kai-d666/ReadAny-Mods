@@ -4,9 +4,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
  * 键盘位置 hook(2026-09-05 最终形态):
- * Android 数据源 = 自研 ReaderKeyboardInsets 原生模块 ——
- * InputMethodManager.getInputMethodWindowVisibleHeight()(微信同款,键盘窗口
- * 真实可见高,du 工具条+字母面板整体;读数原样采用,不做合成/缓存)。
+ * Android 数据源 = 自研 ReaderKeyboardInsets 原生模块 —— WindowInsets.ime().bottom
+ * (键盘视觉顶到窗口底完整距离,含三键条;读数原样采用,不做合成/缓存)。
  * iOS 暂保留旧 Keyboard 事件路径。
  */
 
@@ -87,7 +86,7 @@ export function useKeyboardInsets() {
       bottomInset: keyboard.height,
       height: keyboard.height,
       isVisible: keyboard.visible,
-      /** 键盘顶到窗口底的原始高度(Android=键盘窗口可见高,微信同款读数) */
+      /** 键盘顶到窗口底的原始高度(Android=ime insets,含三键条) */
       rawHeight: keyboard.rawHeight,
       safeAreaBottom: safeAreaInsets.bottom,
     }),

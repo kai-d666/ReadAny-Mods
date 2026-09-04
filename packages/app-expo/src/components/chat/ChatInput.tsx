@@ -248,12 +248,13 @@ export function ChatInput({
   const inputRef = useRef<TextInput>(null);
   const keyboardInsets = useKeyboardInsets();
   const effectiveKeyboardBottomOffset = keyboardBottomOffset ?? keyboardInsets.safeAreaBottom;
-  // 2026-09-05:读数已换自研原生(键盘窗口真实可见高,含输入法工具条),
-  // rawHeight = 键盘顶→窗口底精确距离,不再 fudge。
-  const visibleKeyboardPadding =
-    Platform.OS === "ios"
-      ? Math.max(8, keyboardInsets.rawHeight - effectiveKeyboardBottomOffset)
-      : Math.max(8, keyboardInsets.rawHeight);
+  // 2026-09-05 定稿:读数=原生 ime insets(rawHeight=键盘视觉顶→窗口底,含三键条)。
+  // Android edge-to-edge 下 wrapper 锚在父容器底边——书外父容器底=tab bar 顶,
+  // 故两平台统一扣除 effectiveKeyboardBottomOffset(书外=tabBarHeight,书内=0)。
+  const visibleKeyboardPadding = Math.max(
+    8,
+    keyboardInsets.rawHeight - effectiveKeyboardBottomOffset,
+  );
   const bottomPadding = keyboardInsets.isVisible
     ? visibleKeyboardPadding
     : Math.max(4, Math.min(keyboardInsets.safeAreaBottom, 8));

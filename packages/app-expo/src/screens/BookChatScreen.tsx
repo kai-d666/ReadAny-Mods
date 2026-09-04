@@ -13,6 +13,7 @@ import {
   Image,
   Keyboard,
   Modal,
+  NativeModules,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,6 +22,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from "react-native";
+import { useIsFocused } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useStreamingChat } from "@/hooks";
@@ -94,11 +96,25 @@ export function BookChatScreen({ route, navigation }: Props) {
   const { books } = useLibraryStore();
   const book = useMemo(() => books.find((b) => b.id === bookId), [books, bookId]);
 
-  // 书内聊天从阅读器(沉浸隐藏三键)push 而来,挂载时恢复三键;
-  // 返回阅读器时不动导航栏,由阅读器自身的 showControls 逻辑接管
+  // 书内聊天从阅读器(沉浸隐藏三键)push 而来:聚焦时走原生会话协议让三键常驻
+  // (showBarsSession 不改 lastEnabled,退出时 endBarsSession 按 lastEnabled 恢复;
+  // 会话期间 insets watcher 放行,键盘弹出三键不再"闪一下")。expo setVisibility 兜底。
+  const isFocused = useIsFocused();
+  const readerSystemBarsRef = useRef<{
+    showBarsSession?: () => void;
+    endBarsSession?: () => void;
+  }>(NativeModules.ReaderSystemBars as never);
   useEffect(() => {
-    NavigationBar.setVisibilityAsync("visible").catch(() => {});
-  }, []);
+    if (isFocused) {
+      readerSystemBarsRef.current?.showBarsSession?.();
+      NavigationBar.setVisibilityAsync("visible").catch(() => {});
+    } else {
+      readerSystemBarsRef.current?.endBarsSession?.();
+    }
+    return () => {
+      readerSystemBarsRef.current?.endBarsSession?.();
+    };
+  }, [isFocused]);
 
   // Initial quote from reader selection — consumed ONCE per mount. A ref
   // (not params state) is the guard: clearing quotes on send must not let the

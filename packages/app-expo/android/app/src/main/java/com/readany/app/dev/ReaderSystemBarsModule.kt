@@ -42,16 +42,50 @@ class ReaderSystemBarsModule(reactContext: ReactApplicationContext) :
     // 注册重发钩子(每次获得焦点/延迟兜底时重发最近一次状态)
     Log.i(TAG, "module constructed")
     ReaderSystemBarsModule.reapplyOnFocus = {
-      Log.i(TAG, "focusReapply -> lastEnabled=${ReaderSystemBarsModule.lastEnabled}")
-      apply(ReaderSystemBarsModule.lastEnabled ?: true)
+      // 会话期间(书内 AI 聊天三键常驻)跳过一切重发,避免窗口聚焦/延迟兜底按 lastEnabled 抢收
+      if (ReaderSystemBarsModule.keepBarsVisibleInSession) {
+        Log.i(TAG, "focusReapply skipped (session)")
+      } else {
+        Log.i(TAG, "focusReapply -> lastEnabled=${ReaderSystemBarsModule.lastEnabled}")
+        apply(ReaderSystemBarsModule.lastEnabled ?: true)
+      }
     }
   }
 
   @ReactMethod
   fun setEnabled(enabled: Boolean) {
     Log.i(TAG, "setEnabled($enabled)")
+    // 书内 AI 会话期间(三键常驻)忽略外部请求:不写 lastEnabled、不 apply,
+    // 会话结束由 endBarsSession 按进入前 lastEnabled 恢复(实测:聊天页 push 后
+    // 后台阅读器的"离屏隐藏工具栏"会补发 setEnabled(false),不拦则抢走会话显示)
+    if (ReaderSystemBarsModule.keepBarsVisibleInSession) return
     ReaderSystemBarsModule.lastEnabled = enabled
     apply(enabled)
+  }
+
+  /** 书内 AI 会话页"三键常驻"请求(2026-09-05):显示系统栏但**不改** lastEnabled,
+   *  会话结束走 endBarsSession 按 lastEnabled 恢复(阅读器沉浸/状态栏两种模式都不被污染);
+   *  期间 insets watcher 放行,不抢收键盘弹出时系统送出的三键(消除"闪一下")。 */
+  @ReactMethod
+  fun showBarsSession() {
+    Log.i(TAG, "showBarsSession")
+    ReaderSystemBarsModule.keepBarsVisibleInSession = true
+    val activity = reactApplicationContext.currentActivity ?: return
+    activity.runOnUiThread {
+      val window: Window = activity.window ?: return@runOnUiThread
+      val controller = WindowInsetsControllerCompat(window, window.decorView)
+      controller.systemBarsBehavior =
+          WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+  }
+
+  /** 结束会话:按最近一次状态重发(沉浸→恢复隐藏;显示→保持) */
+  @ReactMethod
+  fun endBarsSession() {
+    Log.i(TAG, "endBarsSession")
+    ReaderSystemBarsModule.keepBarsVisibleInSession = false
+    reapplyOnFocus?.invoke()
   }
 
   private fun apply(enabled: Boolean) {
@@ -77,6 +111,10 @@ class ReaderSystemBarsModule(reactContext: ReactApplicationContext) :
     /** 最近一次请求的显隐状态;null = 尚未设置过(默认显) */
     @Volatile
     var lastEnabled: Boolean? = null
+
+    /** 书内 AI 聊天页会话请求"三键常驻"(showBarsSession/endBarsSession 配对);期间 watcher 放行 */
+    @Volatile
+    var keepBarsVisibleInSession = false
 
     /** 窗口重新获得焦点/延迟兜底时重发最近一次状态(由 MainActivity 调用) */
     @Volatile
@@ -115,7 +153,8 @@ class ReaderSystemBarsModule(reactContext: ReactApplicationContext) :
       watchedDecor = decorView
       ViewCompat.setOnApplyWindowInsetsListener(decorView) { view, insets ->
         val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-        if (lastEnabled == false && (bars.bottom > 0 || bars.top > 0)) {
+        // keepBarsVisibleInSession:书内 AI 聊天页会话期间三键常驻,watcher 放行不抢收
+        if (!keepBarsVisibleInSession && lastEnabled == false && (bars.bottom > 0 || bars.top > 0)) {
           Log.i(TAG, "insetsResurrection -> hide instant")
           val activity = view.context as? Activity
           if (activity != null) {
