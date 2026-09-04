@@ -37,6 +37,7 @@
     "providerExternal": "External Translation",
     "lookupLoading": "Looking up...",
     "lookupNoResult": "No lookup result",
+    "lookupSpeak": "Speak",
     "lookupNotConfigured": "Built-in translation engine is not configured. Set it up in AI settings first."
   }
 }

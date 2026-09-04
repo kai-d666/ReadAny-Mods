@@ -1190,6 +1190,15 @@ export function ReaderScreen({ route, navigation }: Props) {
   const [lookupResult, setLookupResult] = useState<string | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const lookupSeqRef = useRef(0);
+  /** 当前弹窗模式(查词/取词);喇叭只在查词模式显示 */
+  const lookupModeRef = useRef<BuiltinLookupMode>("dictionary");
+
+  /** 用已配置 TTS 朗读文本(查词自动发音 + 喇叭重读共用;发音用原词而非译文) */
+  const speakWord = useCallback((text: string) => {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return;
+    useTTSStore.getState().play(trimmed);
+  }, []);
 
   const lookupExternal = useCallback(
     (word: string) => {
@@ -1223,6 +1232,7 @@ export function ReaderScreen({ route, navigation }: Props) {
   const runBuiltinLookup = useCallback(
     (text: string, mode: BuiltinLookupMode) => {
       const seq = ++lookupSeqRef.current;
+      lookupModeRef.current = mode;
       setLookupWord(text);
       setLookupPending(true);
       setLookupResult(null);
@@ -1231,6 +1241,10 @@ export function ReaderScreen({ route, navigation }: Props) {
         .then((result) => {
           if (seq !== lookupSeqRef.current) return; // 已被更新的请求覆盖
           setLookupResult(result ? result.trim() : "");
+          // 查词自动发音:仅长按查词模式 + 设置开启(dictionarySpeak);取词翻译不自动发音
+          if (mode === "dictionary" && (translationConfig.dictionarySpeak ?? false)) {
+            speakWord(text);
+          }
         })
         .catch((err) => {
           if (seq !== lookupSeqRef.current) return;
@@ -1241,7 +1255,7 @@ export function ReaderScreen({ route, navigation }: Props) {
           if (seq === lookupSeqRef.current) setLookupPending(false);
         });
     },
-    [translationConfig, aiConfig],
+    [translationConfig, aiConfig, speakWord],
   );
 
   const handleWordLookup = useCallback(
@@ -1916,6 +1930,8 @@ export function ReaderScreen({ route, navigation }: Props) {
         result={lookupResult}
         error={lookupError}
         onClose={closeLookup}
+        // 仅查词模式出现喇叭:点击用已配置 TTS 再读一遍(取词翻译不发音)
+        onSpeak={lookupModeRef.current === "dictionary" ? () => speakWord(lookupWord ?? "") : undefined}
       />
 
       {/* Note Tooltip (long-press on wavy underline) */}

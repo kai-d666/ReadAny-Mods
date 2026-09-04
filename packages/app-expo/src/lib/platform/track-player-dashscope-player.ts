@@ -4,6 +4,7 @@ import { splitIntoChunks } from "@readany/core/tts";
 import { File, Paths } from "expo-file-system";
 import { AppState, type AppStateStatus, Image, Platform } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
+import { cachedSynthesize } from "./tts-audio-cache";
 
 import { chunkIndexFromTrackId, trackIdForChunkIndex } from "./track-player-chunk-id";
 import { ensureSilenceFile } from "./tts-silence-keeper";
@@ -643,47 +644,53 @@ export class TrackPlayerDashScopeTTSPlayer implements ITTSPlayer {
 
     const config = this._config;
     const platform = getPlatformService();
+    const text = this._chunks[index];
 
-    const response = await platform.fetch(
-      "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.dashscopeApiKey}`,
+    // 带缓存合成(通用):命中跳过在线合成;缓存字节写临时文件播放
+    const cacheKey = `${config.engine}|${config.dashscopeVoice ?? ""}|${text}`;
+    const bytes = await cachedSynthesize(cacheKey, "mp3", text, async () => {
+      const response = await platform.fetch(
+        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${config.dashscopeApiKey}`,
+          },
+          body: JSON.stringify({
+            model: "qwen3-tts-flash",
+            input: {
+              text,
+              voice: config.dashscopeVoice,
+            },
+            parameters: {
+              response_format: "mp3",
+            },
+          }),
         },
-        body: JSON.stringify({
-          model: "qwen3-tts-flash",
-          input: {
-            text: this._chunks[index],
-            voice: config.dashscopeVoice,
-          },
-          parameters: {
-            response_format: "mp3",
-          },
-        }),
-      },
-    );
+      );
 
-    if (!response.ok) {
-      throw new Error(`DashScope TTS failed: ${response.status}`);
-    }
+      if (!response.ok) {
+        throw new Error(`DashScope TTS failed: ${response.status}`);
+      }
 
-    const result = (await response.json()) as {
-      output?: { audio?: { data?: string } };
-    };
-    const audioData = result?.output?.audio?.data;
-    if (!audioData) {
-      throw new Error("No audio data in DashScope response");
-    }
+      const result = (await response.json()) as {
+        output?: { audio?: { data?: string } };
+      };
+      const audioData = result?.output?.audio?.data;
+      if (!audioData) {
+        throw new Error("No audio data in DashScope response");
+      }
+
+      const binary = atob(audioData);
+      const out = new Uint8Array(binary.length);
+      for (let j = 0; j < binary.length; j++) {
+        out[j] = binary.charCodeAt(j);
+      }
+      return out;
+    });
 
     if (this._stopped || gen !== this._speakGen) throw new Error("aborted");
-
-    const binary = atob(audioData);
-    const bytes = new Uint8Array(binary.length);
-    for (let j = 0; j < binary.length; j++) {
-      bytes[j] = binary.charCodeAt(j);
-    }
 
     const tmpName = `tts_dashscope_${index}_${Date.now()}.mp3`;
     const tmpFile = new File(Paths.cache, tmpName);

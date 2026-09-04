@@ -7,6 +7,7 @@ import {
   splitIntoChunks,
 } from "@readany/core/tts";
 import { File, Paths } from "expo-file-system";
+import { cachedSynthesize } from "./tts-audio-cache";
 import { Image } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
 
@@ -264,13 +265,20 @@ export class TrackPlayerCloudTTSPlayer implements ITTSPlayer {
   private async _fetchChunkFile(index: number, gen: number): Promise<string> {
     if (this._stopped || gen !== this._speakGen || !this._config) throw new Error("aborted");
     const config = this._config;
-    const bytes =
-      config.engine === "xiaomi"
-        ? await fetchXiaomiTTSWav(this._chunks[index], config)
-        : await fetchOpenAITTSAudio(this._chunks[index], config);
+    const text = this._chunks[index];
+    const ext = extensionForConfig(config);
+
+    // 带缓存合成(通用):命中跳过在线合成;缓存字节写临时文件播放
+    const cacheKey = `${config.engine}|${config.edgeVoice ?? ""}|${config.voiceName ?? ""}|${text}`;
+    const bytes = await cachedSynthesize(cacheKey, ext, text, async () => {
+      const raw =
+        config.engine === "xiaomi"
+          ? await fetchXiaomiTTSWav(text, config)
+          : await fetchOpenAITTSAudio(text, config);
+      return new Uint8Array(raw);
+    });
     if (this._stopped || gen !== this._speakGen) throw new Error("aborted");
 
-    const ext = extensionForConfig(config);
     const tmpFile = new File(Paths.cache, `tts_${config.engine}_${index}_${Date.now()}.${ext}`);
     const audioUri = tmpFile.uri;
     this._tempFiles.push(audioUri);

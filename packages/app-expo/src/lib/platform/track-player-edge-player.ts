@@ -1,6 +1,7 @@
 import type { ITTSPlayer, TTSConfig } from "@readany/core/tts";
 import { fetchEdgeTTSAudio, splitIntoChunks } from "@readany/core/tts";
 import { File, Paths } from "expo-file-system";
+import { cachedSynthesize } from "./tts-audio-cache";
 import { AppState, type AppStateStatus, Image, Platform } from "react-native";
 import TrackPlayer, { Event, State } from "react-native-track-player";
 
@@ -662,13 +663,19 @@ export class TrackPlayerEdgeTTSPlayer implements ITTSPlayer {
     const config = this._config;
     const voice = config.edgeVoice || "zh-CN-XiaoxiaoNeural";
     const lang = voice.split("-").slice(0, 2).join("-");
+    const text = this._chunks[index];
 
-    const mp3Data = await fetchEdgeTTSAudio({
-      text: this._chunks[index],
-      voice,
-      lang,
-      rate: config.rate,
-      pitch: config.pitch,
+    // 带缓存合成(通用):命中跳过在线合成;缓存字节写临时文件播放
+    const cacheKey = `${config.engine}|${voice}|${config.rate ?? ""}|${config.pitch ?? ""}|${text}`;
+    const bytes = await cachedSynthesize(cacheKey, "mp3", text, async () => {
+      const mp3Data = await fetchEdgeTTSAudio({
+        text,
+        voice,
+        lang,
+        rate: config.rate,
+        pitch: config.pitch,
+      });
+      return new Uint8Array(mp3Data);
     });
 
     if (this._stopped || gen !== this._speakGen) throw new Error("aborted");
@@ -677,7 +684,7 @@ export class TrackPlayerEdgeTTSPlayer implements ITTSPlayer {
     const tmpFile = new File(Paths.cache, tmpName);
     const audioUri = tmpFile.uri;
     this._tempFiles.push(audioUri);
-    tmpFile.write(new Uint8Array(mp3Data));
+    tmpFile.write(bytes);
     return audioUri;
   }
 

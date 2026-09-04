@@ -3,9 +3,10 @@
  *
  * 长按查词(dictionary mode)与取词翻译(selection mode)共用;
  * 外部翻译(词典接口表)拉起第三方词典,不走这里。
- * TODO(待办):弹窗顶部加目标语言切换(照 win TranslationPopover 头部)。
+ * 画面右上角喇叭仅当 onSpeak 传入时显示(查词模式):点击用已配置 TTS 再读一遍。
  */
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Volume2 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import {
   fontSize,
@@ -24,9 +25,11 @@ interface LookupModalProps {
   result: string | null;
   error: string | null;
   onClose: () => void;
+  /** 查词模式提供的"重新发音"回调(selection 模式不传,不显示喇叭) */
+  onSpeak?: () => void;
 }
 
-export function LookupModal({ visible, title, loading, result, error, onClose }: LookupModalProps) {
+export function LookupModal({ visible, title, loading, result, error, onClose, onSpeak }: LookupModalProps) {
   const colors = useColors();
   const styles = makeStyles(colors);
   const { t } = useTranslation();
@@ -35,9 +38,21 @@ export function LookupModal({ visible, title, loading, result, error, onClose }:
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <View style={styles.card} onStartShouldSetResponder={() => true}>
-          <Text style={styles.word} numberOfLines={2}>
-            {title}
-          </Text>
+          <View style={styles.wordRow}>
+            <Text style={styles.word} numberOfLines={2}>
+              {title}
+            </Text>
+            {onSpeak && (
+              <TouchableOpacity
+                style={styles.speakBtn}
+                onPress={onSpeak}
+                hitSlop={10}
+                accessibilityLabel={t("translation.lookupSpeak", "朗读")}
+              >
+                <Volume2 size={18} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.divider} />
           {loading ? (
             <View style={styles.centerBox}>
@@ -80,6 +95,12 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.lg,
       overflow: "hidden",
     },
+    wordRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      position: "relative",
+    },
     word: {
       fontSize: fontSize.xl,
       fontWeight: fontWeight.semibold,
@@ -87,6 +108,12 @@ const makeStyles = (colors: ThemeColors) =>
       textAlign: "center",
       paddingHorizontal: spacing.lg,
       paddingBottom: spacing.md,
+    },
+    speakBtn: {
+      position: "absolute",
+      right: spacing.lg,
+      top: 0,
+      padding: 4,
     },
     divider: {
       height: StyleSheet.hairlineWidth,

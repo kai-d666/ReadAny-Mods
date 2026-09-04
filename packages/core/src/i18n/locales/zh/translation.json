@@ -37,6 +37,7 @@
     "providerExternal": "外部翻译",
     "lookupLoading": "查词中...",
     "lookupNoResult": "没有查词结果",
+    "lookupSpeak": "朗读",
     "lookupNotConfigured": "内置翻译引擎未配置，请先在 AI 设置中配置后重试"
   }
 }
