@@ -8,13 +8,12 @@
 import * as FileSystem from "expo-file-system/legacy";
 
 /**
- * 词典下载源(按序尝试,先成先得):
- * 1. 魔塔数据集(国内 CDN,LFS,本机已验证):https://www.modelscope.cn/datasets/Kaid23/ecdict-slim/
- * 2. GitHub Release(备用,asset 待补)
+ * 词典下载源(按序尝试,先成先得)。
+ * 仅魔塔数据集(国内 CDN/LFS,本机已验证):https://www.modelscope.cn/datasets/Kaid23/ecdict-slim/
+ * (曾加过 GitHub Release 备用源,用户未配置、渠道不透明,已移除)
  */
 export const DICT_SOURCES: Array<{ base: string; label: string }> = [
   { base: "https://www.modelscope.cn/datasets/Kaid23/ecdict-slim/resolve/master", label: "modelscope" },
-  { base: "https://github.com/kai-d666/ReadAny-Mods/releases/download/dict-v1", label: "github" },
 ];
 
 export type DictVariant = "mini" | "full";
