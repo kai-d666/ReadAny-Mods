@@ -28,6 +28,7 @@ class MainApplication : Application(), ReactApplication {
               // add(MyReactNativePackage())
               add(OnnxruntimePackage())
               add(ReaderSystemBarsPackage())
+              add(ReaderKeyboardInsetsPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"

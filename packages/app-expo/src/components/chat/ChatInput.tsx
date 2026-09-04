@@ -248,17 +248,12 @@ export function ChatInput({
   const inputRef = useRef<TextInput>(null);
   const keyboardInsets = useKeyboardInsets();
   const effectiveKeyboardBottomOffset = keyboardBottomOffset ?? keyboardInsets.safeAreaBottom;
-  // 实测修正:vivo 上 ime insets 比键盘画面实际渲染高,两个页面底部遮挡不同,分开校准:
-  // - 底栏 AI 助手(ChatScreen):tab bar 上方,实测 47dp
-  // - 书内 AI 助手(BookChatScreen):三键导航栏上方,实测 -13dp
-  // 换输入法/ROM 后若再留空或遮挡,调整此值。
-  const ANDROID_KEYBOARD_HEIGHT_FUDGE = variant === "book" ? -13 : 47;
+  // 2026-09-05:读数已换自研原生(键盘窗口真实可见高,含输入法工具条),
+  // rawHeight = 键盘顶→窗口底精确距离,不再 fudge。
   const visibleKeyboardPadding =
     Platform.OS === "ios"
-      ? Math.max(8, keyboardInsets.rawHeight - effectiveKeyboardBottomOffset + 14)
-      : // Android(RN 0.81 edge-to-edge):键盘弹出时窗口不再 resize(实测窗口 frame 不变),
-        // 只能靠键盘实际高度把输入栏顶起,并减去 ime insets 的虚高(紧贴键盘,不留余量)
-        Math.max(8, keyboardInsets.rawHeight - ANDROID_KEYBOARD_HEIGHT_FUDGE);
+      ? Math.max(8, keyboardInsets.rawHeight - effectiveKeyboardBottomOffset)
+      : Math.max(8, keyboardInsets.rawHeight);
   const bottomPadding = keyboardInsets.isVisible
     ? visibleKeyboardPadding
     : Math.max(4, Math.min(keyboardInsets.safeAreaBottom, 8));
