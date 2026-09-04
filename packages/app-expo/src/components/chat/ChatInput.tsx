@@ -407,6 +407,7 @@ export function ChatInput({
 
   return (
     <View
+      pointerEvents="box-none"
       style={[
         s.wrapper,
         floatUp
@@ -416,11 +417,11 @@ export function ChatInput({
     >
       {/* 解耦后的双层:layerPanel 独立于 combo(不随上层平移),两者同挂 rig;
           upper 的运动层 combo 独立 translateY,rig 高度=上层内容高(端点:左/右/底/中心线) */}
-      <View style={s.rig}>
+      <View style={s.rig} pointerEvents="box-none">
         {/* 下层功能卡:底边=盒底(静态);上边缘=上层实时中心线(动态跟随 lift)——
             初始与上层下半叠合被盖;拖动时上边缘随上层中线爬升,下层被"拉长"露出 */}
         {/* 下层卡(实体大卡:顶=上层当前中线,卡面连续,工具区在卡底;只有两层,无独立延伸带) */}
-        <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="auto">
+        <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="none">
         <Animated.View
           style={s.toolArea}
           onLayout={(e) => {
