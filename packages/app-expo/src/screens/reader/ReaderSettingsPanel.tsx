@@ -58,7 +58,7 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
       <View
         style={[
           s.bottomSheet,
-          { paddingBottom: insets.bottom || 16 },
+          { paddingTop: insets.top + 8, paddingBottom: insets.bottom || 16 },
           layout.isTablet && {
             width: "100%",
           },
