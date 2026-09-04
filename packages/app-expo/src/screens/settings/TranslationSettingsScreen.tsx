@@ -24,6 +24,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PasswordInput } from "../../components/ui/PasswordInput";
 import { SelectRow, type SelectOption } from "../../components/ui/SelectRow";
+import { LocalDictDownloadCard } from "../../components/settings/LocalDictDownloadCard";
 import { TranslationModelPicker } from "../../components/settings/TranslationModelPicker";
 import {
   type ThemeColors,
@@ -215,6 +216,12 @@ export default function TranslationSettingsScreen() {
                             onValueChange={(v) => updateTranslationConfig({ dictionaryFallback: v })}
                           />
                         </View>
+
+                        {/* 本地词典下载中心(精选/全量 + 进度 + 删除) */}
+                        <Text style={[styles.fieldLabel, styles.subCardSpaced]}>
+                          {t("settings.dictDownloadTitle", "离线词典")}
+                        </Text>
+                        <LocalDictDownloadCard />
                       </View>
                     ) : (
                       <View>
