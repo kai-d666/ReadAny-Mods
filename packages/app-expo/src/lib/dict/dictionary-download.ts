@@ -7,9 +7,15 @@
 
 import * as FileSystem from "expo-file-system/legacy";
 
-/** GitHub Release 直链(asset 名与原库一致,重打 release 保持同名即可复用) */
-export const DICT_RELEASE_BASE =
-  "https://github.com/kai-d666/ReadAny-Mods/releases/download/dict-v1";
+/**
+ * 词典下载源(按序尝试,先成先得):
+ * 1. 魔塔数据集(国内 CDN,LFS,本机已验证):https://www.modelscope.cn/datasets/Kaid23/ecdict-slim/
+ * 2. GitHub Release(备用,asset 待补)
+ */
+export const DICT_SOURCES: Array<{ base: string; label: string }> = [
+  { base: "https://www.modelscope.cn/datasets/Kaid23/ecdict-slim/resolve/master", label: "modelscope" },
+  { base: "https://github.com/kai-d666/ReadAny-Mods/releases/download/dict-v1", label: "github" },
+];
 
 export type DictVariant = "mini" | "full";
 
@@ -79,25 +85,38 @@ export async function downloadLocalDict(
   }
   // 中断残留(unready 文件)→ 清掉重下,避免把半截库当缓存
   await FileSystem.deleteAsync(DICT_LOCAL_FILE, { idempotent: true });
-  const url = `${DICT_RELEASE_BASE}/${info.assetName}`;
-  const job = FileSystem.createDownloadResumable(
-    url,
-    DICT_LOCAL_FILE,
-    {},
-    ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
-      if (totalBytesExpectedToWrite > 0) {
-        onProgress?.({
-          fraction: totalBytesWritten / totalBytesExpectedToWrite,
-          totalBytesWritten,
-          totalBytesExpected: totalBytesExpectedToWrite,
-        });
-      }
-    },
-  );
-  const result = await job.downloadAsync();
-  if (!result) throw new Error("词典下载未完成");
-  await FileSystem.writeAsStringAsync(DICT_READY, info.id);
-  onProgress?.({ fraction: 1, totalBytesWritten: 1, totalBytesExpected: 1 });
+  // 按源序尝试:一个源失败(或断连)换下一个,全部失败抛错
+  let lastError: Error | null = null;
+  for (const source of DICT_SOURCES) {
+    const url = `${source.base}/${info.assetName}`;
+    try {
+      const job = FileSystem.createDownloadResumable(
+        url,
+        DICT_LOCAL_FILE,
+        {},
+        ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
+          if (totalBytesExpectedToWrite > 0) {
+            onProgress?.({
+              fraction: totalBytesWritten / totalBytesExpectedToWrite,
+              totalBytesWritten,
+              totalBytesExpected: totalBytesExpectedToWrite,
+            });
+          }
+        },
+      );
+      const result = await job.downloadAsync();
+      if (!result) throw new Error(`词典下载未完成(${source.label})`);
+      await FileSystem.writeAsStringAsync(DICT_READY, info.id);
+      onProgress?.({ fraction: 1, totalBytesWritten: 1, totalBytesExpected: 1 });
+      return;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[DictDownload] ${source.label} failed: ${lastError.message}`);
+      // 半截文件清掉,换下一个源
+      await FileSystem.deleteAsync(DICT_LOCAL_FILE, { idempotent: true });
+    }
+  }
+  throw lastError ?? new Error("词典下载失败(所有源)");
 }
 
 /** 删除本地词典(重新下载用) */

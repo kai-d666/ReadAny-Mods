@@ -4,14 +4,12 @@
  * 词典库:stardict 系 SQLite 精简版(与桌面端同源:桌面 Tauri 命令查
  * `dictionary/stardict.db`),移动端字典由「本地词典」下载中心放到
  * `<documentDirectory>/readany-dicts/stardict.db`(见 lib/dict/dictionary-download.ts)。
- * 查询语义与桌面端一致:词条精确匹配(word NOCASE,忽略大小写),
- * 命中返回 word/phonetic/translation/pos/exchange;库不存在/查询失败 → null,
- * 由调用方按「AI 兜底」开关走 AI 查词。
- *
- * 兼容路径:早期 dev 版(asset 导入)把库放在 documentDirectory/dict/,仍可读。
+ * 库必须由下载中心安装(唯一来源,无隐藏兜底路径);未安装查询 → null,
+ * 由调用方按「AI 兜底」开关走 AI 查词。查询语义与桌面端一致:
+ * 词条精确匹配(word NOCASE,忽略大小写)。
  */
 
-import { File, Paths } from "expo-file-system";
+import { File } from "expo-file-system";
 import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
 import { DICT_LOCAL_FILE } from "@/lib/dict/dictionary-download";
 
@@ -23,25 +21,13 @@ export interface ECDICTEntry {
   exchange: string;
 }
 
-/** 早期版本(asset 导入)的词典位置;存在则沿用,避免重下 */
-const LEGACY_DICT_RELATIVE_PATH = "dict/stardict.db";
-
 let dbPromise: Promise<SQLiteDatabase | null> | null = null;
-
-function getReadableDictFile(): File | null {
-  // 优先下载中心目录(正式位置),其次旧 asset 位置
-  const local = new File(DICT_LOCAL_FILE);
-  if (local.exists) return local;
-  const legacy = new File(Paths.document, LEGACY_DICT_RELATIVE_PATH);
-  if (legacy.exists) return legacy;
-  return null;
-}
 
 async function openDictDb(): Promise<SQLiteDatabase | null> {
   try {
-    const dictFile = getReadableDictFile();
-    if (!dictFile) {
-      // 词典未下载:跳过本地查词(与桌面端行为差 = 落到 AI 兜底)
+    const dictFile = new File(DICT_LOCAL_FILE);
+    if (!dictFile.exists) {
+      // 词典未安装(下载中心未安装或已删除):跳过本地查词,落 AI 兜底
       console.warn("[ECDICT] dict db not found, local lookup skipped");
       return null;
     }
