@@ -62,10 +62,12 @@ export function MessageList({
   const colors = useColors();
   const s = makeStyles(colors);
   const flatListRef = useRef<FlatList>(null);
-  // 输入栏恒 absolute 悬浮(不占布局),列表恒留 120dp 占位:
+  // 输入栏恒 absolute 悬浮(不占布局),列表恒留占位:
   // - 容器 paddingBottom 压缩可视区,键盘弹出前后列表尺寸一致,背景不跳变
   // - 内容 paddingBottom 留滚动余量,最后一条消息可滚到输入栏上方
-  const listBottomPad = Platform.OS === "android" ? 120 : 0;
+  // - 占位须与输入栏双层结构真实高度(rig≈70dp)匹配:旧值 120 把列表视口压得过高,
+  //   底部出现"滚动信息被截断"的隐形裂缝(展开中线位置),2026-09-05 修为 78
+  const listBottomPad = Platform.OS === "android" ? 78 : 0;
   const isAtBottomRef = useRef(true);
   const [showScrollDown, setShowScrollDown] = useState(false);
 
