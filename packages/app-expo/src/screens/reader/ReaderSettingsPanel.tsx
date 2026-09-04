@@ -53,6 +53,10 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
       transparent
       animationType="slide"
       onRequestClose={onClose}
+      // Modal 独立 window 不继承主窗 edge-to-edge:加 translucent 后状态栏/三键区
+      // 恢复 app 正常风格(内容透底+主题色按钮),否则底部为系统默认半透明黑
+      statusBarTranslucent={Platform.OS === "android"}
+      navigationBarTranslucent={Platform.OS === "android"}
     >
       <Pressable style={s.modalBackdrop} onPress={onClose} />
       <View

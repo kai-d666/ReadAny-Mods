@@ -210,7 +210,9 @@ export function MessageList({
 
       {/* Scroll to bottom button */}
       {showScrollDown && (
-        <View style={s.scrollDownWrap}>
+        // Android 输入栏为悬浮层(absolute),底部 listBottomPad 是它的占位区,
+        // 按钮需抬到占位区之上(86),否则被输入卡盖住;iOS 输入栏为流式占位,8 即合理
+        <View style={[s.scrollDownWrap, { bottom: listBottomPad + 8 }]}>
           <TouchableOpacity
             style={s.scrollDownBtn}
             onPress={handleScrollToBottom}
