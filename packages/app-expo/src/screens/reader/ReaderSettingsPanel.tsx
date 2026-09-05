@@ -6,6 +6,7 @@ import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { useColors } from "@/styles/theme";
 import type { ReadSettings } from "@readany/core/types";
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useTheme } from "@/styles/ThemeContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { makeStyles } from "./reader-styles";
@@ -24,6 +25,7 @@ interface Props {
 
 export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, onUpdateSetting, onRubyModeChange }: Props) {
   const colors = useColors();
+  const { isDark } = useTheme();
   const s = makeStyles(colors);
   const insets = useSafeAreaInsets();
   const layout = useResponsiveLayout();
@@ -60,6 +62,9 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
       // ReadAny patch: 仅本弹窗关闭导航栏对比度 scrim,三键区透出面板色;
       // 其他 Modal 不传该属性,黑带(系统 scrim)原样保留
       navBarContrastEnforced={Platform.OS === "android" ? false : undefined}
+      // ReadAny patch: 三键图标按 App 主题(浅色主题=深色图标;弹窗默认按系统
+      // 夜间模式判定,与 App 主题可能不一致)
+      navBarLightIcons={Platform.OS === "android" ? isDark : undefined}
     >
       <Pressable style={s.modalBackdrop} onPress={onClose} />
       <View
