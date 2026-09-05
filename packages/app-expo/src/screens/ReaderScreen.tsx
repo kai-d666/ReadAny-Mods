@@ -418,6 +418,29 @@ export function ReaderScreen({ route, navigation }: Props) {
   } | null>(null);
   const totalBookCharactersRef = useRef<number | null>(null);
   const progressTrackingGuardUntilRef = useRef(0);
+  // 伪写抑制(2026-09-06,Readest PR #4341 同款):打开书时渲染器先发过渡帧
+  // (粗略定位→精确定位,两帧 cfi 不同),所以基准不是"首帧"而是"稳定帧":
+  // 连续同 cfi 或 1.5s 超时后视为稳定;稳定后位置未偏离基准且从未写过 → 不写,
+  // 避免"打开书未翻页"刷新 updated_at 后以旧位置覆盖另一设备的真实进度。
+  const loadedCfiBaseRef = useRef<string | null>(null);
+  const progressSettledRef = useRef(false);
+  const progressSettleDeadlineRef = useRef(0);
+  const progressWrittenRef = useRef(false);
+  const settledFractionRef = useRef(0);
+  const lastWrittenFractionRef = useRef(0);
+  // 渲染器抖动帧(如 13.376%→13.330%,约 0.05% 级跳变)不视为翻页;
+  // 真实翻页通常 ≥0.1%,阈值取 0.1%。
+  const PROGRESS_WRITE_MIN_DELTA = 0.001;
+
+  // 组件实例随 route 复用(切换 bookId 不重挂),基准必须按书重置
+  useEffect(() => {
+    loadedCfiBaseRef.current = null;
+    progressSettledRef.current = false;
+    progressSettleDeadlineRef.current = 0;
+    progressWrittenRef.current = false;
+    settledFractionRef.current = 0;
+    lastWrittenFractionRef.current = 0;
+  }, [bookId]);
 
   const incrementPagesRead = useReadingSessionStore((s) => s.incrementPagesRead);
   const incrementCharactersRead = useReadingSessionStore((s) => s.incrementCharactersRead);
@@ -891,7 +914,35 @@ export function ReaderScreen({ route, navigation }: Props) {
         lastCfiRef.current = detail.cfi;
         setCurrentCfi(detail.cfi);
         // Use throttled save instead of immediate update
-        throttledSaveProgress(bookId, detail.fraction ?? 0, detail.cfi);
+        // 伪写抑制:打开书首帧可能是渲染器过渡帧(粗略定位→精确定位),
+        // 以"稳定帧"为基准——连续同 cfi 或 1.5s 超时后进入稳定;稳定后
+        // 位置未偏离基准且从未写过则不写;真实翻页/跳转(cfi 偏离基准)才写。
+        if (!progressSettledRef.current) {
+          const settledByRepetition = detail.cfi === loadedCfiBaseRef.current;
+          const settledByTimeout = Date.now() >= progressSettleDeadlineRef.current;
+          if (settledByRepetition || settledByTimeout) {
+            progressSettledRef.current = true;
+            loadedCfiBaseRef.current = detail.cfi;
+            settledFractionRef.current = detail.fraction ?? 0;
+          } else {
+            // 过渡期:滚动候选帧,不写进度
+            loadedCfiBaseRef.current = detail.cfi;
+          }
+        }
+        if (progressSettledRef.current) {
+          const fractionJump = Math.abs(
+            (detail.fraction ?? 0) - lastWrittenFractionRef.current,
+          );
+          if (!progressWrittenRef.current && detail.cfi === loadedCfiBaseRef.current) {
+            // no-op:位置未变,不产生伪更新
+          } else if (fractionJump < PROGRESS_WRITE_MIN_DELTA) {
+            // 渲染器抖动帧:不视为翻页,不动基准、不写
+          } else {
+            progressWrittenRef.current = true;
+            lastWrittenFractionRef.current = detail.fraction ?? 0;
+            throttledSaveProgress(bookId, detail.fraction ?? 0, detail.cfi);
+          }
+        }
       }
 
       // Mark translation ready after first successful relocate (CFI navigation done)
@@ -1339,10 +1390,17 @@ export function ReaderScreen({ route, navigation }: Props) {
             }),
           { attempts: 10, initialDelayMs: 150 },
         ).catch((err: Error) => console.error("Failed to save progress on unmount:", err));
-        void saveReadingProgressForBook(bookId, {
-          cfi: lastCfiRef.current,
-          percent: progressRef.current,
-        }).catch((err: Error) => console.error("Failed to save reading progress on unmount:", err));
+        // 伪写抑制(同上):从未写过且末位置与基准距离 < 抖动阈值(打开未翻页)
+        // → 不写跨设备进度;本地书行视图(上面 updateBook)与 syncNow 照常。
+        if (
+          progressWrittenRef.current ||
+          Math.abs(progressRef.current - settledFractionRef.current) >= PROGRESS_WRITE_MIN_DELTA
+        ) {
+          void saveReadingProgressForBook(bookId, {
+            cfi: lastCfiRef.current,
+            percent: progressRef.current,
+          }).catch((err: Error) => console.error("Failed to save reading progress on unmount:", err));
+        }
       }
       const { useSyncStore } = require("@readany/core/stores/sync-store");
       useSyncStore.getState().syncNow?.();
@@ -1359,6 +1417,12 @@ export function ReaderScreen({ route, navigation }: Props) {
       try {
         setLoading(true);
         setError(null);
+        // 打开新书:重置伪写抑制状态并启动 1.5s 稳定窗口(过渡帧不算真实翻页)
+        progressSettledRef.current = false;
+        progressWrittenRef.current = false;
+        progressSettleDeadlineRef.current = Date.now() + 1500;
+        settledFractionRef.current = 0;
+        lastWrittenFractionRef.current = 0;
         const platform = getPlatformService();
         const appData = await platform.getAppDataDir();
         const absPath = await platform.joinPath(appData, book.filePath);

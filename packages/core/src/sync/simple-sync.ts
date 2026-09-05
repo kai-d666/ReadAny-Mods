@@ -352,7 +352,10 @@ export async function applyChanges(
               : record;
 
           const localState = existingRecords.get(String(pkValue));
-          if (!options.forceApply && !shouldApplyRemoteRecord(record, timestampCol, localState)) {
+          if (
+            !options.forceApply &&
+            !shouldApplyRemoteRecord(tableName, record, timestampCol, localState)
+          ) {
             skipped++;
           } else {
             let recordToApply = safeRecord;
@@ -610,12 +613,19 @@ function normalizeDeletedAt(value: unknown): number | null | undefined {
   return typeof value === "number" ? value : Number(value) || null;
 }
 
-function shouldApplyRemoteRecord(
+export function shouldApplyRemoteRecord(
+  _tableName: string,
   record: Record<string, unknown>,
   timestampCol: string,
   localState: ExistingRecordState | undefined,
 ): boolean {
   if (!localState) return true;
+
+  // 进度遵循与记录一致的 LWW(时间戳裁决,2026-09-06 定稿):
+  // - 旧时间戳的小进度(另一设备的旧记录)不会覆盖新进度;
+  // - 新时间戳的小进度(用户真实重读)会被接受,与 Whispersync/Koodo 语义一致;
+  // - 伪写(打开未翻页刷新时间戳)已在写入侧(T1 稳定帧+未动不写)堵死,
+  //   LWW 不再需要"只进不退"这条过度防御。
 
   const remoteTs = record[timestampCol] as number;
   if (remoteTs > localState.timestamp) return true;
