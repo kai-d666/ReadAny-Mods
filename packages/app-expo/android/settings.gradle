@@ -36,6 +36,16 @@ rootProject.name = 'ReadAny Dev'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
-// ReactAndroid 源码参与构建:源码 AAR 已发布到 ~/.m2(com.facebook.react:react-android:0.81.5),
-// 全部依赖经 mavenLocal() 拿到源码 AAR,避免与官方 prebuilt AAR 双来源互相冲突(Dex 合并类重复)
 includeBuild(expoAutolinking.reactNativeGradlePlugin)
+
+// ReactAndroid 源码复合构建(2026-09-05 起):react-android 直接绑定 node_modules 的
+// RN 源码项目(含项目补丁:Modal 对比度 scrim 关闭等)。与 mavenLocal AAR 并存会 Dex
+// 撞类,故 build.gradle 中不再使用 mavenLocal();源码改后无需发布 AAR,直接生效。
+includeBuild("../../../node_modules/react-native") {
+  dependencySubstitution {
+    substitute(module("com.facebook.react:react-android"))
+        .using(project(":packages:react-native:ReactAndroid"))
+    substitute(module("com.facebook.react:react-native"))
+        .using(project(":packages:react-native:ReactAndroid"))
+  }
+}

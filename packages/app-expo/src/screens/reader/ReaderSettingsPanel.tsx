@@ -57,6 +57,9 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
       // 恢复 app 正常风格(内容透底+主题色按钮),否则底部为系统默认半透明黑
       statusBarTranslucent={Platform.OS === "android"}
       navigationBarTranslucent={Platform.OS === "android"}
+      // ReadAny patch: 仅本弹窗关闭导航栏对比度 scrim,三键区透出面板色;
+      // 其他 Modal 不传该属性,黑带(系统 scrim)原样保留
+      navBarContrastEnforced={Platform.OS === "android" ? false : undefined}
     >
       <Pressable style={s.modalBackdrop} onPress={onClose} />
       <View
@@ -351,6 +354,20 @@ export function ReaderSettingsPanel({ visible, readSettings, bookId, onClose, on
           )}
         </ScrollView>
       </View>
+      {/* 三键区底带(2026-09-05):navBarContrastEnforced 已关掉系统黑带,这里按
+          面板色(colors.card,与面板同色)垫一条"带子",让三键区有一体感;
+          高度=三键条(48dp 兜底) */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: Math.max(insets.bottom, 48),
+          backgroundColor: colors.card,
+        }}
+      />
     </Modal>
   );
 }
