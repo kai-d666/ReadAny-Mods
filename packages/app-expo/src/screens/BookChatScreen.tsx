@@ -277,9 +277,13 @@ export function BookChatScreen({ route, navigation }: Props) {
   const modeNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showModeNotice = useCallback((text: string) => {
     if (!text) return;
-    setModeNotice(text);
-    if (modeNoticeTimer.current) clearTimeout(modeNoticeTimer.current);
-    modeNoticeTimer.current = setTimeout(() => setModeNotice(null), 3000);
+    // 2026-09-05:部分回调链可能在"渲染期"调用本函数(模式切换 worklet 链),
+    // 延迟一拍再 set,避免 "Cannot update a component while rendering" 警告
+    setTimeout(() => {
+      setModeNotice(text);
+      if (modeNoticeTimer.current) clearTimeout(modeNoticeTimer.current);
+      modeNoticeTimer.current = setTimeout(() => setModeNotice(null), 3000);
+    }, 0);
   }, []);
 
   // 依赖用身份键(threadId+条数)而非 activeThread 对象引用:store.threads

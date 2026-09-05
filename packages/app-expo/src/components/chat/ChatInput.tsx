@@ -417,9 +417,12 @@ export function ChatInput({
         {/* 下层功能卡:底边=盒底(静态);上边缘=上层实时中心线(动态跟随 lift)——
             初始与上层下半叠合被盖;拖动时上边缘随上层中线爬升,下层被"拉长"露出 */}
         {/* 下层卡(实体大卡:顶=上层当前中线,卡面连续,工具区在卡底;只有两层,无独立延伸带) */}
-        <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="none">
+        {/* 面板 box-none:自身不抢手势(修 f7127e91 的列表滑动拦截),
+            子组件(toolArea/按钮/滑条)可以接收——"none" 会连同子孙一起断死 */}
+        <Animated.View style={[s.layerPanel, panelStyle]} pointerEvents="box-none">
         <Animated.View
           style={s.toolArea}
+          pointerEvents="box-none"
           onLayout={(e) => {
             const ph = Math.round(e.nativeEvent.layout.height);
             expandSV.value = Math.max(8, ph); // 行程=工具区真实高(之前 96 兜底虚增 25px)
