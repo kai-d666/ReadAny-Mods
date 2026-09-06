@@ -35,6 +35,27 @@ export interface OpdsSourcesState {
   clearAll(): Promise<void>;
 }
 
+/**
+ * 从平台 kv 列出全部书源数据键(排除密码键),按 id 排序 ——
+ * 索引(opds_sources)可能被竞态/损坏覆盖,数据键才是唯一事实源;
+ * 索引只作加速层,读不到时一律以全量扫描重建。
+ */
+async function listStoredSourceIds(): Promise<string[]> {
+  const platform = getPlatformService();
+  try {
+    const keys = await platform.kvGetAllKeys();
+    return keys
+      .filter(
+        (key) =>
+          key.startsWith(OPDS_SOURCE_KEY_PREFIX) && !key.includes("password"),
+      )
+      .map((key) => key.slice(OPDS_SOURCE_KEY_PREFIX.length))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
 export const useOpdsSourcesStore = create<OpdsSourcesState>((set, get) => ({
   sources: [],
   loaded: false,
@@ -51,6 +72,13 @@ export const useOpdsSourcesStore = create<OpdsSourcesState>((set, get) => ({
     } catch (error) {
       console.warn("[OpdsSources] ignoring invalid stored source index:", error);
     }
+    // 索引自愈:数据键集合与索引不一致时,以数据键为准修正索引
+    const storedIds = await listStoredSourceIds();
+    if (storedIds.length !== ids.length || storedIds.some((id) => !ids.includes(id))) {
+      ids = storedIds;
+      await platform.kvSetItem(OPDS_SOURCE_LIST_KEY, JSON.stringify(ids));
+      console.warn(`[OpdsSources] index healed to ${ids.length} stored source(s)`);
+    }
 
     const sources: OpdsSource[] = [];
     for (const id of ids) {
@@ -66,6 +94,9 @@ export const useOpdsSourcesStore = create<OpdsSourcesState>((set, get) => ({
       }
     }
     set({ sources, loaded: true });
+    console.log(
+      `[OpdsSources] hydrate: index=${ids.length} sources=${sources.map((s) => s.name).join(", ")}`,
+    );
   },
 
   getSource(id) {
@@ -82,32 +113,25 @@ export const useOpdsSourcesStore = create<OpdsSourcesState>((set, get) => ({
     const existing = get().sources.find((item) => item.id === source.id);
     const trimmed = { ...source, username: (source.username ?? "").trim() };
 
+    // 新书源:先做上限检查 + 更新索引(必须在写数据键之前 ——
+    // 数据键一旦写入,listStoredSourceIds 会包含自身,限制检查即失效)
+    if (!existing) {
+      const ids = await listStoredSourceIds();
+      if (!ids.includes(source.id)) {
+        if (ids.length >= OPDS_MAX_SOURCES) {
+          throw new Error(`OPDS sources limit reached (${OPDS_MAX_SOURCES})`);
+        }
+        ids.push(source.id);
+      }
+      await platform.kvSetItem(OPDS_SOURCE_LIST_KEY, JSON.stringify(ids));
+    }
+
     // 持久化本体(不含 hasPassword —— 内存标记,hydrate 时重算)
     const { hasPassword: _ignored, ...persisted } = trimmed;
     await platform.kvSetItem(opdsSourceKey(source.id), JSON.stringify(persisted));
 
     if (password) {
       await platform.kvSetItem(opdsSourceSecretKey(source.id), password);
-    }
-
-    // 新书源 → 追加索引(上限保护)
-    if (!existing) {
-      let ids: string[] = [];
-      try {
-        const raw = await platform.kvGetItem(OPDS_SOURCE_LIST_KEY);
-        ids = raw ? (JSON.parse(raw) as string[]) : [];
-        if (!Array.isArray(ids)) ids = [];
-      } catch {
-        // 索引损坏 → 重建为当前内存列表(崩溃后兜底)
-        ids = get().sources.map((item) => item.id);
-      }
-      if (!ids.includes(source.id)) {
-        if (ids.length >= OPDS_MAX_SOURCES) {
-          throw new Error(`OPDS sources limit reached (${OPDS_MAX_SOURCES})`);
-        }
-        ids.push(source.id);
-        await platform.kvSetItem(OPDS_SOURCE_LIST_KEY, JSON.stringify(ids));
-      }
     }
 
     // 内存:upsert(编辑保留原 hasPassword;新增按是否有密码)
@@ -124,12 +148,10 @@ export const useOpdsSourcesStore = create<OpdsSourcesState>((set, get) => ({
     await platform.kvRemoveItem(opdsSourceKey(id));
     await platform.kvRemoveItem(opdsSourceSecretKey(id));
 
-    const remaining = get().sources.filter((item) => item.id !== id);
-    await platform.kvSetItem(
-      OPDS_SOURCE_LIST_KEY,
-      JSON.stringify(remaining.map((item) => item.id)),
-    );
-    set({ sources: remaining });
+    // 索引从剩余数据键重建(不再依赖内存,防"只删成空索引")
+    const ids = await listStoredSourceIds();
+    await platform.kvSetItem(OPDS_SOURCE_LIST_KEY, JSON.stringify(ids));
+    set({ sources: get().sources.filter((item) => item.id !== id) });
   },
 
   async clearAll() {

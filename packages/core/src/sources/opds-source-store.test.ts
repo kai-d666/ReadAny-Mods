@@ -21,6 +21,9 @@ function installKvPlatform() {
     async kvRemoveItem(key: string) {
       kv.delete(key);
     },
+    async kvGetAllKeys() {
+      return Array.from(kv.keys());
+    },
   } as unknown as IPlatformService);
   return kv;
 }
