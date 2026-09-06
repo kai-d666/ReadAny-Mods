@@ -10,13 +10,19 @@
  * 默认列表只有镜像根 URL(带协议),上游失败时滑动切换。
  */
 
-import { getPlatformService } from "../../services/platform";
+import {
+  defaultFetcher,
+  type Fetcher,
+} from "./fetcher";
 import {
   OPDS_ACQUISITION_PRIORITY,
   OpdsParseError,
   type OpdsFeed,
   type OpdsPublication,
 } from "../opds";
+import type { BookSourceDriver } from "./local-opds-server";
+
+export type { Fetcher } from "./fetcher";
 
 /** LibGen 镜像(按可用性排序;libgen.li 为 2026-09 实测可用) */
 export const DEFAULT_LIBGEN_MIRRORS = [
@@ -110,7 +116,7 @@ function normalizeExt(raw: string): string | undefined {
   return (raw.trim().toLowerCase() || undefined) as string | undefined;
 }
 
-export class LibgenDriver {
+export class LibgenDriver implements BookSourceDriver {
   readonly id: string;
   readonly name: string;
 
@@ -123,8 +129,21 @@ export class LibgenDriver {
     this.mirrors = options.mirrors?.length ? options.mirrors : [...DEFAULT_LIBGEN_MIRRORS];
   }
 
+  /** BookSourceDriver 接口:搜索并产出统一 feed(acquisition 用根相对路径) */
+  async search(query: string): Promise<OpdsFeed> {
+    const results = await this.searchResults(query);
+    return this.feedFromResults(query, results, "");
+  }
+
+  /** BookSourceDriver 接口:按 params.md5 走标准两步下载链 */
+  async download(params: Record<string, string>): Promise<Uint8Array> {
+    const md5 = params.md5;
+    if (!md5) throw new OpdsParseError("Missing md5");
+    return this.fetchDownload(md5);
+  }
+
   /** 搜索(对每个镜像依次尝试,成功即记住 activeBase;全部失败抛错) */
-  async search(query: string, fetchImpl: Fetcher = defaultFetcher): Promise<LibgenResult[]> {
+  async searchResults(query: string, fetchImpl: Fetcher = defaultFetcher): Promise<LibgenResult[]> {
     let lastError: unknown;
     for (const base of this.currentMirrorOrder()) {
       try {
@@ -155,18 +174,13 @@ export class LibgenDriver {
    * downloadBase = 服务端下载代理基址(如 http://127.0.0.1:19090/opds/libgen),
    * 下载 href 一律指向服务端代理(由代理做镜像/路径探测与魔数校验)。
    */
-  feedFromResults(
-    query: string,
-    results: LibgenResult[],
-    baseUrl: string,
-    downloadBase = "",
-  ): OpdsFeed {
+  feedFromResults(query: string, results: LibgenResult[], baseUrl: string): OpdsFeed {
     const publications: OpdsPublication[] = results.map((result) => {
       const extension = result.extension;
-      const href =
-        downloadBase && result.md5
-          ? `${downloadBase}/download?md5=${result.md5}`
-          : `${this.activeBase ?? this.mirrors[0]}/get.php?md5=${result.md5}`;
+      // 根相对 href:客户端按 feed URL resolve 成正确定址
+      const href = result.md5
+        ? `/opds/${this.id}/download?md5=${result.md5}`
+        : `${this.activeBase ?? this.mirrors[0]}/get.php?md5=${result.md5}`;
       return {
         title: result.title,
         authors: result.author ? [result.author] : [],
@@ -200,7 +214,7 @@ export class LibgenDriver {
    * key 短寿命:下载返回 HTML/失败时重新取 ads 页换新 key 再试一次。
    * 按镜像顺序轮换;全部失败抛 OpdsParseError。
    */
-  async download(md5: string, fetchImpl: Fetcher = defaultFetcher): Promise<Uint8Array> {
+  async fetchDownload(md5: string, fetchImpl: Fetcher = defaultFetcher): Promise<Uint8Array> {
     let lastError: unknown;
     for (const base of this.currentMirrorOrder()) {
       try {
@@ -290,21 +304,3 @@ async function fetchValidLibgenFile(
   return isZip || isPdf ? bytes : null;
 }
 
-/** 注入用 fetch 形状(仅 string URL,与 libgen 调用方一致;responseType 支持二进制下载) */
-export type Fetcher = (
-  url: string,
-  init?: { headers?: Record<string, string>; responseType?: "text" | "arraybuffer" },
-) => Promise<Response>;
-
-/**
- * 默认 HTTP 执行器:与书源 UI 同走平台 XHR(统一超时/错误归一);
- * 不直接用 RN 全局 fetch —— 那里无超时与错误包装(网络抖动会被放大成"无法连接")。
- */
-const LIBGEN_FETCH_TIMEOUT_MS = 12_000;
-const defaultFetcher: Fetcher = (url, init) =>
-  getPlatformService().fetch(url, {
-    method: "GET",
-    headers: init?.headers,
-    responseType: init?.responseType ?? "text",
-    timeoutMs: LIBGEN_FETCH_TIMEOUT_MS,
-  });

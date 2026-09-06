@@ -4,8 +4,8 @@ import {
   DEFAULT_LIBGEN_MIRRORS,
   LibgenDriver,
   parseLibgenSearchHtml,
-  type Fetcher,
 } from "./libgen";
+import type { Fetcher } from "./fetcher";
 
 /** 从 libgen.li 真实结果页(2026-09-06 实测)截取的结果行结构 */
 const RESULT_ROW = `<tr>
@@ -79,7 +79,7 @@ describe("LibgenDriver", () => {
       if (url.startsWith("https://m1")) throw new Error("connection refused");
       return new Response(`<table>${RESULT_ROW}</table>`, { status: 200 });
     };
-    const results = await driver.search("alice", fetchImpl);
+    const results = await driver.searchResults("alice", fetchImpl);
     expect(callCount).toBe(2);
     expect(results).toHaveLength(1);
   });
@@ -101,29 +101,28 @@ describe("LibgenDriver", () => {
     );
     expect(feed.publications[0].title).toBe("Alice's adventures in wonderland");
     expect(feed.publications[0].acquisitions).toHaveLength(1);
-    expect(feed.publications[0].acquisitions[0].href).toContain("/get.php?md5=268bb8267f7276b1f30cc7b7c923506e");
+    expect(feed.publications[0].acquisitions[0].href).toContain("/opds/libgen/download?md5=268bb8267f7276b1f30cc7b7c923506e");
     expect(feed.publications[0].acquisitions[0].priority).toBe(0); // epub 首位
   });
 
   it("all mirrors failing raises OpdsParseError", async () => {
     const driver = new LibgenDriver({ mirrors: ["https://m1"] });
     await expect(
-      driver.search("alice", async () => {
+      driver.searchResults("alice", async () => {
         throw new Error("all down");
       }),
     ).rejects.toThrow(/均不可用/);
   });
 
-  it("feedFromResults points acquisition at the local download proxy when downloadBase given", () => {
+  it("feedFromResults points acquisition at the local download proxy", () => {
     const driver = new LibgenDriver({ mirrors: ["https://m1"] });
     const feed = driver.feedFromResults(
       "alice",
       [{ md5: "b529a8968792449ca7368a284e7b0aec", title: "A", author: "", extension: "epub" }],
       "http://127.0.0.1:19090/opds/libgen/",
-      "http://127.0.0.1:19090/opds/libgen",
     );
     expect(feed.publications[0].acquisitions[0].href).toBe(
-      "http://127.0.0.1:19090/opds/libgen/download?md5=b529a8968792449ca7368a284e7b0aec",
+      "/opds/libgen/download?md5=b529a8968792449ca7368a284e7b0aec",
     );
   });
 
@@ -136,7 +135,7 @@ describe("LibgenDriver", () => {
       if (url.includes("ads.php")) return new Response(adsHtml, { status: 200 });
       return new Response(new TextEncoder().encode("PKdummyepubbody-12345"), { status: 200 });
     };
-    const bytes = await driver.download("abc123def4567890aabbccddeeff0011", fetchImpl);
+    const bytes = await driver.fetchDownload("abc123def4567890aabbccddeeff0011", fetchImpl);
     expect(calls).toEqual([
       "https://m1/ads.php?md5=abc123def4567890aabbccddeeff0011",
       "https://m1/get.php?md5=abc123def4567890aabbccddeeff0011&key=freshkey",
@@ -164,7 +163,7 @@ describe("LibgenDriver", () => {
         { status: 200 },
       );
     };
-    const bytes = await driver.download("abc123def4567890aabbccddeeff0011", fetchImpl);
+    const bytes = await driver.fetchDownload("abc123def4567890aabbccddeeff0011", fetchImpl);
     expect(calls.filter((c) => c.includes("ads.php"))).toHaveLength(2);
     expect(calls.filter((c) => c.includes("get.php"))).toHaveLength(2);
     expect(bytes.byteLength).toBeGreaterThan(2);
@@ -173,7 +172,7 @@ describe("LibgenDriver", () => {
   it("download raises when every mirror fails to yield a file", async () => {
     const driver = new LibgenDriver({ mirrors: ["https://m1"] });
     await expect(
-      driver.download("x", async () => new Response("<html>no link</html>", { status: 200 })),
+      driver.fetchDownload("x", async () => new Response("<html>no link</html>", { status: 200 })),
     ).rejects.toThrow(/下载失败/);
   });
 });

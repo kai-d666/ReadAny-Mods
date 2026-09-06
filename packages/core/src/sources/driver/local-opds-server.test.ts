@@ -47,9 +47,10 @@ describe("local opds request handler", () => {
 
   it("proxies search through the driver and returns a results feed", async () => {
     const driver = new LibgenDriver({ mirrors: ["https://mirror.example"] });
-    vi.spyOn(driver, "search").mockResolvedValue([
+    const resultFeed = driver.feedFromResults("alice", [
       { md5: "b529a8968792449ca7368a284e7b0aec", title: "Alice", author: "Carroll, Lewis", extension: "epub", year: "1865" },
-    ]);
+    ], "");
+    vi.spyOn(driver, "search").mockResolvedValue(resultFeed);
     const handler = createLocalOpdsRequestHandler([driver]);
     const response = await callHandler(handler, "GET", "/opds/libgen/search?q=alice");
     expect(response.status).toBe(200);
@@ -89,7 +90,7 @@ describe("local opds request handler", () => {
     expect(parsed.publications).toHaveLength(1);
     expect(parsed.publications[0].acquisitions[0].extension).toBe("epub");
     expect(parsed.publications[0].acquisitions[0].href).toContain(
-      "/get.php?md5=b529a8968792449ca7368a284e7b0aec",
+      "http://127.0.0.1:19090/opds/libgen/download?md5=b529a8968792449ca7368a284e7b0aec",
     );
   });
 });

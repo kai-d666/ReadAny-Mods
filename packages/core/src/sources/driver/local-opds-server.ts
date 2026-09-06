@@ -13,10 +13,21 @@
  */
 
 import { OpdsParseError, type OpdsFeed } from "../opds";
-import type { LibgenDriver } from "./libgen";
 
-/** 未来:ZlibDriver | AnnaDriver 联合 */
-export type LocalOpdsDriver = LibgenDriver;
+/**
+ * 内置书源服务端的驱动抽象(2026-09-06):
+ * 一个上游一套实现(LibGen/ZL…),产出统一 OpdsFeed;
+ * acquisitions 的 href 用**根相对路径**(`/opds/{id}/download?...`),
+ * 客户端 parseOpdsFeed 按请求 URL resolve —— 服务端无需关心外部主机名。
+ */
+export interface BookSourceDriver {
+  readonly id: string;
+  readonly name: string;
+  search(query: string): Promise<OpdsFeed>;
+  download(params: Record<string, string>): Promise<Uint8Array>;
+}
+
+export type LocalOpdsDriver = BookSourceDriver;
 
 export type LocalOpdsHandler = (
   method: string,
@@ -179,11 +190,13 @@ export function createLocalOpdsRequestHandler(
         return openSearchResponse(driver.name, `${base}/opds/${driver.id}/search?q={searchTerms}`);
       }
 
-      // 下载代理:服务端按镜像×路径探测 + 魔数校验,客户端无感
+      // 下载代理:驱动按参数(如 md5/id+hash)抓取,魔数校验在驱动内,客户端无感
       if (sub === "download") {
-        const md5 = url.searchParams.get("md5") ?? "";
-        if (!md5) return textResponse(400, "Missing md5");
-        const bytes = await driver.download(md5);
+        const params: Record<string, string> = {};
+        url.searchParams.forEach((value, key) => {
+          params[key] = value;
+        });
+        const bytes = await driver.download(params);
         return {
           status: 200,
           body: bytes,
@@ -202,21 +215,15 @@ export function createLocalOpdsRequestHandler(
             searchHref: `${base}/opds/${driver.id}/opensearch.xml`,
           });
         }
-        const results = await driver.search(query);
-        return opdsResponse(
-          driver.feedFromResults(
-            query,
-            results,
-            `${base}/opds/${driver.id}/search?q=${encodeURIComponent(query)}`,
-            `${base}/opds/${driver.id}`,
-          ),
-        );
+        return opdsResponse(await driver.search(query));
       }
 
       return textResponse(404, "Not Found");
     } catch (error) {
-      if (error instanceof OpdsParseError) return textResponse(502, error.message);
-      return textResponse(502, error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[LocalOpds] driver error for ${path}: ${message}`);
+      if (error instanceof OpdsParseError) return textResponse(502, message);
+      return textResponse(502, message);
     }
   };
 }

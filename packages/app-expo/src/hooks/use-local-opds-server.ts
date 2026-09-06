@@ -5,8 +5,13 @@
  * 端口 19090 起可配失败自动探测;仅绑定 loopback(其他设备不可达)。
  */
 import { getPlatformService } from "@readany/core/services";
-import { createLocalOpdsRequestHandler } from "@readany/core/sources/driver/local-opds-server";
+import { useDriverConfigStore } from "@readany/core/sources/driver/driver-config-store";
+import {
+  createLocalOpdsRequestHandler,
+  type LocalOpdsDriver,
+} from "@readany/core/sources/driver/local-opds-server";
 import { LibgenDriver } from "@readany/core/sources/driver/libgen";
+import { ZlibDriver } from "@readany/core/sources/driver/zlib";
 import { useOpdsSourcesStore } from "@readany/core/sources/opds-source-store";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,6 +24,9 @@ const LOCAL_OPDS_PORT_END = 19110;
 
 export function useLocalOpdsServer() {
   const enabled = useSettingsStore((s) => s.devFlags.localOpdsServer);
+  // 驱动配置(token 可含链接里的认证信息)变化时立即重建服务(免手动重启服务开关)
+  const zlConfig = useDriverConfigStore((s) => s.zlib);
+  const zlConfigRev = `${zlConfig.enabled}|${zlConfig.domain}|${zlConfig.authId}`;
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -31,7 +39,29 @@ export function useLocalOpdsServer() {
         console.warn("[LocalOpds] startLANServer is not available on this platform");
         return;
       }
-      const drivers = [new LibgenDriver()];
+      const drivers: LocalOpdsDriver[] = [new LibgenDriver()];
+      // 可配置驱动注册表:已启用且配置完整的 Z-Library 一并挂载
+      // (remix 链接认证优先;无则回退邮箱密码登录)
+      await useDriverConfigStore.getState().hydrate();
+      const zlConfig = useDriverConfigStore.getState().zlib;
+      if (zlConfig.enabled && zlConfig.domain) {
+        try {
+          const userKey = await useDriverConfigStore.getState().getZlibUserKey();
+          const password = await useDriverConfigStore.getState().getZlibPassword();
+          drivers.push(
+            new ZlibDriver({
+              domain: zlConfig.domain,
+              username: zlConfig.username,
+              password,
+              ...(zlConfig.authId && userKey
+                ? { auth: { id: zlConfig.authId, key: userKey } }
+                : {}),
+            }),
+          );
+        } catch (error) {
+          console.warn("[LocalOpds] zlib driver disabled:", error);
+        }
+      }
       const handler = createLocalOpdsRequestHandler(drivers);
 
       for (let port = LOCAL_OPDS_PORT_START; port <= LOCAL_OPDS_PORT_END; port++) {
@@ -77,5 +107,5 @@ export function useLocalOpdsServer() {
       disposed = true;
       void stop();
     };
-  }, [enabled, t]);
+  }, [enabled, zlConfigRev, t]);
 }
