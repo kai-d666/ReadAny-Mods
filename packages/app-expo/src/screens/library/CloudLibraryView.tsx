@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 import type { CloudBookEntry } from "@readany/core/sync";
+import { getProgressPercent } from "@readany/core/stores/progress-store";
+import { getBookProgressPercent } from "@readany/core/utils";
 import { useSyncStore } from "@readany/core/stores/sync-store";
 import { type ThemeColors, useTheme } from "@/styles/ThemeContext";
 import { CloudDownloadIcon, CloudIcon, RefreshCwIcon, Trash2Icon } from "@/components/ui/Icon";
@@ -145,7 +147,10 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
   return (
     <View style={styles.rowList}>
       <Text style={styles.listHeader}>云端书库 · {entries.length} 本</Text>
-      {entries.map((entry) => (
+      {entries.map((entry) => {
+        // 阅读进度:唯一账本 reading_progress(progress-store 直读)
+        const readPercent = getProgressPercent(entry.fileHash);
+        return (
         <View key={entry.fileHash} style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.rowTitle} numberOfLines={1}>
@@ -154,6 +159,7 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
             <Text style={styles.rowSub}>
               {formatBytes(entry.size)}
               {entry.hasRemoteCover ? " · 封面" : ""}
+              {readPercent > 0 ? ` · 已读 ${getBookProgressPercent(readPercent)}%` : ""}
             </Text>
           </View>
           {entry.localBookId ? (
@@ -179,7 +185,8 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
             <Trash2Icon size={18} color={colors.destructive} />
           </Pressable>
         </View>
-      ))}
+        );
+      })}
     </View>
   );
 }

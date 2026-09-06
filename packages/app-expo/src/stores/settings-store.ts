@@ -26,6 +26,8 @@ export interface SettingsState {
     readerTopBarBackground: boolean;
     /** 阅读器底栏背景条显示(开发者调试) */
     readerBottomBarBackground: boolean;
+    /** 同步详细日志横幅(开发者调试:悬浮显示同步到哪一步) */
+    syncTraceBanner: boolean;
   };
   _hasHydrated: boolean;
   _apiKeysLoaded: boolean;
@@ -137,6 +139,7 @@ function migrateSettingsState(state: SettingsState): SettingsState {
         skipSplashAnimation: false,
         readerTopBarBackground: true,
         readerBottomBarBackground: true,
+        syncTraceBanner: false,
       },
     };
   }
@@ -487,6 +490,7 @@ export const useSettingsStore = create<SettingsState>()(
         skipSplashAnimation: false,
         readerTopBarBackground: true,
         readerBottomBarBackground: true,
+        syncTraceBanner: false,
       },
       _hasHydrated: false,
       _apiKeysLoaded: false,

@@ -119,6 +119,8 @@ export interface SyncState {
   lastResult: SyncResult | null;
   error: string | null;
   progress: SyncProgress | null;
+  /** 同步详细日志(开发者横幅用;最近 100 条) */
+  syncTrace: { ts: number; text: string }[];
 
   // Conflict resolution
   pendingDirection: SyncDirection | null;
@@ -342,6 +344,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   lastResult: null,
   error: null,
   progress: null,
+  syncTrace: [],
   pendingDirection: null,
 
   loadConfig: async () => {
@@ -527,6 +530,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       try {
         await flushPendingReadingSession();
         set({ status: "checking", error: null, pendingDirection: null });
+        set((s) => ({
+          syncTrace: [...s.syncTrace.slice(-99), { ts: Date.now(), text: "开始同步(完整)" }],
+        }));
         const backend = createSyncBackend(state.config, secret || "");
 
         const connected = await backend.testConnection();
@@ -562,6 +568,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         if (!result) {
           set({ status: "idle", progress: null, pendingDirection: null });
         } else {
+          set((s) => ({
+            syncTrace: [
+              ...s.syncTrace.slice(-99),
+              {
+                ts: Date.now(),
+                text: result.success ? "同步完成 ✅" : `同步失败: ${result.error ?? "未知"}`,
+              },
+            ],
+          }));
           await persistSyncRuntimeState({
             lastSyncAt: get().lastSyncAt,
             lastResult: get().lastResult,
@@ -614,6 +629,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const changed = await hasRemoteChanges(backend);
       if (!changed) {
         console.log("[SyncStore] stat probe: remote snapshots unchanged, skip full sync");
+        set((s) => ({
+          syncTrace: [
+            ...s.syncTrace.slice(-99),
+            { ts: Date.now(), text: "探测:远端无变化,跳过完整同步" },
+          ],
+        }));
         return null;
       }
     } catch (e) {
@@ -641,6 +662,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const backend = createSyncBackend(currentState.config, secret || "");
       await uploadOwnSnapshot(backend);
       console.log("[SyncStore] background quick upload done");
+      set((s) => ({
+        syncTrace: [
+          ...s.syncTrace.slice(-99),
+          { ts: Date.now(), text: "后台快推完成 ✅(只推自己)" },
+        ],
+      }));
     } catch (e) {
       // 上传失败不致命:快照全量,下次任意同步整体补传
       console.warn("[SyncStore] background quick upload failed (will retry on next sync):", e);
@@ -662,6 +689,15 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         if (!result) {
           set({ status: "idle", progress: null, pendingDirection: null });
         } else {
+          set((s) => ({
+            syncTrace: [
+              ...s.syncTrace.slice(-99),
+              {
+                ts: Date.now(),
+                text: result.success ? "同步完成 ✅" : `同步失败: ${result.error ?? "未知"}`,
+              },
+            ],
+          }));
           await persistSyncRuntimeState({
             lastSyncAt: get().lastSyncAt,
             lastResult: get().lastResult,
@@ -776,6 +812,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         backend,
         (progress) => {
           set({ progress });
+          set((s) => ({
+            syncTrace: [...s.syncTrace.slice(-99), { ts: Date.now(), text: progress.message }],
+          }));
         },
         receiveOnly
           ? {

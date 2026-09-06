@@ -17,6 +17,7 @@ export default function DevToolsScreen() {
   const skipSplash = devFlags.skipSplashAnimation;
   const topBarBg = devFlags.readerTopBarBackground;
   const bottomBarBg = devFlags.readerBottomBarBackground;
+  const syncTraceBanner = devFlags.syncTraceBanner;
   const s = makeStyles(colors);
 
   return (
@@ -36,6 +37,22 @@ export default function DevToolsScreen() {
               <Switch
                 value={!skipSplash}
                 onValueChange={(v) => setDevFlag("skipSplashAnimation", !v)}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+          </View>
+          <View style={s.section}>
+            <Text style={[s.sectionTitle, { color: colors.mutedForeground }]}>同步调试</Text>
+            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rowTitle, { color: colors.foreground }]}>同步日志横幅</Text>
+                <Text style={[s.rowDesc, { color: colors.mutedForeground }]}>
+                  顶部悬浮显示同步详细日志(状态 + 到哪一步了)。
+                </Text>
+              </View>
+              <Switch
+                value={syncTraceBanner}
+                onValueChange={(v) => setDevFlag("syncTraceBanner", v)}
                 trackColor={{ true: colors.primary }}
               />
             </View>

@@ -40,6 +40,7 @@ import { rnSessionEventSource } from "@/hooks";
 import { setStreamingFetch } from "@readany/core/ai/llm-provider";
 import { initDatabase } from "@readany/core/db/database";
 import { useProgressStore } from "@readany/core/stores/progress-store";
+import { SyncTraceBanner } from "@/components/ui/SyncTraceBanner";
 import { installFeedbackLogCapture, setFeedbackWorkerUrl } from "@readany/core/feedback";
 import { setSessionEventSource } from "@readany/core/hooks/use-reading-session";
 import { i18nReady, initI18nLanguage } from "@readany/core/i18n";
@@ -345,6 +346,8 @@ function AppInner() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardProvider>
         <SafeAreaProvider>
+          {/* 同步日志横幅(开发者开关):顶部悬浮,显示同步到哪一步 */}
+          <SyncTraceBanner />
           <NavigationContainer theme={navTheme} ref={navigationRef}>
             <StatusBar style={mode === "dark" ? "light" : "dark"} />
             <RootNavigator />

@@ -989,6 +989,13 @@ export async function runSimpleSync(
       let payload: DeviceSyncPayload | null;
       try {
         console.log(`[SimpleSync] Downloading changes from device ${deviceId}...`);
+        onProgress?.({
+          phase: "database",
+          operation: "download",
+          completedFiles: 0,
+          totalFiles: 0,
+          message: `下载设备 ${deviceId.slice(0, 8)}…`,
+        });
         payload = await backend.getJSON<DeviceSyncPayload>(path);
       } catch (e) {
         skippedRemoteSnapshots++;
