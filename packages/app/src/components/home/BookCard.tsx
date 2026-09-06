@@ -364,20 +364,30 @@ export const BookCard = memo(function BookCard({
           </div>
         )}
 
-        {/* Vectorized badge — top-left corner */}
-        {book.isVectorized && !vectorizing && (
-          <div className="absolute left-1 top-1 z-10 flex items-center rounded bg-green-600/80 px-1 py-0.5 backdrop-blur-sm">
-            <span className="text-[9px] font-medium text-white">{t("home.vec_indexed")}</span>
-          </div>
-        )}
-
-        {/* Cloud bound badge — top-right corner */}
-        {!isSelectionMode && isCloudBound && (
+        {/* Vectorized badge + 绑定(云端匹配)badge — 安卓同款纵向排列徽标 */}
+        {((book.isVectorized && !vectorizing) || isCloudBound) && (
           <div
-            className="absolute right-1.5 top-1.5 z-10 flex items-center justify-center rounded-full bg-amber-500/90 p-1 text-white shadow-sm backdrop-blur-sm"
-            title={t("sync.cloudBound", "已同步至云端")}
+            className={`absolute ${
+              isSelectionMode ? "left-8" : "left-1.5"
+            } top-1.5 z-10 flex flex-col items-start gap-1 pointer-events-none`}
           >
-            <Cloud className="h-3 w-3 fill-current" />
+            {book.isVectorized && !vectorizing && (
+              <div className="flex items-center rounded bg-green-600/90 px-1.5 py-0.5 shadow-sm backdrop-blur-sm">
+                <span className="text-[9px] font-medium leading-none text-white">
+                  {t("home.vec_indexed", "已索引")}
+                </span>
+              </div>
+            )}
+            {isCloudBound && (
+              <div
+                className="flex items-center rounded bg-amber-500/95 px-1.5 py-0.5 shadow-sm backdrop-blur-sm"
+                title={t("sync.cloudBound", "已同步至云端")}
+              >
+                <span className="text-[9px] font-medium leading-none text-white">
+                  {t("home.cloud_bound", "绑定")}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
