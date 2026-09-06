@@ -36,6 +36,7 @@ import { ReadingStatsPanel } from "@/components/profile/ReadingStatsPanel";
 import { useReadingStatsData } from "@/components/profile/stats-blocks";
 import { WebDavConnectSheet } from "@/screens/library/WebDavConnectSheet";
 import { WebDavImportSourceSheet } from "@/screens/library/WebDavImportSourceSheet";
+import { useOpdsSourcesStore } from "@readany/core/sources/opds-source-store";
 import { useLibraryStore } from "@/stores/library-store";
 import {
   type ThemeColors,
@@ -212,6 +213,7 @@ export function LibraryScreen() {
   const loadSyncConfig = useSyncStore((state) => state.loadConfig);
   const syncConfig = useSyncStore((state) => state.config);
   const syncBackendType = useSyncStore((state) => state.backendType);
+  const opdsSourceCount = useOpdsSourcesStore((state) => state.sources.length);
 
   const {
     books,
@@ -499,6 +501,8 @@ export function LibraryScreen() {
   }, [handleLocalImport, pendingLocalImport]);
 
   const handleOpenImportSources = useCallback((anchorRef?: RefObject<View | null>) => {
+    // OPDS 书源列表可能尚未加载(首次进入),打开导入来源时顺带 hydrate(幂等)
+    void useOpdsSourcesStore.getState().hydrate();
     const openWithFallback = () => {
       setSourceSheetAnchor(null);
       setSourceSheetOpen(true);
@@ -1258,6 +1262,7 @@ export function LibraryScreen() {
       <WebDavImportSourceSheet
         visible={sourceSheetOpen}
         hasSavedWebDav={syncBackendType === "webdav" && syncConfig?.type === "webdav"}
+        hasOpdsSources={opdsSourceCount > 0}
         anchor={sourceSheetAnchor}
         localImportBusy={isPickingImport}
         onClose={() => setSourceSheetOpen(false)}
@@ -1265,6 +1270,18 @@ export function LibraryScreen() {
         onPickLocal={handlePickLocalFromSourceMenu}
         onPickSavedWebDav={() => void handleOpenSavedWebDav()}
         onPickTemporaryWebDav={handleOpenTemporaryWebDav}
+        onPickOpds={() => {
+          setSourceSheetOpen(false);
+          if (opdsSourceCount > 0) {
+            nav.navigate("OpdsSources");
+          } else {
+            nav.navigate("OpdsSourceForm", {});
+          }
+        }}
+        onManageOpds={() => {
+          setSourceSheetOpen(false);
+          nav.navigate("OpdsSources");
+        }}
       />
       <WebDavConnectSheet
         visible={temporaryWebDavOpen}

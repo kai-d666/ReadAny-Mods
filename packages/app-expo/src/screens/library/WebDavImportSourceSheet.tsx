@@ -3,6 +3,7 @@ import {
   ChevronRightIcon,
   CloudIcon,
   GlobeIcon,
+  WrenchIcon,
 } from "@/components/ui/Icon";
 import { useResponsiveLayout } from "@/hooks/use-responsive-layout";
 import { fontSize, fontWeight, radius, useColors, withOpacity } from "@/styles/theme";
@@ -28,6 +29,8 @@ type PopoverAnchor = {
 interface WebDavImportSourceSheetProps {
   visible: boolean;
   hasSavedWebDav: boolean;
+  /** 至少配置过一个 OPDS 书源(决定"OPDS 在线目录"行点击去向) */
+  hasOpdsSources: boolean;
   anchor: PopoverAnchor | null;
   localImportBusy?: boolean;
   onClose: () => void;
@@ -35,11 +38,14 @@ interface WebDavImportSourceSheetProps {
   onPickLocal: () => void;
   onPickSavedWebDav: () => void;
   onPickTemporaryWebDav: () => void;
+  onPickOpds: () => void;
+  onManageOpds: () => void;
 }
 
 export function WebDavImportSourceSheet({
   visible,
   hasSavedWebDav,
+  hasOpdsSources,
   anchor,
   localImportBusy = false,
   onClose,
@@ -47,6 +53,8 @@ export function WebDavImportSourceSheet({
   onPickLocal,
   onPickSavedWebDav,
   onPickTemporaryWebDav,
+  onPickOpds,
+  onManageOpds,
 }: WebDavImportSourceSheetProps) {
   const { t } = useTranslation();
   const colors = useColors();
@@ -125,6 +133,11 @@ export function WebDavImportSourceSheet({
           fontWeight: fontWeight.semibold,
           color: colors.foreground,
         },
+        optionSubtitle: {
+          fontSize: fontSize.xs,
+          color: colors.mutedForeground,
+          marginTop: 2,
+        },
         separator: {
           height: StyleSheet.hairlineWidth,
           backgroundColor: withOpacity(colors.border, 0.8),
@@ -193,6 +206,43 @@ export function WebDavImportSourceSheet({
                 <View style={s.optionText}>
                   <Text style={s.optionTitle}>
                     {t("library.importSourceTemporaryWebDav", "连接其他 WebDAV")}
+                  </Text>
+                </View>
+                <ChevronRightIcon size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+              <View style={s.separator} />
+
+              <TouchableOpacity
+                style={s.optionCard}
+                onPress={onPickOpds}
+                activeOpacity={0.85}
+              >
+                <View style={s.iconWrap}>
+                  <GlobeIcon size={18} color={colors.primary} />
+                </View>
+                <View style={s.optionText}>
+                  <Text style={s.optionTitle}>
+                    {t("library.opdsSourcesEntry", "OPDS 在线目录")}
+                  </Text>
+                  {hasOpdsSources ? null : (
+                    <Text style={s.optionSubtitle}>
+                      {t("library.opdsAddSource", "添加书源")}
+                    </Text>
+                  )}
+                </View>
+                <ChevronRightIcon size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.optionCard}
+                onPress={onManageOpds}
+                activeOpacity={0.85}
+              >
+                <View style={s.iconWrap}>
+                  <WrenchIcon size={18} color={colors.primary} />
+                </View>
+                <View style={s.optionText}>
+                  <Text style={s.optionTitle}>
+                    {t("library.opdsManageEntry", "书源管理")}
                   </Text>
                 </View>
                 <ChevronRightIcon size={16} color={colors.mutedForeground} />
