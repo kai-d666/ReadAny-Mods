@@ -28,6 +28,7 @@ import { registerDesktopFallbackContentProvider } from "./lib/rag/fallback-conte
 import { useLibraryStore } from "./stores/library-store";
 import { flushAllWrites } from "./stores/persist";
 import { useVectorModelStore } from "./stores/vector-model-store";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 
 installFeedbackLogCapture();
 
@@ -171,9 +172,10 @@ i18nReady.then(() => {
     console.log("[Probe] ancestor scan done");
   }, 3000);
 
-  // Initialize database and load books
+  // Initialize database and load books & progress ledger
   desktopDataRootReady.then(() => {
     useLibraryStore.getState().loadBooks();
+    void useProgressStore.getState().hydrate();
   });
 
   // Refresh library store when AI tools modify books/tags

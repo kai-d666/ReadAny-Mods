@@ -3,6 +3,7 @@ import { useResolvedSrc } from "@/hooks/use-resolved-src";
  * BookList — list view for books
  */
 import { openDesktopBook } from "@/lib/library/open-book";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 import type { Book } from "@readany/core/types";
 import { getBookProgressPercent } from "@readany/core/utils";
 import { Loader2 } from "lucide-react";
@@ -20,7 +21,11 @@ interface BookListItemProps {
 function BookListItem({ book, onOpen }: BookListItemProps) {
   const { t } = useTranslation();
   const coverSrc = useResolvedSrc(book.meta.coverUrl);
-  const pct = getBookProgressPercent(book.progress);
+  const bookHashLower = (book.fileHash ?? "").toLowerCase();
+  const progressPercent = useProgressStore((s) =>
+    bookHashLower ? s.entries[bookHashLower]?.percent ?? 0 : 0,
+  );
+  const pct = getBookProgressPercent(progressPercent);
   const isRemote = book.syncStatus === "remote";
   const isDownloading = book.syncStatus === "downloading";
 

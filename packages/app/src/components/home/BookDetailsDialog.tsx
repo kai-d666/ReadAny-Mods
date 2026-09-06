@@ -28,6 +28,7 @@ import { extractLocalBookMetadata } from "@/lib/book/auto-metadata";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 import type { Book, BookReview } from "@readany/core/types";
 import {
   type BookMetadataFormValues,
@@ -459,7 +460,11 @@ export function BookDetailsDialog({ book, open, onOpenChange }: BookDetailsDialo
     );
   };
 
-  const progressPct = getBookProgressPercent(book.progress);
+  const bookHashLower = (book?.fileHash ?? "").toLowerCase();
+  const progressPercent = useProgressStore((s) =>
+    bookHashLower ? s.entries[bookHashLower]?.percent ?? 0 : 0,
+  );
+  const progressPct = getBookProgressPercent(progressPercent);
   const handleDialogOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && values && hasMetadataChanges(values)) {
       if (autoSaveTimerRef.current !== null) {

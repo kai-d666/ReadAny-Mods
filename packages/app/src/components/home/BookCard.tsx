@@ -19,11 +19,14 @@ import { useDownloadProgressStore } from "@/stores/download-progress-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useReaderStore } from "@/stores/reader-store";
 import { useVectorModelStore } from "@/stores/vector-model-store";
+import { useSyncStore } from "@/stores/sync-store";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 import type { Book, VectorizeProgress } from "@readany/core/types";
 import { getBookProgressPercent } from "@readany/core/utils";
 import {
   Check,
   ChevronRight,
+  Cloud,
   Database,
   FolderInput,
   FolderMinus,
@@ -34,8 +37,9 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 interface BookCardProps {
   book: Book;
@@ -77,12 +81,23 @@ export const BookCard = memo(function BookCard({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showReindexConfirm, setShowReindexConfirm] = useState(false);
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
+  const [uploadingCloud, setUploadingCloud] = useState(false);
+  const uploadCloudBook = useSyncStore((s) => s.uploadCloudBook);
+  const suppressOpenUntilRef = useRef(0);
   const coverRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const suppressOpenUntilRef = useRef(0);
-  const progressPct = getBookProgressPercent(book.progress);
+  const bookHashLower = (book.fileHash ?? "").toLowerCase();
+  const progressPercent = useProgressStore((s) =>
+    bookHashLower ? s.entries[bookHashLower]?.percent ?? 0 : 0,
+  );
+  const progressPct = getBookProgressPercent(progressPercent);
+  const cloudHashes = useSyncStore((s) => s.cloudHashes);
+  const isCloudBound = useMemo(
+    () => !!bookHashLower && !!cloudHashes?.some((h) => h.toLowerCase() === bookHashLower),
+    [bookHashLower, cloudHashes],
+  );
   const coverSrc = useResolvedSrc(book.meta.coverUrl);
   const syncVersion = useSyncVersion();
   const coverImageKey = coverSrc ? `${coverSrc}-${syncVersion}` : "";
@@ -179,6 +194,30 @@ export const BookCard = memo(function BookCard({
       onShowDetails?.(book);
     },
     [book, onShowDetails],
+  );
+
+  const handleUploadCloud = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      suppressOpenUntilRef.current = Date.now() + 300;
+      setShowMenu(false);
+      setMenuPos(null);
+      if (!book.id) return;
+      setUploadingCloud(true);
+      try {
+        const res = await uploadCloudBook(book.id);
+        if (res && "error" in res) {
+          toast.error(t("sync.uploadFailed", "上传云端失败") + ": " + res.error);
+        } else {
+          toast.success(t("sync.uploadSuccess", "已成功上传并绑定到云端"));
+        }
+      } catch (err) {
+        toast.error(t("sync.uploadFailed", "上传云端失败") + ": " + String(err));
+      } finally {
+        setUploadingCloud(false);
+      }
+    },
+    [book.id, uploadCloudBook, t],
   );
 
   const handleImageLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
@@ -332,6 +371,16 @@ export const BookCard = memo(function BookCard({
           </div>
         )}
 
+        {/* Cloud bound badge — top-right corner */}
+        {!isSelectionMode && isCloudBound && (
+          <div
+            className="absolute right-1.5 top-1.5 z-10 flex items-center justify-center rounded-full bg-amber-500/90 p-1 text-white shadow-sm backdrop-blur-sm"
+            title={t("sync.cloudBound", "已同步至云端")}
+          >
+            <Cloud className="h-3 w-3 fill-current" />
+          </div>
+        )}
+
         {/* Context menu trigger — hover only */}
         <button
           ref={menuBtnRef}
@@ -388,6 +437,24 @@ export const BookCard = memo(function BookCard({
               >
                 <Info className="h-3.5 w-3.5" />
                 {t("library.detailsAction", "书籍详情")}
+              </button>
+            )}
+            {/* Upload to cloud (bind sync) */}
+            {book.syncStatus === "local" && (
+              <button
+                type="button"
+                disabled={uploadingCloud}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted disabled:opacity-50"
+                onClick={handleUploadCloud}
+              >
+                {uploadingCloud ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                ) : (
+                  <Cloud className="h-3.5 w-3.5 text-amber-500" />
+                )}
+                {isCloudBound
+                  ? t("sync.reuploadToCloud", "更新云端文件")
+                  : t("sync.uploadToCloud", "上传至云端 (绑定同步)")}
               </button>
             )}
             {/* Vectorize button */}

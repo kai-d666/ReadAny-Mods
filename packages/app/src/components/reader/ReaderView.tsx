@@ -17,6 +17,7 @@ import { ReadSettingsPanel } from "@/components/settings/ReadSettings";
 import { useReadingSession } from "@/hooks/use-reading-session";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { useResolvedSrc } from "@/hooks/use-resolved-src";
+import { useProgressLedger } from "@/hooks/use-progress-ledger";
 import { hasSeenReaderTour, startReaderTour } from "@/lib/reader-tour";
 import { DocumentLoader } from "@/lib/reader/document-loader";
 import type { BookDoc, BookFormat } from "@/lib/reader/document-loader";
@@ -37,7 +38,6 @@ import { useRubyStore } from "@readany/core/stores/ruby-store";
 import { splitNarrationText } from "@readany/core/tts";
 import type { CitationPart, HighlightColor } from "@readany/core/types";
 import { eventBus } from "@readany/core/utils/event-bus";
-import { throttle } from "@readany/core/utils/throttle";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -505,8 +505,27 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   ]);
 
   const books = useLibraryStore((s) => s.books);
-  const updateBook = useLibraryStore((s) => s.updateBook);
   const book = books.find((b) => b.id === bookId);
+
+  const ledger = useProgressLedger(bookId, book?.fileHash);
+  const [restoreLocation, setRestoreLocation] = useState<string | undefined>(undefined);
+  const [isLocationReady, setIsLocationReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setIsLocationReady(false);
+    ledger.startOpenSession();
+    void ledger.getRestoreCfi().then((cfi) => {
+      if (active) {
+        setRestoreLocation(cfi || undefined);
+        setIsLocationReady(true);
+      }
+    });
+    return () => {
+      active = false;
+      ledger.flushOnUnmount();
+    };
+  }, [bookId, ledger]);
 
   const highlights = useAnnotationStore((s) => s.highlights);
   const bookmarks = useAnnotationStore((s) => s.bookmarks);
@@ -1000,37 +1019,20 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     window.localStorage.setItem(TOOLBAR_PIN_STORAGE_KEY, String(isToolbarPinned));
   }, [isToolbarPinned]);
 
-  // Throttled progress save
-  const throttledSaveProgress = useRef(
-    throttle((bId: string, prog: number, cfi: string) => {
-      updateBook(bId, {
-        progress: prog,
-        currentCfi: cfi,
-        lastOpenedAt: Date.now(),
-      });
-    }, 5000),
-  ).current;
-
-  const flushLatestProgress = useCallback(() => {
-    const latest = latestProgressRef.current;
-    if (!latest || latest.bookId !== bookId) return;
-    updateBook(latest.bookId, {
-      progress: latest.progress,
-      currentCfi: latest.cfi,
-      lastOpenedAt: Date.now(),
-    });
-  }, [bookId, updateBook]);
-
+  // Flush latest pending progress to ledger and sync when leaving reader or closing window
   useEffect(() => {
-    window.addEventListener("pagehide", flushLatestProgress);
-    window.addEventListener("beforeunload", flushLatestProgress);
+    const handleUnload = () => {
+      ledger.flushOnUnmount();
+    };
+    window.addEventListener("pagehide", handleUnload);
+    window.addEventListener("beforeunload", handleUnload);
 
     return () => {
-      window.removeEventListener("pagehide", flushLatestProgress);
-      window.removeEventListener("beforeunload", flushLatestProgress);
-      flushLatestProgress();
+      window.removeEventListener("pagehide", handleUnload);
+      window.removeEventListener("beforeunload", handleUnload);
+      ledger.flushOnUnmount();
     };
-  }, [flushLatestProgress]);
+  }, [ledger]);
 
   // --- Load book on mount ---
   useEffect(() => {
@@ -1312,8 +1314,13 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
         }
       }
 
-      // Throttled save to DB
-      throttledSaveProgress(bookId, progress, cfi);
+      // Delegate reading progress ledger accounting (anti-jitter, 5s throttle, single write to reading_progress)
+      const currentRendererPage = detail.page?.current ?? null;
+      const currentSection = detail.section?.current ?? 0;
+      const calculatedPage = isFixedLayout
+        ? (currentRendererPage ?? (typeof currentSection === "number" ? currentSection + 1 : 1))
+        : (typeof currentSection === "number" ? currentSection + 1 : 1);
+      ledger.onRelocate(detail.fraction ?? progress, cfi, calculatedPage);
 
       // Mark translation ready after first successful relocate (CFI navigation done)
       if (!translationReady) setTranslationReady(true);
@@ -1336,7 +1343,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       isFixedLayout,
       setProgress,
       setChapter,
-      throttledSaveProgress,
+      ledger.onRelocate,
       translationReady,
     ],
   );
@@ -2972,14 +2979,14 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
               className="pointer-events-none absolute right-0 top-0 bottom-0 z-[100]"
               style={{ width: isDoublePage ? "33%" : "40%" }}
             />
-            {bookDoc ? (
+            {bookDoc && isLocationReady ? (
               <FoliateViewer
                 ref={foliateRef}
                 bookKey={bookId}
                 bookDoc={bookDoc}
                 format={bookFormat}
                 viewSettings={viewSettingsWithFonts}
-                lastLocation={book?.currentCfi || undefined}
+                lastLocation={restoreLocation}
                 onRelocate={handleRelocate}
                 onTocReady={handleTocReady}
                 onLoaded={handleLoaded}
@@ -2992,7 +2999,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 onToggleToc={handleToggleToc}
                 onToggleChat={handleToggleChat}
               />
-            ) : isLoading ? (
+            ) : isLoading || !isLocationReady ? (
               <div className="absolute inset-0 flex items-center justify-center bg-background">
                 <div className="flex flex-col items-center gap-3">
                   <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />

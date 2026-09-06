@@ -6,12 +6,14 @@ import { GroupPickerPopover } from "@/components/home/GroupPickerPopover";
 import { SyncButton } from "@/components/ui/SyncButton";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
 import { useLibraryStore } from "@/stores/library-store";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 import type { Book, BookGroup, SortField } from "@readany/core/types";
 import {
   ArrowDownAZ,
   ArrowLeft,
   ArrowUpAZ,
   CheckCheck,
+  Cloud,
   Database,
   FolderInput,
   FolderMinus,
@@ -29,6 +31,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { BookCard } from "./BookCard";
 import { BookDetailsDialog } from "./BookDetailsDialog";
+import { CloudLibraryDialog } from "./CloudLibraryDialog";
 import { BookGrid } from "./BookGrid";
 import { GroupCard } from "./GroupCard";
 import { ImportDropZone } from "./ImportDropZone";
@@ -83,11 +86,13 @@ export function HomePage() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showBatchGroupPicker, setShowBatchGroupPicker] = useState(false);
   const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showCloudLibrary, setShowCloudLibrary] = useState(false);
   const [detailsBookId, setDetailsBookId] = useState<string | null>(null);
   const sortBtnRef = useRef<HTMLButtonElement>(null);
   const groupBtnRef = useRef<HTMLButtonElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const importBooks = useLibraryStore((s) => s.importBooks);
+  const progressEntries = useProgressStore((s) => s.entries);
   const lastDropTime = useRef(0);
   const importBooksRef = useRef(importBooks);
   importBooksRef.current = importBooks;
@@ -204,14 +209,19 @@ export function HomePage() {
         case "lastOpenedAt":
           cmp = (a.lastOpenedAt || 0) - (b.lastOpenedAt || 0);
           break;
-        case "progress":
-          cmp = a.progress - b.progress;
+        case "progress": {
+          const aHash = (a.fileHash ?? "").toLowerCase();
+          const bHash = (b.fileHash ?? "").toLowerCase();
+          const aProg = aHash ? progressEntries[aHash]?.percent ?? 0 : 0;
+          const bProg = bHash ? progressEntries[bHash]?.percent ?? 0 : 0;
+          cmp = aProg - bProg;
           break;
+        }
       }
       return sortOrder === "desc" ? -cmp : cmp;
     });
     return result;
-  }, [books, filter, activeTag, activeGroupId]);
+  }, [books, filter, activeTag, activeGroupId, progressEntries]);
 
   const activeGroup = useMemo(
     () => groups.find((group) => group.id === activeGroupId) ?? null,
@@ -569,6 +579,14 @@ export function HomePage() {
                 </div>
               )}
               <SyncButton />
+              <button
+                type="button"
+                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title={t("sync.cloudLibraryTitle", "云端书库")}
+                onClick={() => setShowCloudLibrary(true)}
+              >
+                <Cloud className="size-4 text-amber-500" />
+              </button>
             </div>
             <div className="flex items-center gap-2">
               {books.length > 0 && (
@@ -734,6 +752,10 @@ export function HomePage() {
         onOpenChange={(open) => {
           if (!open) setDetailsBookId(null);
         }}
+      />
+      <CloudLibraryDialog
+        open={showCloudLibrary}
+        onOpenChange={setShowCloudLibrary}
       />
     </div>
   );
