@@ -297,11 +297,27 @@ export default function App() {
 function NavBarScrim() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  // 阅读器沉浸页不涂键区底色(键区透出书页/容器背景,控制栏自为基底);
+  // 路由切换驱动,离开 Reader 自动恢复
+  const [isReader, setIsReader] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      try {
+        setIsReader(
+          navigationRef.isReady() && navigationRef.getCurrentRoute()?.name === "Reader",
+        );
+      } catch {
+        setIsReader(false);
+      }
+    };
+    check();
+    return navigationRef.addListener("state", check);
+  }, []);
   useEffect(() => {
     // 三键图标按主题对比度:深色底用白键,浅色底用黑键
     NavigationBar.setButtonStyleAsync(isDark ? "light" : "dark").catch(() => {});
   }, [isDark]);
-  if (insets.bottom <= 0) return null;
+  if (insets.bottom <= 0 || isReader) return null;
   return (
     <View
       pointerEvents="none"

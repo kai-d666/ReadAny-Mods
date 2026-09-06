@@ -2073,7 +2073,9 @@ export function ReaderScreen({ route, navigation }: Props) {
             style={[
               s.bottomToolbarGlass,
               {
-                // 预判三键位置:控制栏显示时三键必然出现(showControls → NavigationBar visible),
+                // 键区由玻璃延伸覆盖(2026-09-07 定稿:三键区底色的唯一来源 = 控制栏玻璃,
+                // 正文按全屏视口分页、不避让键区,透明会"透字");
+                // 全局 NavBarScrim 在阅读器内已停用(App.tsx,路由判断)。
                 // padding 固定为"三键显示时"的值(≥48+6),不随三键弹出动画的 insets 渐变跳动,
                 // 避免内容被系统三键"顶一下"
                 paddingBottom: Math.max(insets.bottom, 48) + 6,
