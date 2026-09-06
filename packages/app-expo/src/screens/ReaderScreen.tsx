@@ -698,7 +698,7 @@ export function ReaderScreen({ route, navigation }: Props) {
     readerSystemBarsRef.current?.setEnabled?.(willShow);
     Animated.timing(toolbarAnim, {
       toValue: willShow ? 0 : TOOLBAR_HIDE_OFFSET,
-      duration: 260,
+      duration: 250,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
@@ -709,7 +709,7 @@ export function ReaderScreen({ route, navigation }: Props) {
         setShowControls(false);
         Animated.timing(toolbarAnim, {
           toValue: TOOLBAR_HIDE_OFFSET,
-          duration: 260,
+          duration: 250,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }).start();
@@ -2133,7 +2133,7 @@ export function ReaderScreen({ route, navigation }: Props) {
                   setShowControls(false);
                   Animated.timing(toolbarAnim, {
                     toValue: TOOLBAR_HIDE_OFFSET,
-                    duration: 260,
+                    duration: 250,
                     easing: Easing.out(Easing.cubic),
                     useNativeDriver: true,
                   }).start();
@@ -2230,7 +2230,7 @@ export function ReaderScreen({ route, navigation }: Props) {
                 setShowControls(true);
                 Animated.timing(toolbarAnim, {
                   toValue: 0,
-                  duration: 260,
+                  duration: 250,
                   easing: Easing.out(Easing.cubic),
                   useNativeDriver: true,
                 }).start();
