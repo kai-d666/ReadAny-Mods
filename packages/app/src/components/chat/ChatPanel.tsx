@@ -6,7 +6,7 @@ import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
-import type { Book, CitationPart } from "@readany/core/types";
+import type { AIChatMode, Book, CitationPart } from "@readany/core/types";
 import {
   convertToMessageV2,
   exportChatAsJSON,
@@ -108,7 +108,13 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
   }, [showExportMenu]);
 
   const handleSend = useCallback(
-    (content: string, deepThinking = false, spoilerFree = false, quotes?: AttachedQuote[]) => {
+    (
+      content: string,
+      deepThinking = false,
+      spoilerFree = false,
+      quotes?: AttachedQuote[],
+      chatMode?: AIChatMode,
+    ) => {
       const { aiConfig } = useSettingsStore.getState();
       const endpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
       const needsKey = endpoint ? providerRequiresApiKey(endpoint.provider) : true;
@@ -117,7 +123,8 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
         return;
       }
 
-      sendMessage(content, bookId, deepThinking, spoilerFree, quotes);
+      const effectiveConfig = chatMode ? { ...aiConfig, chatMode } : aiConfig;
+      sendMessage(content, bookId, deepThinking, spoilerFree, quotes, effectiveConfig);
       setAttachedQuotes([]);
     },
     [sendMessage, bookId],

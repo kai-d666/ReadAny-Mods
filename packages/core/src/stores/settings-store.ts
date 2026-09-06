@@ -26,7 +26,10 @@ export interface SettingsState {
   updateTranslationConfig: (updates: Partial<TranslationConfig>) => void;
   updateAIConfig: (
     updates: Partial<
-      Pick<AIConfig, "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree">
+      Pick<
+        AIConfig,
+        "temperature" | "maxTokens" | "slidingWindowSize" | "spoilerFree" | "chatMode" | "toolPrefs"
+      >
     >,
   ) => void;
 

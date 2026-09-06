@@ -257,14 +257,37 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     !isLastPartRunningText &&
     !isLastPartActiveToolCall;
 
+  // Calculate total tokens across all parts in this assistant message
+  const totalTokens = message.parts.reduce((sum, p) => {
+    if ("tokens" in p && typeof (p as { tokens?: unknown }).tokens === "number") {
+      return sum + ((p as { tokens: number }).tokens);
+    }
+    return sum;
+  }, 0);
+
+  // Find the index of the last part that displays content
+  const lastDisplayPartIndex = message.parts.reduce((lastIdx, p, idx) => {
+    if (
+      p.type === "text" ||
+      p.type === "reasoning" ||
+      p.type === "tool_call" ||
+      p.type === "mermaid"
+    ) {
+      return idx;
+    }
+    return lastIdx;
+  }, -1);
+
   return (
     <div className="group flex w-full select-text flex-col gap-1">
-      {message.parts.map((part) => (
+      {message.parts.map((part, idx) => (
         <PartRenderer
           key={part.id}
           part={part}
           citations={citations}
           onCitationClick={onCitationClick}
+          totalTokens={totalTokens > 0 ? totalTokens : undefined}
+          showTotalTokenUsage={idx === lastDisplayPartIndex}
         />
       ))}
       {showGapIndicator && <StreamingIndicator step="thinking" />}

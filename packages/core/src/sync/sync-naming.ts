@@ -11,7 +11,6 @@
 
 import {
   COVER_EXTENSIONS,
-  REMOTE_BOOKS_ROOT,
 } from "./sync-types";
 
 const FALLBACK_TITLE = "未命名";

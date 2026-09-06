@@ -32,7 +32,7 @@ const CitationContext = createContext<{
   onCitationClick?: (citation: CitationPart) => void;
 }>({});
 
-const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
+export const MermaidBlock = memo(function MermaidBlock({ code }: { code: string }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const svgRef = useRef<HTMLDivElement>(null);

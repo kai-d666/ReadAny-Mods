@@ -10,7 +10,7 @@ import { useChatStore } from "@/stores/chat-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
-import type { CitationPart } from "@readany/core/types";
+import type { AIChatMode, AttachedQuote, CitationPart } from "@readany/core/types";
 import {
   convertToMessageV2,
   exportChatAsJSON,
@@ -264,7 +264,13 @@ export function ChatPage() {
   const activeThread = threads.find((t) => t.id === activeThreadId);
 
   const handleSend = useCallback(
-    async (content: string, deepThinking = false, spoilerFree = false) => {
+    async (
+      content: string,
+      deepThinking = false,
+      spoilerFree = false,
+      quotes?: AttachedQuote[],
+      chatMode?: AIChatMode,
+    ) => {
       const { aiConfig } = useSettingsStore.getState();
       const endpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
       const needsKey = endpoint ? providerRequiresApiKey(endpoint.provider) : true;
@@ -273,12 +279,24 @@ export function ChatPage() {
         return;
       }
 
+      const effectiveConfig = chatMode ? { ...aiConfig, chatMode } : aiConfig;
       // /chats page should only use general threads (no bookId)
       if (!activeThreadId) {
         await createThread(undefined, content.slice(0, 50));
-        setTimeout(() => sendMessage(content, undefined, deepThinking, spoilerFree), 50);
+        setTimeout(
+          () =>
+            sendMessage(
+              content,
+              undefined,
+              deepThinking,
+              spoilerFree,
+              quotes,
+              effectiveConfig,
+            ),
+          50,
+        );
       } else {
-        sendMessage(content, undefined, deepThinking, spoilerFree);
+        sendMessage(content, undefined, deepThinking, spoilerFree, quotes, effectiveConfig);
       }
     },
     [activeThreadId, createThread, sendMessage],

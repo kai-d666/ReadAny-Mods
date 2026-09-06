@@ -19,7 +19,13 @@ export function TranslationPage({ onNext, onPrev, step, totalSteps }: any) {
   const { t } = useTranslation();
   const { translationConfig, updateTranslationConfig } = useSettingsStore();
 
-  const [provider, setProvider] = useState<"ai" | "deepl" | "microsoft">(translationConfig.provider.id);
+  const initialProvider: "ai" | "deepl" | "microsoft" =
+    translationConfig.provider.id === "ai" ||
+    translationConfig.provider.id === "deepl" ||
+    translationConfig.provider.id === "microsoft"
+      ? translationConfig.provider.id
+      : "microsoft";
+  const [provider, setProvider] = useState<"ai" | "deepl" | "microsoft">(initialProvider);
   const [apiKey, setApiKey] = useState(translationConfig.provider.apiKey || "");
   const [baseUrl, setBaseUrl] = useState(translationConfig.provider.baseUrl || "");
   const [status, setStatus] = useState<"idle" | "testing" | "success" | "error">("idle");

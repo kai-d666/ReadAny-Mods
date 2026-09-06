@@ -119,17 +119,17 @@ export async function openDesktopBook({
       });
       await loadBooks();
 
-      if (outcome === "not-found") {
-        toast.error(
-          t(
-            "library.downloadNotFound",
-            "远端没有这本书的文件，可能源设备还未上传成功。请回到那台设备重新打开/同步一次，或在此处重新导入。",
-          ),
-        );
-        return false;
-      }
-      if (outcome === "error") {
-        toast.error(t("library.downloadFailed", "下载失败，请重试"));
+      if (!outcome.ok) {
+        if (outcome.error?.toLowerCase().includes("not found")) {
+          toast.error(
+            t(
+              "library.downloadNotFound",
+              "远端没有这本书的文件，可能源设备还未上传成功。请回到那台设备重新打开/同步一次，或在此处重新导入。",
+            ),
+          );
+        } else {
+          toast.error(t("library.downloadFailed", "下载失败，请重试"));
+        }
         return false;
       }
       const vmState = useVectorModelStore.getState();

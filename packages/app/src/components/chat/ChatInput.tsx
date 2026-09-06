@@ -3,11 +3,13 @@
  * Supports attached context quotes that display as chips above the textarea.
  */
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import type { AttachedQuote } from "@readany/core/types";
+import type { AIChatMode, AttachedQuote } from "@readany/core/types";
 import { useSettingsStore } from "@/stores/settings-store";
 import { Brain, EyeOff, Quote, Send, Square, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ModeSlider } from "./ModeSlider";
+import { ToolPrefsMenu } from "./ToolPrefsMenu";
 export type { AttachedQuote };
 
 interface ChatInputProps {
@@ -16,6 +18,7 @@ interface ChatInputProps {
     deepThinking?: boolean,
     spoilerFree?: boolean,
     quotes?: AttachedQuote[],
+    chatMode?: AIChatMode,
   ) => void;
   onStop?: () => void;
   isStreaming?: boolean;
@@ -45,20 +48,34 @@ export function ChatInput({
   const aiConfig = useSettingsStore((s) => s.aiConfig);
   const updateAIConfig = useSettingsStore((s) => s.updateAIConfig);
   const spoilerFree = aiConfig.spoilerFree[variant];
+  const chatMode = aiConfig.chatMode ?? "knowledge";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const resolvedPlaceholder = placeholder || t("chat.askPlaceholder");
+
+  const handleModeChange = useCallback(
+    (newMode: AIChatMode) => {
+      updateAIConfig({ chatMode: newMode });
+    },
+    [updateAIConfig],
+  );
 
   const handleSend = useCallback(
     (useDeepThinking: boolean = deepThinking) => {
       const trimmed = value.trim();
       if (trimmed || quotes.length > 0) {
-        onSend(trimmed, useDeepThinking, spoilerFree, quotes.length > 0 ? quotes : undefined);
+        onSend(
+          trimmed,
+          useDeepThinking,
+          spoilerFree,
+          quotes.length > 0 ? quotes : undefined,
+          chatMode,
+        );
         setValue("");
         if (textareaRef.current) textareaRef.current.style.height = "auto";
       }
     },
-    [value, deepThinking, spoilerFree, onSend, quotes],
+    [value, deepThinking, spoilerFree, onSend, quotes, chatMode],
   );
 
   const handleKeyDown = useCallback(
@@ -145,8 +162,11 @@ export function ChatInput({
           className="w-full resize-none bg-transparent px-4 pb-1 pt-3 text-sm leading-relaxed placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           style={{ minHeight: 36, maxHeight: 160 }}
         />
-        <div className="flex items-center justify-between px-3 pb-2">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between px-3 pb-2 gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <ModeSlider mode={chatMode} onChange={handleModeChange} />
+            <ToolPrefsMenu chatMode={chatMode} />
+            <div className="h-3.5 w-px bg-border/60 mx-0.5" />
             {showDeepThinking && (
               <button
                 type="button"

@@ -35,7 +35,7 @@ export function getProgressCfi(fileHash: string | null | undefined): string | nu
   return entry?.cfi || null;
 }
 
-export const useProgressStore = create<ProgressStoreState>((set, get) => ({
+export const useProgressStore = create<ProgressStoreState>((set) => ({
   entries: {},
 
   hydrate: async () => {

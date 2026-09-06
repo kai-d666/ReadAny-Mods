@@ -6,6 +6,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import type {
   AbortedPart,
   CitationPart,
+  MermaidPart,
   MindmapPart,
   Part,
   ReasoningPart,
@@ -26,9 +27,23 @@ import {
 } from "lucide-react";
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MarkdownRenderer } from "./MarkdownRenderer";
+import { MarkdownRenderer, MermaidBlock } from "./MarkdownRenderer";
 
 const TEXT_RENDER_THROTTLE_MS = 100;
+
+function formatNumber(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/** 4,321tk — thousands separators + 'tk' suffix */
+export function formatTokens(n: number): string {
+  return `${formatNumber(n)}tk`;
+}
+
+/** 4,321sum — total across all LLM calls of one assistant message */
+export function formatTotalTokens(n: number): string {
+  return `${formatNumber(n)}sum`;
+}
 
 // Lazy load MindmapView to avoid bundling markmap for non-mindmap messages
 const LazyMindmapView = lazy(() =>
@@ -74,20 +89,50 @@ interface PartProps {
   part: Part;
   citations?: CitationPart[];
   onCitationClick?: (citation: CitationPart) => void;
+  totalTokens?: number;
+  showTotalTokenUsage?: boolean;
 }
 
-export function PartRenderer({ part, citations, onCitationClick }: PartProps) {
+export function PartRenderer({
+  part,
+  citations,
+  onCitationClick,
+  totalTokens,
+  showTotalTokenUsage,
+}: PartProps) {
   switch (part.type) {
     case "text":
-      return <TextPartView part={part} citations={citations} onCitationClick={onCitationClick} />;
+      return (
+        <TextPartView
+          part={part}
+          citations={citations}
+          onCitationClick={onCitationClick}
+          totalTokens={totalTokens}
+          showTotalTokenUsage={showTotalTokenUsage}
+        />
+      );
     case "reasoning":
-      return <ReasoningPartView part={part} />;
+      return (
+        <ReasoningPartView
+          part={part}
+          totalTokens={totalTokens}
+          showTotalTokenUsage={showTotalTokenUsage}
+        />
+      );
     case "tool_call":
-      return <ToolCallPartView part={part} />;
+      return (
+        <ToolCallPartView
+          part={part}
+          totalTokens={totalTokens}
+          showTotalTokenUsage={showTotalTokenUsage}
+        />
+      );
     case "citation":
       return null;
     case "mindmap":
       return <MindmapPartView part={part} />;
+    case "mermaid":
+      return <MermaidPartView part={part} />;
     case "aborted":
       return <AbortedPartView part={part} />;
     default:
@@ -99,10 +144,14 @@ function TextPartView({
   part,
   citations,
   onCitationClick,
+  totalTokens,
+  showTotalTokenUsage,
 }: {
   part: TextPart;
   citations?: CitationPart[];
   onCitationClick?: (citation: CitationPart) => void;
+  totalTokens?: number;
+  showTotalTokenUsage?: boolean;
 }) {
   const throttledText = useThrottledText(part.text);
   const isStreaming = part.status === "running";
@@ -127,11 +176,26 @@ function TextPartView({
         citations={citations}
         onCitationClick={onCitationClick}
       />
+      {showTotalTokenUsage && totalTokens !== undefined && totalTokens > 0 && (
+        <div className="mt-1 flex items-center justify-end text-[11px] font-mono text-muted-foreground/60 select-none">
+          <span title="Total tokens across all calls in this message">
+            {formatTotalTokens(totalTokens)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-function ReasoningPartView({ part }: { part: ReasoningPart }) {
+function ReasoningPartView({
+  part,
+  totalTokens,
+  showTotalTokenUsage,
+}: {
+  part: ReasoningPart;
+  totalTokens?: number;
+  showTotalTokenUsage?: boolean;
+}) {
   const { t } = useTranslation();
   // Start expanded when streaming; keep expanded after completion
   const [isOpen, setIsOpen] = useState(part.status === "running" || part.status === "completed");
@@ -171,12 +235,24 @@ function ReasoningPartView({ part }: { part: ReasoningPart }) {
                   </span>
                 )}
               </div>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 text-muted-foreground transition-transform",
-                  isOpen && "rotate-180",
+              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono text-muted-foreground">
+                {showTotalTokenUsage && totalTokens !== undefined && totalTokens > 0 && (
+                  <span className="font-semibold text-primary/80" title="Total tokens across all calls in this message">
+                    {formatTotalTokens(totalTokens)}
+                  </span>
                 )}
-              />
+                {part.tokens !== undefined && part.tokens > 0 && (
+                  <span className="opacity-75" title="Tokens used by this step">
+                    {formatTokens(part.tokens)}
+                  </span>
+                )}
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 text-muted-foreground transition-transform",
+                    isOpen && "rotate-180",
+                  )}
+                />
+              </div>
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -220,7 +296,15 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   fallbackChapterContext: "toolLabels.fallbackChapterContext",
 };
 
-function ToolCallPartView({ part }: { part: ToolCallPart }) {
+function ToolCallPartView({
+  part,
+  totalTokens,
+  showTotalTokenUsage,
+}: {
+  part: ToolCallPart;
+  totalTokens?: number;
+  showTotalTokenUsage?: boolean;
+}) {
   const { t } = useTranslation();
   const noticeMessage = part.notice || "";
   const hasNotice = Boolean(noticeMessage);
@@ -308,12 +392,24 @@ function ToolCallPartView({ part }: { part: ToolCallPart }) {
                   </span>
                 )}
               </div>
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 text-muted-foreground transition-transform",
-                  isOpen && "rotate-180",
+              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono text-muted-foreground">
+                {showTotalTokenUsage && totalTokens !== undefined && totalTokens > 0 && (
+                  <span className="font-semibold text-primary/80" title="Total tokens across all calls in this message">
+                    {formatTotalTokens(totalTokens)}
+                  </span>
                 )}
-              />
+                {part.tokens !== undefined && part.tokens > 0 && (
+                  <span className="opacity-75" title="Tokens used by this step">
+                    {formatTokens(part.tokens)}
+                  </span>
+                )}
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 text-muted-foreground transition-transform",
+                    isOpen && "rotate-180",
+                  )}
+                />
+              </div>
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -391,6 +487,17 @@ function MindmapPartView({ part }: { part: MindmapPart }) {
       >
         <LazyMindmapView markdown={part.markdown} title={part.title} />
       </Suspense>
+    </div>
+  );
+}
+
+function MermaidPartView({ part }: { part: MermaidPart }) {
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border bg-muted/10 p-2">
+      {part.title && (
+        <div className="text-xs font-semibold mb-1.5 text-foreground">{part.title}</div>
+      )}
+      <MermaidBlock code={part.chart} />
     </div>
   );
 }
