@@ -12,6 +12,7 @@ import {
 } from "@readany/core";
 import * as db from "@readany/core/db/database";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
+import { getProgressProjectionMap } from "@readany/core/db/progress-queries";
 import { getPlatformService } from "@readany/core/services";
 import type { Book, BookGroup, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
 import { generateId } from "@readany/core/utils";
@@ -75,6 +76,13 @@ export interface LibraryState {
   addBook: (book: Book) => Promise<void>;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
   updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
+  /** 进度投影:从 reading_progress 刷新全部书行展示(唯一账本,B1) */
+  refreshProgressProjection: () => Promise<void>;
+  /** 进度写链路即时更新单本投影(内存,不落库——落库由 reading_progress 承担) */
+  setBookProgressView: (
+    bookId: string,
+    view: { cfi?: string; percent: number },
+  ) => void;
   setFilter: (filter: Partial<LibraryFilter>) => void;
   setViewMode: (mode: LibraryViewMode) => void;
   setSortField: (field: SortField) => void;
@@ -711,6 +719,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           allTags: computeTags(cached),
           activeGroupId: keepActiveGroupId(state.activeGroupId, groups),
         }));
+        // 缓存先行显示;进度投影(唯一账本 reading_progress)随后刷新
+        void get().refreshProgressProjection();
       }
     } catch (err) {
       console.warn("[Library] Failed to load cached books:", err);
@@ -718,8 +728,18 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
     try {
       await db.initDatabase();
-      const [books, groups] = await Promise.all([db.getBooks(), db.getGroups()]);
-      const dbTags = computeTags(books);
+      const [books, groups, progressMap] = await Promise.all([
+        db.getBooks(),
+        db.getGroups(),
+        getProgressProjectionMap(),
+      ]);
+      // 唯一账本:B1——books.progress/current_cfi 不再入账,
+      // 展示投影由 reading_progress 注入(与进度写链同源)
+      const projectedBooks = books.map((b) => {
+        const p = b.fileHash ? progressMap.get(b.fileHash) : undefined;
+        return p ? { ...b, progress: p.percent, currentCfi: p.cfi } : b;
+      });
+      const dbTags = computeTags(projectedBooks);
 
       // Load saved tags from FS (may include empty tags not assigned to any book)
       let savedTags: string[] = [];
@@ -740,13 +760,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const allTags = [...dbTags, ...emptyTags].sort();
 
       set((state) => ({
-        books,
+        books: projectedBooks,
         groups,
         isLoaded: true,
         allTags,
         activeGroupId: keepActiveGroupId(state.activeGroupId, groups),
       }));
-      debouncedSave("library-books", books);
+      debouncedSave("library-books", projectedBooks);
       debouncedSave("library-groups", groups);
       debouncedSave("library-tags", allTags);
     } catch (err) {
@@ -839,6 +859,30 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await persistBookUpdate(bookId, updates).catch((err) =>
       console.error("Failed to update book in database:", err),
     );
+  },
+
+  refreshProgressProjection: async () => {
+    try {
+      const progressMap = await getProgressProjectionMap();
+      set((state) => ({
+        books: state.books.map((b) => {
+          const p = b.fileHash ? progressMap.get(b.fileHash) : undefined;
+          return p ? { ...b, progress: p.percent, currentCfi: p.cfi } : b;
+        }),
+      }));
+    } catch (err) {
+      console.warn("[Library] Failed to refresh progress projection:", err);
+    }
+  },
+
+  setBookProgressView: (bookId, view) => {
+    set((state) => ({
+      books: state.books.map((b) =>
+        b.id === bookId
+          ? { ...b, progress: view.percent, currentCfi: view.cfi ?? b.currentCfi }
+          : b,
+      ),
+    }));
   },
 
   setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),

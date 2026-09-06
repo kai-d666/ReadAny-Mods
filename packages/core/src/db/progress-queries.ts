@@ -85,3 +85,31 @@ export async function getReadingProgressForBook(
   const database = await getDB();
   return getReadingProgress(database, bookHash);
 }
+
+/**
+ * 进度投影(2026-09-06,B1 唯一账本):书库展示用全量投影。
+ * 进度只记 reading_progress(books.progress/current_cfi 不再被写入),
+ * 书库/角标/排序/统计/AI 读的 book.progress 由此投影刷新。
+ */
+export async function getProgressProjectionMap(): Promise<
+  Map<string, { cfi: string; percent: number }>
+> {
+  const map = new Map<string, { cfi: string; percent: number }>();
+  try {
+    const database = await getDB();
+    const rows = await database.select<{
+      book_hash: string;
+      cfi: string | null;
+      percent: number | null;
+    }>("SELECT book_hash, cfi, percent FROM reading_progress");
+    for (const row of rows) {
+      map.set(row.book_hash, {
+        cfi: row.cfi ?? "",
+        percent: row.percent ?? 0,
+      });
+    }
+  } catch {
+    // 表不存在/初始化前,返回空投影
+  }
+  return map;
+}

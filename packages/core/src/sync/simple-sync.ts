@@ -500,6 +500,97 @@ async function setLastAppliedTs(
   }
 }
 
+async function setOtherDeviceCount(
+  db: Awaited<ReturnType<typeof getDB>>,
+  count: number,
+): Promise<void> {
+  try {
+    await db.execute(
+      "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('other_device_count', ?)",
+      [String(count)],
+    );
+  } catch {
+    // sync_metadata may not exist on older schema variants.
+  }
+}
+
+/** 已知"其他设备数"(每次同步后回写);null = 从未同步过(未知,应拉一次探测) */
+export async function getOtherDeviceCount(): Promise<number | null> {
+  try {
+    const db = await getDB();
+    const rows = await db.select<{ value: string }>(
+      "SELECT value FROM sync_metadata WHERE key = 'other_device_count'",
+    );
+    return rows[0]?.value !== undefined ? Number.parseInt(rows[0].value, 10) || 0 : null;
+  } catch {
+    return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// stat 探测(2026-09-06):坚果云无 ETag 且条件请求被忽略(实测),业界在无 ETag
+// 时的标准 fallback 即"列目录比较 lastModified"(ownCloud Efficient Stat Polling、
+// vdirsyncer 同路线):打开书先 1-2 个最小请求,快照 mtime 全未变 → 不跑完整同步。
+// ---------------------------------------------------------------------------
+
+/** 读取已保存的远端快照 mtimes;null = 从未记录(应视为"有变化") */
+export async function getSnapshotMtimes(): Promise<string | null> {
+  try {
+    const db = await getDB();
+    const rows = await db.select<{ value: string }>(
+      "SELECT value FROM sync_metadata WHERE key = 'remote_snapshot_mtimes'",
+    );
+    return rows[0]?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function setSnapshotMtimes(
+  db: Awaited<ReturnType<typeof getDB>>,
+  json: string,
+): Promise<void> {
+  try {
+    await db.execute(
+      "INSERT OR REPLACE INTO sync_metadata (key, value) VALUES ('remote_snapshot_mtimes', ?)",
+      [json],
+    );
+  } catch {
+    // sync_metadata may not exist on older schema variants.
+  }
+}
+
+/** 快照 mtimes 规范化(排序+取整),probe 与保存共用同一构造,保证可比 */
+function serializeSnapshotTimes(files: { path: string; lastModifiedMs: number }[]): string {
+  return JSON.stringify(
+    files
+      .map((f) => [f.path, Math.round(f.lastModifiedMs)] as const)
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+  );
+}
+
+/**
+ * 后台专用(2026-09-06):仅上传本机快照,不做拉取/应用。
+ * 覆盖"滑走 App"窗口——上传约 300ms 完成,进程被杀数据也已在云端;
+ * 拉取留给前台时点(打开书 probe/手动/退出书),快照为全量,余量下次补。
+ */
+export async function uploadOwnSnapshot(backend: ISyncBackend): Promise<void> {
+  const deviceId = await getDeviceId();
+  const payload = await collectChanges(0);
+  await saveDeviceSnapshot(backend, deviceId, payload);
+}
+
+/**
+ * stat 探测:远端快照是否有变化。
+ * true = 首次(无记录)/任一 mtime 不同/新设备出现;false = 全部未变。
+ */
+export async function hasRemoteChanges(backend: ISyncBackend): Promise<boolean> {
+  const last = await getSnapshotMtimes();
+  const files = await listRemoteDeviceFiles(backend);
+  const current = serializeSnapshotTimes(files);
+  return last !== current;
+}
+
 /**
  * 记录表远端 book_hash → 本地同 hash 书 id 的映射(一次批量查询)。
  * 映射不到 = 本地还没有这本书 → 该记录无宿主,跳过(与 Koodo 一致:
@@ -754,15 +845,22 @@ async function loadDeviceSyncIndex(backend: ISyncBackend): Promise<DeviceSyncInd
   }
 }
 
-async function listRemoteDeviceFiles(
+export async function listRemoteDeviceFiles(
   backend: ISyncBackend,
-): Promise<{ deviceId: string; path: string }[]> {
-  const deviceFilesById = new Map<string, { deviceId: string; path: string }>();
+): Promise<{ deviceId: string; path: string; lastModifiedMs: number }[]> {
+  const deviceFilesById = new Map<
+    string,
+    { deviceId: string; path: string; lastModifiedMs: number }
+  >();
   const index = await loadDeviceSyncIndex(backend);
   if (index) {
     for (const [deviceId, entry] of Object.entries(index.devices)) {
       if (!entry?.path) continue;
-      deviceFilesById.set(deviceId, { deviceId, path: entry.path });
+      deviceFilesById.set(deviceId, {
+        deviceId,
+        path: entry.path,
+        lastModifiedMs: 0,
+      });
     }
     console.log(
       `[SimpleSync] Remote device index listed ${deviceFilesById.size} device snapshot candidate(s)`,
@@ -776,6 +874,7 @@ async function listRemoteDeviceFiles(
       .map((f) => ({
         deviceId: f.name.replace(/^device-/, "").replace(/\.json$/, ""),
         path: f.path || `${SYNC_DIR}/${f.name}`,
+        lastModifiedMs: f.lastModified ?? 0,
       }));
     for (const file of deviceFiles) {
       deviceFilesById.set(file.deviceId, file);
@@ -1041,6 +1140,32 @@ export async function runSimpleSync(
 
     // 5. Update last sync timestamp
     await setLastSyncTimestamp(now);
+
+    // 记录"其他设备数":单设备(自己一份快照)时打开书无需再拉同步
+    const otherDeviceCount = Math.max(
+      0,
+      remoteFiles.length -
+        (remoteFiles.some((r) => r.deviceId === localDeviceId) ? 1 : 0),
+    );
+    await setOtherDeviceCount(await getDB(), otherDeviceCount);
+    // stat 探测基准:记录本次快照 mtimes(打开书"有变才拉"的判定依据)。
+    // 注意:本次同步刚 PUT 过自己的快照(即使无新数据),重新 listDir 拿
+    // 上传后的终态 mtime——否则记录的是旧值,下次探测永远发现"自己变了"。
+    let snapshotFiles: { path: string; lastModifiedMs: number }[] = remoteFiles;
+    try {
+      const freshFiles = await backend.listDir(SYNC_DIR);
+      snapshotFiles = freshFiles
+        .filter((f) => !f.isDirectory && f.name.startsWith("device-") && f.name.endsWith(".json"))
+        .map((f) => ({
+          path: f.path || `${SYNC_DIR}/${f.name}`,
+          lastModifiedMs: f.lastModified ?? 0,
+        }));
+    } catch (error) {
+      console.warn(
+        `[SimpleSync] Failed to re-list snapshots for stat probe: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    await setSnapshotMtimes(await getDB(), serializeSnapshotTimes(snapshotFiles));
 
     onProgress?.({
       phase: "database",

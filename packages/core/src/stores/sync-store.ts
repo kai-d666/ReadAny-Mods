@@ -28,6 +28,7 @@ import {
 import type { DedupeBooksReport, GhostCleanupReport } from "../sync/book-dedupe";
 import type { CloudBookEntry } from "../sync/cloud-library";
 import { sanitizeWebDavRemoteRoot, sanitizeWebDavUrl } from "../sync/webdav-client";
+import { hasRemoteChanges, uploadOwnSnapshot } from "../sync/simple-sync";
 import { eventBus } from "../utils/event-bus";
 
 let activeSyncPromise: Promise<SyncResult | null> | null = null;
@@ -163,6 +164,10 @@ export interface SyncState {
     resolvedDirection?: "upload" | "download",
     useIncremental?: boolean,
   ) => Promise<SyncResult | null>;
+  /** stat 探测版同步:快照未变则跳过完整同步(打开书场景) */
+  probeAndSyncNow: () => Promise<SyncResult | null>;
+  /** 后台专用:仅上传本机快照(滑走 App 窗口,~300ms) */
+  syncOnBackground: () => Promise<SyncResult | null>;
   /** 清理云端幽灵(remote 无文件、新云端目录不存在的记录)+ 存量重复书 */
   cleanupGhosts: () => Promise<
     { ghost: GhostCleanupReport; dedupe: DedupeBooksReport } | { error: string }
@@ -583,6 +588,64 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         return result;
       }
     });
+  },
+
+  /**
+   * stat 探测版同步(2026-09-06):先 1-2 个最小请求列远端快照,比较 lastModified —
+   * 无变化 → 返回(null,不跑完整同步);变化/首次/探测失败 → 完整 syncNow。
+   * 依据:坚果云无 ETag 且条件请求被忽略(实测),业界无 ETag 时的标准
+   * fallback 即目录统计比较(ownCloud Efficient Stat Polling)。
+   */
+  probeAndSyncNow: async () => {
+    const currentState = get();
+    if (!currentState.isConfigured || !currentState.config) return null;
+    if (currentState.status !== "idle" && currentState.status !== "error") {
+      return activeSyncPromise;
+    }
+    try {
+      const platform = getPlatformService();
+      const secretKey =
+        currentState.config.type !== "lan"
+          ? getSecretKeyForBackend(currentState.config.type)
+          : null;
+      const secret = secretKey ? await platform.kvGetItem(secretKey) : null;
+      if (currentState.config.type !== "lan" && !secret) return null;
+      const backend = createSyncBackend(currentState.config, secret || "");
+      const changed = await hasRemoteChanges(backend);
+      if (!changed) {
+        console.log("[SyncStore] stat probe: remote snapshots unchanged, skip full sync");
+        return null;
+      }
+    } catch (e) {
+      // 探测失败(断网等)保守走完整同步,不丢功能
+      console.warn("[SyncStore] stat probe failed, falling back to full sync:", e);
+    }
+    return get().syncNow();
+  },
+
+  /** 后台专用:只上传本机快照(跳过"先拉后推"的拉取),滑走窗口 ~300ms 完成 */
+  syncOnBackground: async () => {
+    const currentState = get();
+    if (!currentState.isConfigured || !currentState.config) return null;
+    if (currentState.status !== "idle" && currentState.status !== "error") {
+      return activeSyncPromise;
+    }
+    try {
+      const platform = getPlatformService();
+      const secretKey =
+        currentState.config.type !== "lan"
+          ? getSecretKeyForBackend(currentState.config.type)
+          : null;
+      const secret = secretKey ? await platform.kvGetItem(secretKey) : null;
+      if (currentState.config.type !== "lan" && !secret) return null;
+      const backend = createSyncBackend(currentState.config, secret || "");
+      await uploadOwnSnapshot(backend);
+      console.log("[SyncStore] background quick upload done");
+    } catch (e) {
+      // 上传失败不致命:快照全量,下次任意同步整体补传
+      console.warn("[SyncStore] background quick upload failed (will retry on next sync):", e);
+    }
+    return null;
   },
 
   syncWithBackend: async (backend, resolvedDirection, _useIncremental = true) => {

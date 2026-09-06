@@ -46,7 +46,6 @@ import { useColors, withOpacity } from "@/styles/theme";
 import { useIsFocused } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { readingContextService } from "@readany/core/ai/reading-context-service";
-import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { useChapterTranslation } from "@readany/core/hooks";
 import { useReadingSession } from "@readany/core/hooks/use-reading-session";
 import { getPlatformService } from "@readany/core/services";
@@ -58,6 +57,8 @@ import {
   saveReadingProgressForBook,
 } from "@readany/core/db/progress-queries";
 import { eventBus } from "@readany/core/utils/event-bus";
+import { useSyncStore } from "@readany/core/stores/sync-store";
+import { getOtherDeviceCount } from "@readany/core/sync/simple-sync";
 import { throttle } from "@readany/core/utils/throttle";
 import * as DocumentPicker from "expo-document-picker";
 import * as NavigationBar from "expo-navigation-bar";
@@ -431,6 +432,14 @@ export function ReaderScreen({ route, navigation }: Props) {
   // 渲染器抖动帧(如 13.376%→13.330%,约 0.05% 级跳变)不视为翻页;
   // 真实翻页通常 ≥0.1%,阈值取 0.1%。
   const PROGRESS_WRITE_MIN_DELTA = 0.001;
+  // T3:打开书时后台拉一次远端进度(接力),60s 节流避免快速进出书连发同步
+  const OPEN_SYNC_THROTTLE_MS = 60_000;
+  const openSyncThrottleRef = useRef(0);
+  // 阅读中定期推送(2026-09-06,KOReader "每 N 页推送"同款):
+  // 每累计 5 次"位置落盘"(节流合并后的真实翻页/跳转)静默上传一次快照,
+  // 让云端进度始终只落后若干页——切设备接续时不再依赖"退出那一脚"。
+  const AUTO_UPLOAD_SAVE_COUNT = 5;
+  const savesSinceAutoUploadRef = useRef(0);
 
   // 组件实例随 route 复用(切换 bookId 不重挂),基准必须按书重置
   useEffect(() => {
@@ -445,21 +454,27 @@ export function ReaderScreen({ route, navigation }: Props) {
   const incrementPagesRead = useReadingSessionStore((s) => s.incrementPagesRead);
   const incrementCharactersRead = useReadingSessionStore((s) => s.incrementCharactersRead);
   const { sendEvent } = useReadingSession(bookId); // Added useReadingSession hook
-  const { books, updateBook } = useLibraryStore();
+  const { books, updateBook, setBookProgressView } = useLibraryStore();
   const setGoToCfiFn = useReaderStore((s) => s.setGoToCfiFn);
 
   // Throttled progress save (same as desktop - 5 seconds)
+  // 唯一账本(B1,2026-09-06):进度只写 reading_progress;books.progress/currentCfi
+  // 不再入库,仅做展示投影(setBookProgressView,内存)。
   const throttledSaveProgress = useRef(
     throttle((bId: string, prog: number, cfi: string) => {
-      updateBook(bId, {
-        progress: prog,
-        currentCfi: cfi,
-      });
       // 跨设备进度:reading_progress 按内容哈希(同步重构,书行不再搬,
       // 进度靠 hash 认亲,Koodo 式,2026-09-03)
       void saveReadingProgressForBook(bId, { cfi, percent: prog }).catch((err: Error) =>
         console.error("Failed to save reading progress:", err),
       );
+      setBookProgressView(bId, { cfi, percent: prog });
+      // 阅读中定期推送(每 5 次落盘 → 静默上传快照,只推自己;
+      // 进度写只会由真实翻页/跳转触发,恢复/抖动帧不计数)
+      savesSinceAutoUploadRef.current += 1;
+      if (savesSinceAutoUploadRef.current >= AUTO_UPLOAD_SAVE_COUNT) {
+        savesSinceAutoUploadRef.current = 0;
+        void useSyncStore.getState().syncOnBackground?.();
+      }
     }, 5000),
   ).current;
   const {
@@ -549,6 +564,21 @@ export function ReaderScreen({ route, navigation }: Props) {
     },
     [suppressProgressTracking],
   );
+
+  // T3(2026-09-06):同步完成后,若本次尚未产生真实翻页且云端有本书的
+  // 不同进度 → 静默跳转接续(goToCFISafely 走程序化路径,不写进度)。
+  const maybeApplyRemoteProgress = useCallback(async () => {
+    if (progressWrittenRef.current) return; // 用户本次已翻页,本机动作优先
+    if (!book?.fileHash) return;
+    try {
+      const progress = await getReadingProgressForBook(book.fileHash);
+      if (!progress?.cfi) return;
+      if (progress.cfi === lastCfiRef.current) return;
+      goToCFISafely(progress.cfi);
+    } catch (err) {
+      console.error("Failed to apply remote progress:", err);
+    }
+  }, [book?.fileHash, goToCFISafely]);
 
   const goToHrefSafely = useCallback(
     (href: string) => {
@@ -658,9 +688,30 @@ export function ReaderScreen({ route, navigation }: Props) {
       if (s === "active") {
         readerSystemBarsRef.current?.setEnabled?.(readerChromeVisibleRef.current);
       }
+      // App 进后台(Home/最近任务面板)→ 只上传"节流已写好的账",不再独立取值:
+      // 单一写入口(节流 5s 防抖后的稳定值)= reading_progress;兜底=纯搬运,
+      // 快速跳转/未防抖确认的位置不会因后台写入而落账(用户拍板架构,2026-09-06)。
+      if (s === "background") {
+        void useSyncStore.getState().syncOnBackground?.();
+        if (book?.fileHash) {
+          void getReadingProgressForBook(book.fileHash)
+            .then((progress) => {
+              if (progress?.cfi) {
+                setBookProgressView(bookId, {
+                  cfi: progress.cfi,
+                  percent: progress.percent,
+                });
+              }
+              console.log("[ReaderScreen] app background -> upload settled ledger", progress?.percent);
+            })
+            .catch((err: Error) =>
+              console.error("Failed to read progress on background:", err),
+            );
+        }
+      }
     });
     return () => sub.remove();
-  }, []);
+  }, [bookId]);
 
   // 阅读器加载完成时再重发一次系统栏状态:冷启动期窗口 insets 会被系统重置数次
   // (每次都把三键重新放出来),此点一定在最后一次重置之后 → 确定性收尾
@@ -930,13 +981,18 @@ export function ReaderScreen({ route, navigation }: Props) {
           }
         }
         if (progressSettledRef.current) {
+          // 抖动判定以"settle 基准 fraction"为参照(而非 0/上次写入):
+          // 渲染器稳定后有 ±0.0008 级抖动帧(与基准 cfi 微差),相对基准
+          // 差 < 0.001 才算抖动;与 0 比会把抖动误判为翻页(2026-09-06 修复)
           const fractionJump = Math.abs(
-            (detail.fraction ?? 0) - lastWrittenFractionRef.current,
+            (detail.fraction ?? 0) - settledFractionRef.current,
           );
           if (!progressWrittenRef.current && detail.cfi === loadedCfiBaseRef.current) {
             // no-op:位置未变,不产生伪更新
           } else if (fractionJump < PROGRESS_WRITE_MIN_DELTA) {
             // 渲染器抖动帧:不视为翻页,不动基准、不写
+            // 注:用户主动跳转/拖动进度条(goToCFI)是真实动作,与其他帧一样写;
+            // 打开书的恢复帧已由"稳定窗口"保护,不再需要 guard 拦截。
           } else {
             progressWrittenRef.current = true;
             lastWrittenFractionRef.current = detail.fraction ?? 0;
@@ -1371,8 +1427,9 @@ export function ReaderScreen({ route, navigation }: Props) {
   useEffect(() => {
     return eventBus.on("sync:completed", () => {
       void loadAnnotations(bookId);
+      void maybeApplyRemoteProgress();
     });
-  }, [bookId, loadAnnotations]);
+  }, [bookId, loadAnnotations, maybeApplyRemoteProgress]);
 
   // Save progress immediately on unmount
   useEffect(() => {
@@ -1380,28 +1437,8 @@ export function ReaderScreen({ route, navigation }: Props) {
       // 文件服务器不随 Reader 卸载停止:Lighttpd 冷启动约 700ms,每次进出
       // 阅读页都重启会慢;服务器常驻进程生命周期(docRoot=appData 恒定,
       // 所有书共享),reload 残留由 local-file-server 的防御逻辑处理
-      if (lastCfiRef.current) {
-        const db = require("@readany/core/db/database");
-        runWithDbRetry(
-          () =>
-            db.updateBook(bookId, {
-              progress: progressRef.current,
-              currentCfi: lastCfiRef.current,
-            }),
-          { attempts: 10, initialDelayMs: 150 },
-        ).catch((err: Error) => console.error("Failed to save progress on unmount:", err));
-        // 伪写抑制(同上):从未写过且末位置与基准距离 < 抖动阈值(打开未翻页)
-        // → 不写跨设备进度;本地书行视图(上面 updateBook)与 syncNow 照常。
-        if (
-          progressWrittenRef.current ||
-          Math.abs(progressRef.current - settledFractionRef.current) >= PROGRESS_WRITE_MIN_DELTA
-        ) {
-          void saveReadingProgressForBook(bookId, {
-            cfi: lastCfiRef.current,
-            percent: progressRef.current,
-          }).catch((err: Error) => console.error("Failed to save reading progress on unmount:", err));
-        }
-      }
+      // 卸载不再独立写账:单一写入口(节流),账=节流稳态;
+      // 退出书页只负责把既有账上传(其中已含节流写的最新值)。
       const { useSyncStore } = require("@readany/core/stores/sync-store");
       useSyncStore.getState().syncNow?.();
     };
@@ -1427,13 +1464,16 @@ export function ReaderScreen({ route, navigation }: Props) {
         const appData = await platform.getAppDataDir();
         const absPath = await platform.joinPath(appData, book.filePath);
         // 本设备 current_cfi 优先(更鲜);为空时兜底取跨设备进度(按 book hash)
-        let lastLocation = book.currentCfi || undefined;
-        if (!lastLocation) {
-          try {
-            lastLocation = (await getReadingProgressForBook(book.fileHash))?.cfi || undefined;
-          } catch (err) {
-            console.error("Failed to read reading progress:", err);
-          }
+        // 恢复位置:reading_progress 优先(跨设备/权威,background/节流写都在更新它);
+        // books.current_cfi 只是"书行视图",可能停在旧值(节流/跳转守卫未同步),
+        // 仅在其从未有跨设备进度时兜底——否则会出现"读了 74%,回来还是 19%"
+        let lastLocation: string | undefined;
+        try {
+          const remoteProgress = await getReadingProgressForBook(book.fileHash);
+          lastLocation = remoteProgress?.cfi || book.currentCfi || undefined;
+        } catch (err) {
+          console.error("Failed to read reading progress:", err);
+          lastLocation = book.currentCfi || undefined;
         }
         const fileName = book.filePath.split("/").pop() || "book.epub";
         const mimeType = BOOK_FORMAT_MIME_TYPES[book.format] || "application/octet-stream";
@@ -1475,6 +1515,17 @@ export function ReaderScreen({ route, navigation }: Props) {
           primary: colors.primary,
           themeMode,
         });
+
+        // T3:打开书先做 stat 探测(有设备动过才拉完整同步,进行远程接力);
+        // 60s 节流防快速进出书连发;仅当"存在其他设备"时才探测
+        // (单设备拉自己=空转);从未同步过(未知)探测一次。
+        if (Date.now() - openSyncThrottleRef.current > OPEN_SYNC_THROTTLE_MS) {
+          const knownOtherDevices = await getOtherDeviceCount();
+          if (knownOtherDevices !== 0) {
+            openSyncThrottleRef.current = Date.now();
+            void useSyncStore.getState().probeAndSyncNow?.();
+          }
+        }
       } catch (err: any) {
         console.error("[ReaderScreen] Failed to load book:", err);
         setError(err.message || "Failed to load book file");
