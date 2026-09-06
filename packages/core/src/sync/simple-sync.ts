@@ -2,7 +2,7 @@
  * Simplified sync service — incremental, per-device, JSON-based.
  *
  * Design:
- * 1. Each device writes to its own file: /readany/sync/device-{id}.json
+ * 1. Each device writes to its own file: /RA_dev/sync/device-{id}.json
  *    → No write conflicts between devices
  * 2. Pull all other devices' files and apply changes (last-write-wins per record)
  * 3. Push local changes since last sync

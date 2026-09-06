@@ -13,8 +13,6 @@ export interface NavigationHistoryItem {
 
 export interface ReaderTab {
   bookId: string;
-  currentCfi: string;
-  progress: number;
   chapterIndex: number;
   chapterTitle: string;
   isLoading: boolean;
@@ -33,7 +31,6 @@ export interface ReaderState {
 
   initTab: (tabId: string, bookId: string) => void;
   removeTab: (tabId: string) => void;
-  setProgress: (tabId: string, progress: number, cfi: string) => void;
   setChapter: (tabId: string, index: number, title: string) => void;
   setSelectedText: (tabId: string, text: string, cfi: string | null) => void;
   setSearchQuery: (tabId: string, query: string) => void;
@@ -58,8 +55,6 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
         ...state.tabs,
         [tabId]: {
           bookId,
-          currentCfi: "",
-          progress: 0,
           chapterIndex: 0,
           chapterTitle: "",
           isLoading: true,
@@ -78,16 +73,6 @@ export const useReaderStore = create<ReaderState>((set, get) => ({
       void _;
       return { tabs: rest };
     }),
-
-  setProgress: (tabId, progress, cfi) =>
-    set((state) => ({
-      tabs: {
-        ...state.tabs,
-        [tabId]: state.tabs[tabId]
-          ? { ...state.tabs[tabId], progress, currentCfi: cfi }
-          : state.tabs[tabId],
-      },
-    })),
 
   setChapter: (tabId, index, title) =>
     set((state) => ({

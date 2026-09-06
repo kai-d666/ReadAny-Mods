@@ -61,8 +61,6 @@ export type SyncProgressCallback = (progress: SyncProgress) => void;
 export const REMOTE_ROOT = "/RA_dev";
 export const REMOTE_DATA = "/RA_dev/data";
 /** Legacy flat layout — still read for migration detection / orphan cleanup. */
-export const REMOTE_FILES = "/RA_dev/data/file";
-export const REMOTE_COVERS = "/RA_dev/data/cover";
 /** New layout: each book lives in its own folder under this root. */
 export const REMOTE_BOOKS_ROOT = "/RA_dev/data/books";
 /** Lightweight index for the canonical remote book/cover layout. */

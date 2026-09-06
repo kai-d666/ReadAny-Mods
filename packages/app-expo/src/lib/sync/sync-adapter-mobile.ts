@@ -32,42 +32,8 @@ export class MobileSyncAdapter implements ISyncAdapter {
     }
   }
 
-  async integrityCheck(dbPath: string): Promise<boolean> {
-    const SQLite = await import("expo-sqlite");
-    // expo-sqlite needs a db name relative to the documents directory
-    // For a temp file, we open by copying approach or use raw path
-    // Since integrity check needs to open an arbitrary path, we use a workaround:
-    // Copy the file to a known name, open it, check, then clean up
-    const tempName = `_integrity_check_${Date.now()}.db`;
-    const srcFile = new File(dbPath);
-    const destFile = new File(Paths.document, tempName);
-
-    try {
-      srcFile.copy(destFile);
-      const db = await SQLite.openDatabaseAsync(tempName);
-      try {
-        const result = await db.getFirstAsync<{ integrity_check: string }>(
-          "PRAGMA integrity_check",
-        );
-        return result?.integrity_check === "ok";
-      } finally {
-        await db.closeAsync();
-      }
-    } finally {
-      if (destFile.exists) {
-        destFile.delete();
-      }
-    }
-  }
-
   async closeDatabase(): Promise<void> {
     await closeDB();
-  }
-
-  async reopenDatabase(): Promise<void> {
-    resetDBCache();
-    resetLocalDBCache();
-    await initDatabase();
   }
 
   async getDatabasePath(): Promise<string> {

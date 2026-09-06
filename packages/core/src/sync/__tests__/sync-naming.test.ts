@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBookFolderName,
-  buildBookRemoteCover,
-  buildBookRemoteDir,
-  buildBookRemoteFile,
   isCoverFileName,
   parseBookFolderName,
   sanitizeBookTitleForFs,
@@ -85,22 +82,6 @@ describe("sync-naming", () => {
 
     it("builds folder name as {title}-{id}", () => {
       expect(buildBookFolderName(book)).toBe(`三体-${UUID}`);
-    });
-
-    it("builds remote dir under REMOTE_BOOKS_ROOT", () => {
-      expect(buildBookRemoteDir(book)).toBe(`/RA_dev/data/books/三体-${UUID}`);
-    });
-
-    it("builds remote file and cover paths inside the book dir", () => {
-      expect(buildBookRemoteFile(book, "epub")).toBe(`/RA_dev/data/books/三体-${UUID}/三体.epub`);
-      expect(buildBookRemoteCover(book, "jpg")).toBe(`/RA_dev/data/books/三体-${UUID}/三体.jpg`);
-    });
-
-    it("uses sanitized title in both folder and file names", () => {
-      const dirty = { id: UUID, title: "Hello/World" };
-      expect(buildBookRemoteFile(dirty, "epub")).toBe(
-        `/RA_dev/data/books/Hello_World-${UUID}/Hello_World.epub`,
-      );
     });
 
     it("falls back to placeholder when title is null/empty", () => {

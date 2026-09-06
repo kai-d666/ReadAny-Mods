@@ -6,14 +6,8 @@ export interface ISyncAdapter {
   /** Create a snapshot of the current DB via VACUUM INTO */
   vacuumInto(targetPath: string): Promise<void>;
 
-  /** Check integrity of a database file. Returns true if valid. */
-  integrityCheck(dbPath: string): Promise<boolean>;
-
   /** Close the active database connection */
   closeDatabase(): Promise<void>;
-
-  /** Reopen the database connection (after replacing the file) */
-  reopenDatabase(): Promise<void>;
 
   /** Get the absolute path to the active database file */
   getDatabasePath(): Promise<string>;

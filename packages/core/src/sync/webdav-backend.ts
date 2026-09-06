@@ -9,7 +9,7 @@ import {
   type RemoteFile,
   type WebDavConfig,
 } from "./sync-backend";
-import { REMOTE_BOOKS_ROOT, REMOTE_COVERS, REMOTE_DATA, REMOTE_FILES } from "./sync-types";
+import { REMOTE_BOOKS_ROOT, REMOTE_DATA } from "./sync-types";
 import { WebDavClient, sanitizeWebDavRemoteRoot } from "./webdav-client";
 
 /**
@@ -93,9 +93,6 @@ export class WebDavBackend implements ISyncBackend {
     await this.client.ensureDirectory(this.resolvePath(REMOTE_DATA));
     // New per-book layout root
     await this.client.ensureDirectory(this.resolvePath(REMOTE_BOOKS_ROOT));
-    // Legacy directories kept ensured during the transition window (cheap & safe)
-    await this.client.mkcol(this.resolvePath(REMOTE_FILES));
-    await this.client.mkcol(this.resolvePath(REMOTE_COVERS));
     this.directoriesEnsured = true;
     ensuredDirectoryKeys.set(cacheKey, Date.now());
   }

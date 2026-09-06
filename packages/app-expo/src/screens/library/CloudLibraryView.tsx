@@ -109,8 +109,7 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
               setBusyHash(entry.fileHash);
               try {
                 const result = await useSyncStore.getState().deleteCloudBook(entry.fileHash);
-                const message =
-                  "error" in result ? result.error : result.error;
+                const message = "error" in result ? result.error : null;
                 if (message) Alert.alert("删除失败", message);
                 await refresh();
               } finally {

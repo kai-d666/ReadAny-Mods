@@ -22,7 +22,6 @@ interface ProgressStoreState {
   refreshOne: (fileHash: string | null | undefined) => Promise<void>;
   /** 写链路回填(内存即时,不落库——落库由 reading_progress 负责) */
   upsert: (fileHash: string | null | undefined, entry: ProgressEntry) => void;
-  get: (fileHash: string | null | undefined) => ProgressEntry | undefined;
 }
 
 /** 纯读取角标百分比(展示层;组件渲染时快照,进度 upsert 后下次渲染即最新) */
@@ -69,6 +68,4 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
     if (!fileHash) return;
     set((s) => ({ entries: { ...s.entries, [fileHash]: entry } }));
   },
-
-  get: (fileHash) => (fileHash ? get().entries[fileHash] : undefined),
 }));

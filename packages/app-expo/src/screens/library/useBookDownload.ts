@@ -1,4 +1,5 @@
 import { getPlatformService } from "@readany/core/services";
+import { SYNC_SECRET_KEYS } from "@readany/core/sync";
 import type { Book } from "@readany/core/types";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -41,7 +42,7 @@ export function useBookDownload({ loadBooks, onSuccess }: UseBookDownloadOptions
 
         const platform = getPlatformService();
         const secretKey =
-          syncStore.config.type === "webdav" ? "sync_webdav_password" : "sync_s3_secret_key";
+          syncStore.config.type === "webdav" ? SYNC_SECRET_KEYS.webdav : SYNC_SECRET_KEYS.s3;
         const password = await platform.kvGetItem(secretKey);
         if (!password) {
           setDownloadingBookId(null);

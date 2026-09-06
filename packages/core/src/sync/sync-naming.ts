@@ -34,24 +34,9 @@ export function sanitizeBookTitleForFs(title: string | null | undefined): string
   return cleaned.slice(0, MAX_TITLE_LEN);
 }
 
-/** Build the per-book remote directory: /readany/data/books/{title}-{id}. */
-export function buildBookRemoteDir(book: { id: string; title?: string | null }): string {
-  return `${REMOTE_BOOKS_ROOT}/${buildBookFolderName(book)}`;
-}
-
 /** Build just the folder name segment (no leading path), `{title}-{id}`. */
 export function buildBookFolderName(book: { id: string; title?: string | null }): string {
   return `${sanitizeBookTitleForFs(book.title)}-${book.id}`;
-}
-
-/** File path inside the book dir, e.g. {title}.epub. */
-export function buildBookRemoteFile(book: { id: string; title?: string | null }, ext: string): string {
-  return `${buildBookRemoteDir(book)}/${sanitizeBookTitleForFs(book.title)}.${ext}`;
-}
-
-/** Cover path inside the book dir, e.g. {title}.jpg. */
-export function buildBookRemoteCover(book: { id: string; title?: string | null }, ext: string): string {
-  return `${buildBookRemoteDir(book)}/${sanitizeBookTitleForFs(book.title)}.${ext}`;
 }
 
 /**

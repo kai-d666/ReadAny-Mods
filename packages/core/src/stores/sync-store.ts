@@ -41,9 +41,8 @@ const SYNC_RUNTIME_STATE_KEY = "sync_runtime_state";
 async function reloadProgressStore() {
   try {
     await useProgressStore.getState().hydrate();
-    const probe = useProgressStore.getState().entries["90af6757f7e7e889d0164f4ecf70e0f7db4a0cdeba80520a304ce8cd67364245"];
     console.log(
-      `[SyncStore] progress hydrate done: entries=${Object.keys(useProgressStore.getState().entries).length} probe90af=${probe?.percent ?? "MISSING"}`,
+      `[SyncStore] progress hydrate done: entries=${Object.keys(useProgressStore.getState().entries).length}`,
     );
   } catch (error) {
     console.warn("[SyncStore] progress hydrate after sync failed:", error);

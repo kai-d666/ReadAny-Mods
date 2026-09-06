@@ -24,8 +24,6 @@ export type {
 export {
   REMOTE_ROOT,
   REMOTE_DATA,
-  REMOTE_FILES,
-  REMOTE_COVERS,
 } from "./sync-types";
 export type { SyncConfig, WebDavConfig, S3Config, LANConfig, ISyncBackend } from "./sync-backend";
 export { DEFAULT_SYNC_CONFIG, SYNC_CONFIG_KEY, SYNC_SECRET_KEYS } from "./sync-backend";
