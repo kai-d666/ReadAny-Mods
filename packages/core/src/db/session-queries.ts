@@ -123,7 +123,9 @@ export async function getReadingSessionSummary(): Promise<ReadingSessionSummary>
   const s = sums[0] ?? { c: 0, t: 0, p: 0, ch: 0, b: 0 };
 
   const bookCount = await database.select<{ c: number }>(
-    "SELECT (SELECT COUNT(DISTINCT book_id) FROM reading_sessions) + (SELECT COUNT(*) FROM books b WHERE b.progress > 0 AND NOT EXISTS (SELECT 1 FROM reading_sessions rs WHERE rs.book_id = b.id)) AS c",
+    // 有 reading_sessions 的书 ∪ 唯一账本 reading_progress(>0)但有该进度无会话的书
+    // (2026-09-07 迁移:不再读 books.progress —— 移动端已废弃,阅读永不更新它)
+    "SELECT (SELECT COUNT(DISTINCT book_id) FROM reading_sessions) + (SELECT COUNT(*) FROM books b JOIN reading_progress rp ON rp.book_hash = b.file_hash WHERE rp.percent > 0 AND NOT EXISTS (SELECT 1 FROM reading_sessions rs WHERE rs.book_id = b.id)) AS c",
   );
 
   const days = await database.select<{ date: string }>(

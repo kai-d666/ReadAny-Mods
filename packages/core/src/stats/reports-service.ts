@@ -1,5 +1,6 @@
-import type { ReadingSession } from "../types";
+import type { Book, ReadingSession } from "../types";
 import { getAllReadingSessions, getBooks } from "../db";
+import { getProgressProjectionMap } from "../db/progress-queries";
 import { buildDailyReadingFacts } from "./fact-builder";
 import { mergeCurrentSessionIntoDailyFacts } from "./live-facts";
 import {
@@ -19,8 +20,22 @@ import type {
 } from "./schema";
 
 export class ReadingReportsService {
+  /**
+   * 统计链进度修正(2026-09-07):books.progress 已废弃(移动端阅读不再更新它),
+   * fact-builder/live-facts/report-builder 是纯函数,这里在入口处用唯一账本
+   * reading_progress 覆盖 Book.progress → progressEnd/ETA/已读计数全部基于新账本。
+   */
+  private async withLedgerProgress(books: Book[]): Promise<Book[]> {
+    const projection = await getProgressProjectionMap();
+    return books.map((b) => {
+      const entry = b.fileHash ? projection.get(b.fileHash) : undefined;
+      return entry !== undefined ? { ...b, progress: entry.percent } : b;
+    });
+  }
+
   async getAllDailyFacts(currentSession: ReadingSession | null = null): Promise<DailyReadingFact[]> {
-    const [books, sessions] = await Promise.all([getBooks({ includeDeleted: true }), getAllReadingSessions()]);
+    const [rawBooks, sessions] = await Promise.all([getBooks({ includeDeleted: true }), getAllReadingSessions()]);
+    const books = await this.withLedgerProgress(rawBooks);
     const facts = buildDailyReadingFacts(sessions, books);
     return mergeCurrentSessionIntoDailyFacts(facts, currentSession, books);
   }

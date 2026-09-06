@@ -34,6 +34,19 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
 
   const refresh = useCallback(async () => {
     setError(null);
+    // 云书库刷新 = 列表先行(书目秒出),同步探测后台跑,完成后重列一次(进度后置嵌入)。
+    // 此前仅 listCloudBooks(列目录),进度永远是上次同步的快照,与书库页同步按钮
+    // 外观相同语义不同 → 用户"按刷新等于没同步";直接 await 同步又会拖慢慢网进入(2026-09-07)。
+    const syncPromise = useSyncStore
+      .getState()
+      .probeAndSyncNow()
+      .catch((error) => {
+        console.warn("[CloudLibrary] sync during refresh failed:", error);
+      })
+      .then(async () => {
+        const second = await useSyncStore.getState().listCloudBooks();
+        if (!("error" in second)) setEntries(second);
+      });
     const result = await useSyncStore.getState().listCloudBooks();
     if ("error" in result) {
       setError(result.error);
@@ -41,6 +54,7 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
       return;
     }
     setEntries(result);
+    await syncPromise;
   }, []);
 
   useEffect(() => {

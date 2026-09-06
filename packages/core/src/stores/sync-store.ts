@@ -35,6 +35,21 @@ import { useProgressStore } from "./progress-store";
 let activeSyncPromise: Promise<SyncResult | null> | null = null;
 const SYNC_RUNTIME_STATE_KEY = "sync_runtime_state";
 
+/** 同步完成后重载进度唯一读模型(2026-09-07):拉取合并会更新 reading_progress,
+ * 而 progress-store 内存表只 hydrate 于启动时刻 → 云书库/角标停旧值。
+ * 手动同步主路径(syncSimple)与强制全量(forceFullSync)都须调用。 */
+async function reloadProgressStore() {
+  try {
+    await useProgressStore.getState().hydrate();
+    const probe = useProgressStore.getState().entries["90af6757f7e7e889d0164f4ecf70e0f7db4a0cdeba80520a304ce8cd67364245"];
+    console.log(
+      `[SyncStore] progress hydrate done: entries=${Object.keys(useProgressStore.getState().entries).length} probe90af=${probe?.percent ?? "MISSING"}`,
+    );
+  } catch (error) {
+    console.warn("[SyncStore] progress hydrate after sync failed:", error);
+  }
+}
+
 interface PersistedSyncRuntimeState {
   lastSyncAt: number | null;
   lastResult: SyncResult | null;
@@ -854,6 +869,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           error: null,
           progress: null,
         });
+        // 先重载进度读模型,再发 UI 通知:监听方(书库角标/统计/云书库)收到通知渲染时,
+        // 内存已是合并后的最新值(2026-09-07:此前顺序反了,UI 先按旧快照渲染一轮)
+        await reloadProgressStore();
         notifyLibraryStateChanged();
         notifySyncCompleted(syncedAt);
         await persistSyncRuntimeState({
@@ -1059,15 +1077,9 @@ export const useSyncStore = create<SyncState>((set, get) => ({
           error: simpleResult.error,
         };
 
+        // 先重载进度读模型,再发 UI 通知(顺序同 syncSimple,理由同上)
+        await reloadProgressStore();
         notifyLibraryStateChanged();
-        // 进度唯一读模型内存重载(2026-09-07 修复):拉取合并会更新 reading_progress
-        // (云端其他设备的新进度),而 progress-store 的 entries 只 hydrate 于启动时刻
-        // → 云书库/书库角标停留在旧值(实测:同步后仍是 2%,DB 其实已是 29%)。
-        try {
-          await useProgressStore.getState().hydrate();
-        } catch (error) {
-          console.warn("[SyncStore] progress hydrate after sync failed:", error);
-        }
 
         if (result.success) {
           const syncedAt = Date.now();

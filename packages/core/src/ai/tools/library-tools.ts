@@ -18,6 +18,7 @@ import {
 import { emitLibraryChanged } from "../../events/library-events";
 import { debouncedSave, loadFromFS } from "../../stores/persist";
 import type { Book, BookMeta, BookReview } from "../../types";
+import { getProgressPercent, useProgressStore } from "../../stores/progress-store";
 import { splitEditableList } from "../../utils/book-metadata";
 import { generateId } from "../../utils/generate-id";
 import type { ToolDefinition } from "./tool-types";
@@ -237,13 +238,17 @@ export function createListBooksTool(): ToolDefinition {
         );
       }
 
+      // 进度经唯一账本(reading_progress)读取;books.progress 已废弃(移动端不再更新)
+      await useProgressStore.getState().hydrate();
+      const progressOf = (b: Book) => getProgressPercent(b.fileHash);
+
       // Filter by reading status
       if (status === "unread") {
-        books = books.filter((b) => !b.progress || b.progress === 0);
+        books = books.filter((b) => !progressOf(b));
       } else if (status === "reading") {
-        books = books.filter((b) => b.progress > 0 && b.progress < 1);
+        books = books.filter((b) => progressOf(b) > 0 && progressOf(b) < 1);
       } else if (status === "completed") {
-        books = books.filter((b) => b.progress >= 1);
+        books = books.filter((b) => progressOf(b) >= 1);
       }
 
       const result = books.slice(0, limit).map((b) => ({
@@ -251,7 +256,7 @@ export function createListBooksTool(): ToolDefinition {
         title: b.meta.title,
         author: b.meta.author,
         format: b.format,
-        progress: `${Math.round((b.progress || 0) * 100)}%`,
+        progress: `${Math.round(progressOf(b) * 100)}%`,
         isVectorized: b.isVectorized,
         addedAt: b.addedAt,
         lastOpenedAt: b.lastOpenedAt,
@@ -430,8 +435,11 @@ export function createReadingStatsTool(): ToolDefinition {
 
       const totalReadingTimeMs = sessions.reduce((sum, s) => sum + s.totalActiveTime, 0);
       const totalPagesRead = sessions.reduce((sum, s) => sum + s.pagesRead, 0);
-      const booksInProgress = books.filter((b) => b.progress > 0 && b.progress < 1);
-      const booksCompleted = books.filter((b) => b.progress >= 1);
+      // 进度经唯一账本(reading_progress)读取;books.progress 已废弃
+      await useProgressStore.getState().hydrate();
+      const progressOf = (b: Book) => getProgressPercent(b.fileHash);
+      const booksInProgress = books.filter((b) => progressOf(b) > 0 && progressOf(b) < 1);
+      const booksCompleted = books.filter((b) => progressOf(b) >= 1);
 
       return {
         library: {
@@ -448,7 +456,7 @@ export function createReadingStatsTool(): ToolDefinition {
         recentBooks: books.slice(0, 5).map((b) => ({
           title: b.meta.title,
           author: b.meta.author,
-          progress: Math.round((b.progress || 0) * 100),
+          progress: Math.round(progressOf(b) * 100),
         })),
       };
     },

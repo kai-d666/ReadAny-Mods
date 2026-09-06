@@ -26,6 +26,17 @@ vi.mock("../../rag/chunker", () => ({
   estimateTokens: vi.fn((text: string) => Math.ceil(text.length / 4)),
 }));
 
+// 进度唯一账本 mock:工具经 getProgressPercent 读内存 entries,由用例填充
+const progressEntries: Record<string, { cfi: string; percent: number }> = {};
+vi.mock("../../stores/progress-store", () => ({
+  useProgressStore: {
+    getState: () => ({
+      hydrate: vi.fn(async () => {}),
+      entries: progressEntries,
+    }),
+  },
+  getProgressPercent: (hash?: string | null) => progressEntries[hash ?? ""]?.percent ?? 0,
+}));
 vi.mock("../../events/library-events", () => ({
   emitLibraryChanged: vi.fn(),
 }));
@@ -91,10 +102,12 @@ function makeChunk(overrides: Record<string, unknown> = {}) {
 }
 
 function makeBook(overrides: Record<string, unknown> = {}) {
+  const id = (overrides.id as string) ?? "book-1";
   return {
-    id: "book-1",
+    id,
     format: "epub",
     progress: 0.5,
+    fileHash: `hash-${id}`,
     isVectorized: true,
     tags: [],
     addedAt: Date.now() - 86400000,
@@ -238,6 +251,9 @@ describe("listBooks tool", () => {
       makeBook({ id: "b2", progress: 0.5 }),
       makeBook({ id: "b3", progress: 1 }),
     ] as any);
+    progressEntries["hash-b1"] = { cfi: "", percent: 0 };
+    progressEntries["hash-b2"] = { cfi: "", percent: 0.5 };
+    progressEntries["hash-b3"] = { cfi: "", percent: 1 };
 
     const tools = getAvailableTools({ bookId: null, isVectorized: false, enabledSkills: [] });
     const tool = findTool(tools, "listBooks");
@@ -1040,6 +1056,9 @@ describe("getReadingStats tool", () => {
       makeBook({ id: "b2", progress: 1 }),
       makeBook({ id: "b3", progress: 0 }),
     ] as any);
+    progressEntries["hash-b1"] = { cfi: "", percent: 0.5 };
+    progressEntries["hash-b2"] = { cfi: "", percent: 1 };
+    progressEntries["hash-b3"] = { cfi: "", percent: 0 };
     vi.mocked(getReadingSessionsByDateRange).mockResolvedValue([
       { totalActiveTime: 600000, pagesRead: 20 }, // 10 min
       { totalActiveTime: 1200000, pagesRead: 40 }, // 20 min

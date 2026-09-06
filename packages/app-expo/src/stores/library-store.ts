@@ -12,6 +12,7 @@ import {
 } from "@readany/core";
 import * as db from "@readany/core/db/database";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 import { getPlatformService } from "@readany/core/services";
 import type { Book, BookGroup, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
 import { generateId } from "@readany/core/utils";
@@ -969,8 +970,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                   coverUrl: deletedMatch?.meta.coverUrl,
                 },
                 groupId: deletedMatch?.groupId,
-                progress: deletedMatch?.progress ?? 0,
-                currentCfi: deletedMatch?.currentCfi,
+                progress: 0, // 已废弃字段:进度唯一账本 reading_progress(2026-09-07)
+                currentCfi: undefined,
                 isVectorized: false,
                 vectorizeProgress: 0,
                 tags: deletedMatch?.tags ?? [],
@@ -988,8 +989,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                   format: book.format,
                   meta: book.meta,
                   deletedAt: undefined,
-                  progress: book.progress,
-                  currentCfi: book.currentCfi,
                   isVectorized: false,
                   vectorizeProgress: 0,
                   tags: book.tags,
@@ -1001,6 +1000,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               } else {
                 await get().addBook(book);
               }
+              // 恢复/导入后刷新唯一账本进度(账本按 hash 保留,refreshOne 确保内存到位)
+              if (fileHash) await useProgressStore.getState().refreshOne(fileHash);
               result.imported.push(book);
               if (fileHash) {
                 duplicateIndex.byHash.set(fileHash, book);
@@ -1092,8 +1093,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                   coverUrl: coverUrl || deletedMatch?.meta.coverUrl,
                 },
                 groupId: deletedMatch?.groupId,
-                progress: deletedMatch?.progress ?? 0,
-                currentCfi: deletedMatch?.currentCfi,
+                progress: 0, // 已废弃字段:进度唯一账本 reading_progress(2026-09-07)
+                currentCfi: undefined,
                 isVectorized: false,
                 vectorizeProgress: 0,
                 tags: deletedMatch?.tags ?? [],
@@ -1111,8 +1112,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
                   format: book.format,
                   meta: book.meta,
                   deletedAt: undefined,
-                  progress: book.progress,
-                  currentCfi: book.currentCfi,
                   isVectorized: false,
                   vectorizeProgress: 0,
                   tags: book.tags,
@@ -1124,6 +1123,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
               } else {
                 await get().addBook(book);
               }
+              // 恢复/导入后刷新唯一账本进度(账本按 hash 保留,refreshOne 确保内存到位)
+              if (fileHash) await useProgressStore.getState().refreshOne(fileHash);
               result.imported.push(book);
               if (fileHash) {
                 duplicateIndex.byHash.set(fileHash, book);
@@ -1325,8 +1326,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         format: restoredBook.format,
         meta: restoredBook.meta,
         deletedAt: undefined,
-        progress: restoredBook.progress,
-        currentCfi: restoredBook.currentCfi,
         isVectorized: false,
         vectorizeProgress: 0,
         tags: restoredBook.tags,
@@ -1335,6 +1334,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         lastOpenedAt: restoredBook.lastOpenedAt,
       });
       debouncedSave("library-books", get().books);
+      if (restoredBook.fileHash) {
+        await useProgressStore.getState().refreshOne(restoredBook.fileHash);
+      }
     } catch (err) {
       console.error("Failed to restore deleted book from database:", err);
       return null;
