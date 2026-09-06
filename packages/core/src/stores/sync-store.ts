@@ -804,7 +804,19 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     if ("error" in backend) return backend;
     try {
       const { deleteRemoteBookFromCloud } = await import("../sync/cloud-library");
-      return await deleteRemoteBookFromCloud(backend, fileHash);
+      const result = await deleteRemoteBookFromCloud(backend, fileHash);
+      // 删除成功后立即剔除本地"云端绑定"角标状态(2026-09-07 审计修复:
+      // 原实现只删远端文件,cloudHashes 残留导致书库角标错误残留到下次同步)
+      if (!("error" in result)) {
+        set((s) => ({
+          cloudHashes: s.cloudHashes
+            ? s.cloudHashes.filter(
+                (h) => h.toLowerCase() !== String(fileHash).toLowerCase(),
+              )
+            : null,
+        }));
+      }
+      return result;
     } catch (e) {
       return { error: e instanceof Error ? e.message : String(e) };
     }

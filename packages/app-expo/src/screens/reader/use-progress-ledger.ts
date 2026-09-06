@@ -42,6 +42,8 @@ export function useProgressLedger(
   const progressWrittenRef = useRef(false);
   const settledFractionRef = useRef(0);
   const lastAutoUploadPageRef = useRef(0);
+  // 最新真实翻页(节流定时器可能尚未落库):退书 flush 用于"先落库再上传"
+  const pendingWriteRef = useRef<{ cfi: string; percent: number; page: number } | null>(null);
 
   // 换书重置(与原组件 useEffect([bookId]) 等价)
   useEffect(() => {
@@ -51,13 +53,14 @@ export function useProgressLedger(
     progressWrittenRef.current = false;
     settledFractionRef.current = 0;
     lastAutoUploadPageRef.current = 0;
+    pendingWriteRef.current = null;
   }, [bookId]);
 
   const writeLedger = useCallback(
     (cfi: string, percent: number, page: number) => {
       // 唯一写入口:reading_progress + 内存进度 store(不落 books 表)
       upsert(fileHash, { cfi, percent });
-      void saveReadingProgressForBook(bookId, { cfi, percent }).catch((err: Error) =>
+      const persist = saveReadingProgressForBook(bookId, { cfi, percent }).catch((err: Error) =>
         console.error("Failed to save reading progress:", err),
       );
       // 阅读中定期推送:每 N 页(页码累计差)静默上传一次快照
@@ -69,9 +72,14 @@ export function useProgressLedger(
       } else {
         lastAutoUploadPageRef.current = page;
       }
+      return persist;
     },
     [bookId, fileHash, upsert],
   );
+
+  // 最新 writeLedger 引用(flushOnUnmount 需要"落库完成再上传",但自身须保持依赖 [] 稳定)
+  const writeLedgerRef = useRef(writeLedger);
+  writeLedgerRef.current = writeLedger;
 
   const throttledWrite = useRef(
     throttle((cfi: string, percent: number, page: number) => writeLedger(cfi, percent, page), 5000),
@@ -101,6 +109,8 @@ export function useProgressLedger(
           // 渲染器抖动帧:不视为翻页(用户主动跳转是真实动作,与其他帧一样处理)
         } else {
           progressWrittenRef.current = true;
+          // 先记录最新真实翻页:节流定时器未到期时退书,flush 也能落库最新值再上传
+          pendingWriteRef.current = { cfi, percent: fraction ?? 0, page };
           throttledWrite(cfi, fraction ?? 0, page);
         }
       }
@@ -137,9 +147,19 @@ export function useProgressLedger(
     }
   }, [fileHash]);
 
-  /** 退书页:只上传既有账(节流已维护),不写值 */
+  /** 退书页:先把最新翻页落库(节流定时器可能未到期),再上传——防止云端收到旧快照 */
   const flushOnUnmount = useCallback(() => {
-    void useSyncStore.getState().syncNow?.();
+    const pending = pendingWriteRef.current;
+    if (!pending) {
+      void useSyncStore.getState().syncNow?.();
+      return;
+    }
+    pendingWriteRef.current = null;
+    const latest = pending;
+    void (async () => {
+      await writeLedgerRef.current(latest.cfi, latest.percent, latest.page);
+      void useSyncStore.getState().syncNow?.();
+    })();
   }, []);
 
   /** 本次是否已真实写入(远端进度应用时"本机动作优先") */

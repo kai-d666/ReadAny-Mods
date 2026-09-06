@@ -369,7 +369,11 @@ async function restoreDeletedMobileBook(
   const format: Book["format"] = formatMap[ext || ""] || "epub";
   const fileName = originalName;
   const platform = getPlatformService();
-  const { size: fileSize, md5: fileHash } = await getMobileFileStat(filePath);
+  const { size: fileSize } = await getMobileFileStat(filePath);
+  // 与 importBooks 同轨道:内容 SHA-256(2026-09-07 审计修复:旧 md5 会造成
+  // sha256/md5 双身份,进度账本按 hash 绑定,双身份让恢复后的书进度/去重/绑定全部失效);
+  // hash 失败 → 沿用原作 hash,至少保住进度绑定。
+  const fileHash = (await sha256File(filePath)) ?? originalBook.fileHash ?? undefined;
 
   if (ext === "txt") {
     const sourceBytes = await platform.readFile(filePath);
@@ -565,7 +569,11 @@ async function inspectDeletedMobileBookCandidate(
   };
   const format: Book["format"] = formatMap[ext || ""] || "epub";
   const fileName = originalName;
-  const { size: fileSize, md5: fileHash } = await getMobileFileStat(filePath);
+  const { size: fileSize } = await getMobileFileStat(filePath);
+  // 与 importBooks 同轨道:内容 SHA-256(2026-09-07 审计修复:旧 md5 会造成
+  // sha256/md5 双身份,进度账本按 hash 绑定,双身份让恢复后的书进度/去重/绑定全部失效);
+  // hash 失败 → 沿用原作 hash,至少保住进度绑定。
+  const fileHash = (await sha256File(filePath)) ?? originalBook.fileHash ?? undefined;
 
   if (ext === "txt") {
     try {
