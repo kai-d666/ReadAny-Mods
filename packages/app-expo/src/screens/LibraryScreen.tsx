@@ -56,6 +56,7 @@ import {
 import { setFallbackContentProvider } from "@readany/core/ai";
 import { onLibraryChanged } from "@readany/core/events/library-events";
 import { useSyncStore } from "@readany/core/stores";
+import { getProgressPercent } from "@readany/core/stores/progress-store";
 import { SYNC_SECRET_KEYS } from "@readany/core/sync/sync-backend";
 import type { Book, BookGroup, SortField } from "@readany/core/types";
 import * as DocumentPicker from "expo-document-picker";
@@ -388,7 +389,7 @@ export function LibraryScreen() {
           cmp = (a.lastOpenedAt || 0) - (b.lastOpenedAt || 0);
           break;
         case "progress":
-          cmp = a.progress - b.progress;
+          cmp = getProgressPercent(a.fileHash) - getProgressPercent(b.fileHash);
           break;
       }
       return sortOrder === "desc" ? -cmp : cmp;

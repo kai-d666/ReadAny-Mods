@@ -7,6 +7,7 @@ import { getPlatformService } from "@readany/core/services";
  */
 import type { Book } from "@readany/core/types";
 import { getBookProgressPercent } from "@readany/core/utils";
+import { getProgressPercent } from "@readany/core/stores/progress-store";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSyncStore } from "@readany/core/stores";
 import { useTranslation } from "react-i18next";
@@ -133,7 +134,7 @@ export const BookCard = memo(function BookCard({
     })();
   }, [book.meta.coverUrl]);
 
-  const progressPct = getBookProgressPercent(book.progress);
+  const progressPct = getBookProgressPercent(getProgressPercent(book.fileHash));
 
   const vecPct = vectorProgress
     ? vectorProgress.totalChunks > 0

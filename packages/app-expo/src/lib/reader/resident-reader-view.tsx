@@ -23,6 +23,7 @@ import { WebView, type WebViewMessageEvent } from "react-native-webview";
 
 import { getReaderHtmlUriSync, preloadReaderHtmlAsset } from "@/lib/reader/reader-html-asset";
 import { getPlatformService } from "@readany/core";
+import { getProgressCfi } from "@readany/core/stores/progress-store";
 
 const READER_HTML_ASSET = Asset.fromModule(require("../../../assets/reader/reader.html"));
 
@@ -405,6 +406,6 @@ export async function preloadResumeBook(): Promise<void> {
     uri: `${serverUrl}/${encodedPath}`,
     fileName,
     mimeType: mime,
-    lastLocation: book.currentCfi || undefined,
+    lastLocation: getProgressCfi(book.fileHash) || undefined,
   });
 }

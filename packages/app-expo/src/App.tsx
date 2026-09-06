@@ -39,6 +39,7 @@ import { CoverPrefetcher } from "@/components/library/CoverPrefetcher";
 import { rnSessionEventSource } from "@/hooks";
 import { setStreamingFetch } from "@readany/core/ai/llm-provider";
 import { initDatabase } from "@readany/core/db/database";
+import { useProgressStore } from "@readany/core/stores/progress-store";
 import { installFeedbackLogCapture, setFeedbackWorkerUrl } from "@readany/core/feedback";
 import { setSessionEventSource } from "@readany/core/hooks/use-reading-session";
 import { i18nReady, initI18nLanguage } from "@readany/core/i18n";
@@ -320,6 +321,10 @@ function AppInner() {
   const loadBooks = useLibraryStore((s) => s.loadBooks);
   useUpdateChecker();
   useAutoSync(loadBooks);
+  // 进度直读 store:启动即 hydrate(唯一账本 reading_progress 的内存读模型)
+  useEffect(() => {
+    void useProgressStore.getState().hydrate();
+  }, []);
 
   const navTheme = useMemo(
     () => ({

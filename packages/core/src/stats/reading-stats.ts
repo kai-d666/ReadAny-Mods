@@ -45,7 +45,8 @@ export interface PeriodBookStats {
   author: string;
   coverUrl?: string;
   totalTime: number; // minutes
-  progress: number; // 0-1
+  /** 当前进度展示走 getProgressPercent(fileHash)(唯一账本 reading_progress) */
+  fileHash?: string;
 }
 
 export interface TrendPoint {
@@ -175,7 +176,7 @@ export class ReadingStatsService {
         author: book.meta.author,
         coverUrl: book.meta.coverUrl,
         totalTime: totalMs / 60000,
-        progress: book.progress,
+        fileHash: book.fileHash,
       });
     }
 

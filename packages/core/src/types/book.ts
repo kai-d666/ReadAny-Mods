@@ -46,7 +46,10 @@ export interface Book {
   lastOpenedAt?: number;
   updatedAt: number;
   deletedAt?: number;
+  /** @deprecated 移动端进度唯一账本=reading_progress(经 useProgressStore 直读);
+   *  字段仅保留给桌面端(packages/app)使用,移动端不再读写。 */
   progress: number; // 0-1
+  /** @deprecated 同上 */
   currentCfi?: string; // EPUB CFI position or PDF page marker (e.g. "page-5")
   isVectorized: boolean;
   vectorizeProgress: number; // 0-1

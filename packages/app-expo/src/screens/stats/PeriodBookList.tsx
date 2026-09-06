@@ -1,6 +1,7 @@
 import { useColors } from "@/styles/theme";
 import type { PeriodBookStats } from "@readany/core/stats";
 import { getBookProgressPercent } from "@readany/core/utils";
+import { getProgressPercent } from "@readany/core/stores/progress-store";
 import { useTranslation } from "react-i18next";
 import { Image, Text, View } from "react-native";
 import { makeStyles } from "./stats-styles";
@@ -25,7 +26,7 @@ export function PeriodBookList({
     <View style={{ gap: 6 }}>
       {books.map((book) => {
         const coverUrl = resolvedCovers.get(book.bookId) || book.coverUrl;
-        const progressPct = getBookProgressPercent(book.progress);
+        const progressPct = getBookProgressPercent(getProgressPercent(book.fileHash));
         return (
           <View key={book.bookId} style={s.bookRow}>
             {coverUrl ? (

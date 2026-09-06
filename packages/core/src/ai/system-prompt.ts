@@ -10,6 +10,7 @@
 import type { Book, Skill } from "../types";
 import { KNOWLEDGE_CHOICE_TOOLS, LITE_CHOICE_TOOLS } from "./tools";
 import { getBookProgressPercent } from "../utils/book-progress";
+import { getProgressPercent } from "../stores/progress-store";
 
 type ReadingQuestionCategory =
   | "general_chat"
@@ -126,7 +127,7 @@ function buildBookContextSection(
         : !lang && userLanguage
           ? `- Query guidance: the book's language is unknown — infer it from chapter titles and content snippets (e.g. '4. Launch' suggests English). When constructing retrieval queries, use the inferred book language ONLY — do not mix the user's language words into the query.`
           : "",
-    `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
+    `- Reading Progress: ${getBookProgressPercent(getProgressPercent(book.fileHash))}%`,
     currentChapter?.title ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})` : "",
     currentPosition?.percentage != null
       ? `- Reading Position: ${currentPosition.percentage.toFixed(2)}%`
@@ -646,7 +647,7 @@ function buildConstraintsSection(
   ];
 
   if (spoilerFree && book) {
-    const progress = getBookProgressPercent(book.progress);
+    const progress = getBookProgressPercent(getProgressPercent(book.fileHash));
     const chapter = currentChapterTitle || "unknown";
     lines.push("");
     lines.push("### Spoiler-Free Mode (ACTIVE)");
@@ -771,7 +772,7 @@ function buildKnowledgeBookSection(
   // description/subjects) is the thread's first system message.
   const lines = [
     "## Reading Progress",
-    `- Reading Progress: ${getBookProgressPercent(book.progress)}%`,
+    `- Reading Progress: ${getBookProgressPercent(getProgressPercent(book.fileHash))}%`,
     currentChapter?.title
       ? `- Current Chapter: ${currentChapter.title} (index ${currentChapter.index})`
       : "",
@@ -803,7 +804,7 @@ function buildKnowledgeConstraintsSection(
   // stored knowledge of the book. The boundary is the reader's position
   // (injected per-turn); behaviour = guarded one-line overview, not refusal.
   if (spoilerFree && book) {
-    const progress = getBookProgressPercent(book.progress);
+    const progress = getBookProgressPercent(getProgressPercent(book.fileHash));
     lines.push("");
     lines.push("### Spoiler-Free Mode (ACTIVE)");
     lines.push(
@@ -852,7 +853,7 @@ function buildLiteConstraintsSection(
   ];
 
   if (spoilerFree && book) {
-    const progress = getBookProgressPercent(book.progress);
+    const progress = getBookProgressPercent(getProgressPercent(book.fileHash));
     lines.push("");
     lines.push("### Spoiler-Free Mode (ACTIVE)");
     lines.push(

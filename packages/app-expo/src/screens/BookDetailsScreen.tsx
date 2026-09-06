@@ -35,6 +35,7 @@ import {
   mergeMissingBookMetadataValues,
   splitEditableList,
 } from "@readany/core/utils";
+import { getProgressPercent } from "@readany/core/stores/progress-store";
 import * as ImagePicker from "expo-image-picker";
 import type { TFunction } from "i18next";
 import { Star } from "lucide-react-native";
@@ -513,7 +514,7 @@ export function BookDetailsScreen({ route }: Props) {
     );
   }
 
-  const progressPct = getBookProgressPercent(book.progress);
+  const progressPct = getBookProgressPercent(getProgressPercent(book.fileHash));
   const groupName = resolveGroupName(book, groups, t("sidebar.uncategorized", "未分类"));
   const reviewCount = values.reviews.filter((review) => review.content.trim()).length;
 
