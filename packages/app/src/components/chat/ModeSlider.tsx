@@ -41,15 +41,27 @@ const MODES: Array<{
 
 export function ModeSlider({ mode, onChange, className }: ModeSliderProps) {
   const { t } = useTranslation();
+  const activeIndex = MODES.findIndex((m) => m.id === mode);
+  const safeIndex = activeIndex >= 0 ? activeIndex : 2; // Default knowledge (2)
 
   return (
     <TooltipProvider delayDuration={300}>
       <div
         className={cn(
-          "inline-flex items-center rounded-lg bg-muted/60 p-0.5 border border-border/50 text-xs font-medium select-none",
+          "relative inline-flex items-center h-7 w-[190px] rounded-full bg-muted/60 dark:bg-muted/40 p-0.5 border border-border/50 select-none shadow-inner",
           className,
         )}
       >
+        {/* Raised sliding pill thumb */}
+        <div
+          className="absolute top-0.5 bottom-0.5 rounded-full bg-background dark:bg-card shadow-sm border border-border/60 transition-all duration-200 ease-out"
+          style={{
+            width: "calc((100% - 4px) / 3)",
+            left: `calc(2px + ${safeIndex} * ((100% - 4px) / 3))`,
+          }}
+        />
+
+        {/* Mode segments */}
         {MODES.map((item) => {
           const isActive = mode === item.id;
           return (
@@ -59,10 +71,10 @@ export function ModeSlider({ mode, onChange, className }: ModeSliderProps) {
                   type="button"
                   onClick={() => onChange(item.id)}
                   className={cn(
-                    "px-2.5 py-1 rounded-md transition-all duration-150 text-[11px] leading-none font-medium",
+                    "relative z-10 flex-1 h-full rounded-full text-center text-[11px] leading-none transition-colors duration-150 flex items-center justify-center font-medium",
                     isActive
-                      ? "bg-background text-foreground shadow-sm font-semibold"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/40",
+                      ? "text-foreground font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {t(item.labelKey, item.defaultLabel)}

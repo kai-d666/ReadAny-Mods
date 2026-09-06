@@ -42,8 +42,31 @@ export function ToolPrefsMenu({ chatMode, className }: ToolPrefsMenuProps) {
     [aiConfig.toolPrefs, mode, updateAIConfig],
   );
 
-  // Standard mode has no choice items
-  if (!mode || items.length === 0) return null;
+  // Standard mode has no choice items — show subtle disabled pill to preserve layout stability
+  if (!mode || items.length === 0) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              disabled
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1 rounded-full border border-border/40 text-xs font-medium text-muted-foreground/50 cursor-not-allowed select-none opacity-60",
+                className,
+              )}
+            >
+              <Wrench className="size-3" />
+              <span>{t("chat.toolPrefs", "工具")}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            {t("chat.toolPrefsStandardHint", "标准模式自动按需调用所有工具，无需单独配置")}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
 
   const hasActiveTools = enabled.length > 0;
 
@@ -56,18 +79,18 @@ export function ToolPrefsMenu({ chatMode, className }: ToolPrefsMenuProps) {
               <button
                 type="button"
                 className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors select-none",
+                  "flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium transition-all select-none",
                   hasActiveTools
-                    ? "bg-primary/10 text-primary hover:bg-primary/15 font-semibold"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                    ? "border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 font-semibold shadow-xs"
+                    : "border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60",
                   className,
                 )}
                 aria-label={t("chat.toolPrefs", "工具开关")}
               >
-                <Wrench className="h-3.5 w-3.5" />
+                <Wrench className="size-3" />
                 <span>{t("chat.toolPrefs", "工具")}</span>
                 {hasActiveTools && (
-                  <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground leading-none">
+                  <span className="flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground leading-none">
                     {enabled.length}
                   </span>
                 )}
@@ -75,7 +98,7 @@ export function ToolPrefsMenu({ chatMode, className }: ToolPrefsMenuProps) {
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            {t("chat.toolPrefsSubtitle", "仅列出当前模式可选的工具")}
+            {t("chat.toolPrefsSubtitle", "仅列出当前模式可选的工具 (默认关闭)")}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
