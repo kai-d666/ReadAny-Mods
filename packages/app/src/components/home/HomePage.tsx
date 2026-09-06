@@ -585,7 +585,7 @@ export function HomePage() {
                 title={t("sync.cloudLibraryTitle", "云端书库")}
                 onClick={() => setShowCloudLibrary(true)}
               >
-                <Cloud className="size-4" />
+                <Cloud className="size-4 text-amber-500" />
               </button>
             </div>
             <div className="flex items-center gap-2">
