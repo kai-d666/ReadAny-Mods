@@ -79,8 +79,8 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
   const [importState, setImportState] = useState<ImportState>({ phase: "idle" });
   const [formatTarget, setFormatTarget] = useState<OpdsPublication | null>(null);
 
-  // OpenSearch 模板缓存(首次搜索时从 feed.searchHref 懒取)
-  const openSearchRef = useRef<{ href: string; template: string } | null>(null);
+  // 搜索模板缓存:OPDS-1 从 feed.searchHref 懒取 OpenSearch 文档;OPDS-2 直接内联
+  const openSearchRef = useRef<{ href?: string; template: string } | null>(null);
 
   const loadFeedWith = useCallback(
     async (activeClient: OpdsClient, href: string, title: string, append: boolean) => {
@@ -101,7 +101,7 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
             if (top && top.href === href) return cur;
             return [...cur, { title, href }];
           });
-          setShowSearch(!!nextFeed.searchHref);
+          setShowSearch(!!(nextFeed.searchHref || nextFeed.searchTemplate));
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -163,9 +163,14 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
     const query = search.trim();
     if (!query || !client || !feed) return;
     try {
-      if (!openSearchRef.current && feed.searchHref) {
-        const os = await client.fetchOpenSearch(feed.searchHref);
-        openSearchRef.current = { href: feed.searchHref, template: os.template };
+      if (!openSearchRef.current) {
+        if (feed.searchTemplate) {
+          // OPDS-2:模板内联在 catalog 元数据
+          openSearchRef.current = { template: feed.searchTemplate };
+        } else if (feed.searchHref) {
+          const os = await client.fetchOpenSearch(feed.searchHref);
+          openSearchRef.current = { href: feed.searchHref, template: os.template };
+        }
       }
       const template = openSearchRef.current?.template;
       if (!template) return;

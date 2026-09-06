@@ -117,6 +117,45 @@ describe("OpdsClient.feed fetching", () => {
     const client = new OpdsClient(createSource(), "");
     await expect(client.testConnection()).resolves.toMatchObject({ title: "古登堡计划" });
   });
+
+  it("parses OPDS-2 JSON catalogs (application/opds+json content-type)", async () => {
+    const json = JSON.stringify({
+      metadata: {
+        title: "Komga",
+        search: { template: "https://komga.example.com/search?query={query}" },
+      },
+      publications: [
+        {
+          metadata: { title: "Book" },
+          links: [
+            { rel: "http://opds-spec.org/acquire", type: "application/epub+zip", href: "book.epub" },
+          ],
+        },
+      ],
+    });
+    installPlatform(async () => {
+      const headers = new Headers();
+      headers.set("content-type", "application/opds+json");
+      return new Response(json, { status: 200, headers });
+    });
+    const client = new OpdsClient(createSource(), "");
+    const feed = await client.fetchFeed("https://komga.example.com/opds/v2/");
+    expect(feed.title).toBe("Komga");
+    expect(feed.searchTemplate).toContain("{query}");
+    expect(feed.publications[0].acquisitions[0].extension).toBe("epub");
+  });
+
+  it("parses OPDS-2 JSON even when content-type is missing (body sniffing)", async () => {
+    const json = JSON.stringify({
+      metadata: { title: "noContentType" },
+      publications: [],
+    });
+    installPlatform(async () => new Response(json, { status: 200 }));
+    const client = new OpdsClient(createSource(), "");
+    const feed = await client.fetchFeed("https://server.example.com/catalog");
+    expect(feed.title).toBe("noContentType");
+    expect(feed.publications).toHaveLength(0);
+  });
 });
 
 describe("OpdsClient.openSearch", () => {

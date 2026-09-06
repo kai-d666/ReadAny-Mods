@@ -23,6 +23,7 @@ import {
   type OpdsOpenSearch,
   type OpdsSource,
 } from "./opds";
+import { parseOpds2 } from "./opds2";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_MAX_ATTEMPTS = 3;
@@ -194,7 +195,7 @@ export class OpdsClient {
     return status === 429 || (status >= 500 && status < 600);
   }
 
-  private async requestText(href: string, timeoutMs: number): Promise<string> {
+  private async requestText(href: string, timeoutMs: number): Promise<{ text: string; contentType: string }> {
     for (let attempt = 0; ; attempt++) {
       const startTime = Date.now();
       const platform = getPlatformService();
@@ -202,7 +203,7 @@ export class OpdsClient {
         const response = await platform.fetch(href, {
           method: "GET",
           headers: {
-            Accept: `${OPDS_MIME_ATOM}, application/xml;q=0.9, */*;q=0.8`,
+            Accept: `${OPDS_MIME_ATOM}, application/opds+json, application/xml;q=0.9, */*;q=0.8`,
             ...this.getAuthHeaders(),
           },
           responseType: "text",
@@ -211,7 +212,10 @@ export class OpdsClient {
         });
         if (response.ok) {
           console.log(`[OpdsClient] GET ${href} completed in ${Date.now() - startTime}ms`);
-          return await response.text();
+          return {
+            text: await response.text(),
+            contentType: response.headers?.get?.("content-type") ?? "",
+          };
         }
         if (attempt < RETRY_MAX_ATTEMPTS && this.isTransientStatus(response.status)) {
           const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
@@ -229,19 +233,31 @@ export class OpdsClient {
     }
   }
 
-  /** 读一个目录 feed(根目录/分类子目录/搜索结果都是它) */
+  /** 读一个目录 feed(根目录/分类子目录/搜索结果都是它);OPDS-1 (Atom) 与 OPDS-2 (JSON) 都支持 */
   async fetchFeed(href: string, options: { timeoutMs?: number } = {}): Promise<OpdsFeed> {
-    const text = await this.requestText(href, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const { text, contentType } = await this.requestText(href, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    // XML 文档绝不可能以 "{"/"[" 开头,按 body 首字符判断 JSON 更可靠(content-type 缺失/错误的服务器常见)
+    const isJsonCatalog =
+      contentType.includes("opds+json") || text.trimStart().startsWith("{");
     try {
+      if (isJsonCatalog) return parseOpds2(text, href);
       return parseOpdsFeed(text, href);
     } catch (error) {
+      // JSON 判断失败但内容其实是 JSON(服务器没给 content-type)时再试一次
+      if (!isJsonCatalog && text.trimStart().startsWith("{")) {
+        try {
+          return parseOpds2(text, href);
+        } catch {
+          // fall through to not-opds
+        }
+      }
       throw createNotOpdsError(href, error);
     }
   }
 
   /** 读 OpenSearch Description(feed 里 rel=search 指向的地址) */
   async fetchOpenSearch(href: string, options: { timeoutMs?: number } = {}): Promise<OpdsOpenSearch> {
-    const text = await this.requestText(href, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const { text } = await this.requestText(href, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     try {
       return parseOpenSearch(text);
     } catch (error) {

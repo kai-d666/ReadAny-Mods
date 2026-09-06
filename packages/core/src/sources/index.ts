@@ -4,5 +4,6 @@
  */
 
 export * from "./opds";
+export * from "./opds2";
 export * from "./opds-client";
 export * from "./opds-source-store";

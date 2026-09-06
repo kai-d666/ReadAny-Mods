@@ -97,6 +97,8 @@ export interface OpdsFeed {
   publications: OpdsPublication[];
   nextHref?: string; // feed 级 <link rel="next">
   searchHref?: string; // feed 级 <link rel="search">(OpenSearch Description 地址)
+  /** OPDS-2:搜索模板直接内联在 catalog 元数据里,无需外取 OpenSearch 文档 */
+  searchTemplate?: string;
 }
 
 export interface OpdsOpenSearch {
@@ -455,6 +457,7 @@ export function parseOpenSearch(xml: string): OpdsOpenSearch {
 export function buildOpenSearchUrl(template: string, query: string): string {
   const defaults: Record<string, string> = {
     searchTerms: encodeURIComponent(query),
+    query: encodeURIComponent(query), // OPDS-2 部分实现用 {query}
     count: "100",
     startIndex: "0",
     startPage: "0",
