@@ -28,10 +28,10 @@ WebDAV 导入必须和同步分开。
 
 当前能力主要在：
 
-- [packages/core/src/stores/sync-store.ts](/Users/tuntuntutu/Project/ReadAny/packages/core/src/stores/sync-store.ts)
-- [packages/core/src/sync/webdav-client.ts](/Users/tuntuntutu/Project/ReadAny/packages/core/src/sync/webdav-client.ts)
-- [packages/app-expo/src/screens/settings/SyncSettingsScreen.tsx](/Users/tuntuntutu/Project/ReadAny/packages/app-expo/src/screens/settings/SyncSettingsScreen.tsx)
-- [packages/app/src/components/settings/SyncSettings.tsx](/Users/tuntuntutu/Project/ReadAny/packages/app/src/components/settings/SyncSettings.tsx)
+- [packages/core/src/stores/sync-store.ts](packages/core/src/stores/sync-store.ts)
+- [packages/core/src/sync/webdav-client.ts](packages/core/src/sync/webdav-client.ts)
+- [packages/app-expo/src/screens/settings/SyncSettingsScreen.tsx](packages/app-expo/src/screens/settings/SyncSettingsScreen.tsx)
+- [packages/app/src/components/settings/SyncSettings.tsx](packages/app/src/components/settings/SyncSettings.tsx)
 
 ### 导入的心智
 

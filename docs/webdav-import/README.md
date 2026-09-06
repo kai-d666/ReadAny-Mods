@@ -1,3 +1,5 @@
+> 状态:snapshot(2026-08 设计文档;实现已落地 WebDavImportBrowserScreen/WebDavConnectSheet,当前同步体系见 claude-index 手册 §4)
+
 # WebDAV Book Import Design
 
 这组文档用于定义 ReadAny 的 `WebDAV 导入书籍` 能力。
@@ -11,9 +13,9 @@
 
 文档目录：
 
-- [01-product-positioning-and-ia.md](/Users/tuntuntutu/Project/ReadAny/docs/webdav-import/01-product-positioning-and-ia.md)
-- [02-interaction-flows-and-states.md](/Users/tuntuntutu/Project/ReadAny/docs/webdav-import/02-interaction-flows-and-states.md)
-- [03-implementation-roadmap.md](/Users/tuntuntutu/Project/ReadAny/docs/webdav-import/03-implementation-roadmap.md)
+- [01-product-positioning-and-ia.md](docs/webdav-import/01-product-positioning-and-ia.md)
+- [02-interaction-flows-and-states.md](docs/webdav-import/02-interaction-flows-and-states.md)
+- [03-implementation-roadmap.md](docs/webdav-import/03-implementation-roadmap.md)
 
 当前约束：
 

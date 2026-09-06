@@ -1,3 +1,5 @@
+> 状态:done(已落地:core/tts engine="system" + systemVoiceLabel 实现)
+
 # 系统语音方案设计
 
 ## 一、背景

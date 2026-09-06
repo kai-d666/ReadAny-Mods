@@ -21,9 +21,9 @@
 
 已有：
 
-- [packages/core/src/sync/webdav-client.ts](/Users/tuntuntutu/Project/ReadAny/packages/core/src/sync/webdav-client.ts)
-- [packages/core/src/sync/webdav-backend.ts](/Users/tuntuntutu/Project/ReadAny/packages/core/src/sync/webdav-backend.ts)
-- [packages/core/src/stores/sync-store.ts](/Users/tuntuntutu/Project/ReadAny/packages/core/src/stores/sync-store.ts)
+- [packages/core/src/sync/webdav-client.ts](packages/core/src/sync/webdav-client.ts)
+- [packages/core/src/sync/webdav-backend.ts](packages/core/src/sync/webdav-backend.ts)
+- [packages/core/src/stores/sync-store.ts](packages/core/src/stores/sync-store.ts)
 
 这里已经具备：
 
@@ -36,8 +36,8 @@
 
 已有：
 
-- [packages/app-expo/src/screens/LibraryScreen.tsx](/Users/tuntuntutu/Project/ReadAny/packages/app-expo/src/screens/LibraryScreen.tsx)
-- [packages/app-expo/src/stores/library-store.ts](/Users/tuntuntutu/Project/ReadAny/packages/app-expo/src/stores/library-store.ts)
+- [packages/app-expo/src/screens/LibraryScreen.tsx](packages/app-expo/src/screens/LibraryScreen.tsx)
+- [packages/app-expo/src/stores/library-store.ts](packages/app-expo/src/stores/library-store.ts)
 
 目前移动端是：
 
@@ -49,9 +49,9 @@
 
 已有：
 
-- [packages/app/src/components/home/HomePage.tsx](/Users/tuntuntutu/Project/ReadAny/packages/app/src/components/home/HomePage.tsx)
-- [packages/app/src/components/home/ImportDropZone.tsx](/Users/tuntuntutu/Project/ReadAny/packages/app/src/components/home/ImportDropZone.tsx)
-- [packages/app/src/stores/library-store.ts](/Users/tuntuntutu/Project/ReadAny/packages/app/src/stores/library-store.ts)
+- [packages/app/src/components/home/HomePage.tsx](packages/app/src/components/home/HomePage.tsx)
+- [packages/app/src/components/home/ImportDropZone.tsx](packages/app/src/components/home/ImportDropZone.tsx)
+- [packages/app/src/stores/library-store.ts](packages/app/src/stores/library-store.ts)
 
 桌面端当前已支持：
 
