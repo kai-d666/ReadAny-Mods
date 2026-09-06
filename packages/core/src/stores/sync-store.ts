@@ -30,6 +30,7 @@ import type { CloudBookEntry } from "../sync/cloud-library";
 import { sanitizeWebDavRemoteRoot, sanitizeWebDavUrl } from "../sync/webdav-client";
 import { hasRemoteChanges, uploadOwnSnapshot } from "../sync/simple-sync";
 import { eventBus } from "../utils/event-bus";
+import { useProgressStore } from "./progress-store";
 
 let activeSyncPromise: Promise<SyncResult | null> | null = null;
 const SYNC_RUNTIME_STATE_KEY = "sync_runtime_state";
@@ -1059,6 +1060,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         };
 
         notifyLibraryStateChanged();
+        // 进度唯一读模型内存重载(2026-09-07 修复):拉取合并会更新 reading_progress
+        // (云端其他设备的新进度),而 progress-store 的 entries 只 hydrate 于启动时刻
+        // → 云书库/书库角标停留在旧值(实测:同步后仍是 2%,DB 其实已是 29%)。
+        try {
+          await useProgressStore.getState().hydrate();
+        } catch (error) {
+          console.warn("[SyncStore] progress hydrate after sync failed:", error);
+        }
 
         if (result.success) {
           const syncedAt = Date.now();
