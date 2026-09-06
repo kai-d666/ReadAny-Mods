@@ -18,6 +18,7 @@ export default function DevToolsScreen() {
   const topBarBg = devFlags.readerTopBarBackground;
   const bottomBarBg = devFlags.readerBottomBarBackground;
   const syncTraceBanner = devFlags.syncTraceBanner;
+  const localOpdsServer = devFlags.localOpdsServer;
   const s = makeStyles(colors);
 
   return (
@@ -53,6 +54,22 @@ export default function DevToolsScreen() {
               <Switch
                 value={syncTraceBanner}
                 onValueChange={(v) => setDevFlag("syncTraceBanner", v)}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+          </View>
+          <View style={s.section}>
+            <Text style={[s.sectionTitle, { color: colors.mutedForeground }]}>书源服务端</Text>
+            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rowTitle, { color: colors.foreground }]}>本机书源服务端</Text>
+                <Text style={[s.rowDesc, { color: colors.mutedForeground }]}>
+                  实验性:在本机 127.0.0.1 启动 OPDS 书源服务(LibGen 上游),并自动加入书源列表。仅建议自用。
+                </Text>
+              </View>
+              <Switch
+                value={localOpdsServer}
+                onValueChange={(v) => setDevFlag("localOpdsServer", v)}
                 trackColor={{ true: colors.primary }}
               />
             </View>

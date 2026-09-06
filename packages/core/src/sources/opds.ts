@@ -223,6 +223,10 @@ type XmlDocument = {
 
 // 类型转换:xmldom 返回自己的文档对象,与 DOM lib 不完全兼容
 function parseXmlDocument(xml: string): XmlDocument {
+  // xmldom 对空串/非字符串报的是 "invalid doc source"(无信息量),这里先翻译
+  if (typeof xml !== "string" || xml.trim() === "") {
+    throw new OpdsParseError(`Empty feed body (${typeof xml}, length ${(xml ?? "").length})`);
+  }
   return new DOMParser().parseFromString(xml, "application/xml") as unknown as XmlDocument;
 }
 

@@ -211,9 +211,12 @@ export class OpdsClient {
           timeoutMs,
         });
         if (response.ok) {
-          console.log(`[OpdsClient] GET ${href} completed in ${Date.now() - startTime}ms`);
+          const text = await response.text();
+          console.log(
+            `[OpdsClient] GET ${href} completed in ${Date.now() - startTime}ms (status ${response.status}, bodyLen ${text.length}, ct "${response.headers?.get?.("content-type") ?? ""}") head="${text.slice(0, 80).replace(/\n/g, " ")}"`,
+          );
           return {
-            text: await response.text(),
+            text,
             contentType: response.headers?.get?.("content-type") ?? "",
           };
         }

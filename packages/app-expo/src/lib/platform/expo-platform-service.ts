@@ -401,9 +401,10 @@ export class ExpoPlatformService implements IPlatformService {
         settled = true;
         try {
           let textResponse = "";
-          if (typeof xhr.response === "string") {
+          if (typeof xhr.response === "string" && xhr.response.length > 0) {
             textResponse = xhr.response;
           } else if (responseType !== "arraybuffer") {
+            // RN Android:responseType="text" 时 xhr.response 可能为空串,body 在 responseText
             textResponse = typeof xhr.responseText === "string" ? xhr.responseText : "";
           }
 
@@ -756,6 +757,7 @@ export class ExpoPlatformService implements IPlatformService {
       path: string,
       headers: Record<string, string>,
     ) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>,
+    host = "0.0.0.0",
   ): Promise<{ port: number; server: unknown }> {
     const isExpoGo =
       Constants.executionEnvironment === "storeClient" || Constants.appOwnership === "expo";
@@ -775,19 +777,24 @@ export class ExpoPlatformService implements IPlatformService {
 
     return new Promise((resolve, reject) => {
       const server = TcpSocket.createServer((socket: any) => {
+        // 单个 TCP 连接按 HTTP/1.1 帧循环处理多个请求(keep-alive):
+        // OkHttp 会复用连接,旧实现"一连接一请求即 end"导致复用请求打到
+        // 已关闭 socket → 偶发 502/读到空 body。inFlight 串行化防重入。
         let buffer = "";
+        let inFlight = false;
+        let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-        socket.on("data", async (data: any) => {
-          buffer += data.toString();
-
-          const headerEnd = buffer.indexOf("\r\n\r\n");
-          if (headerEnd !== -1) {
+        const processFrames = async () => {
+          if (inFlight) return;
+          for (;;) {
+            const headerEnd = buffer.indexOf("\r\n\r\n");
+            if (headerEnd === -1) return;
             const headerPart = buffer.slice(0, headerEnd);
+            buffer = buffer.slice(headerEnd + 4);
             const lines = headerPart.split("\r\n");
-            if (lines.length === 0) return;
+            if (lines.length === 0 || !lines[0]) continue;
 
             const [method, path] = lines[0].split(" ");
-
             const reqHeaders: Record<string, string> = {};
             for (let i = 1; i < lines.length; i++) {
               const line = lines[i];
@@ -799,8 +806,7 @@ export class ExpoPlatformService implements IPlatformService {
               }
             }
 
-            buffer = ""; // clear buffer
-
+            inFlight = true;
             try {
               const response = await handler(method, path, reqHeaders);
 
@@ -810,21 +816,50 @@ export class ExpoPlatformService implements IPlatformService {
                   resHead += `${k}: ${v}\r\n`;
                 }
               }
-              resHead += "Connection: close\r\n\r\n";
-
-              socket.write(resHead);
+              // Content-Length 必须显式给出:Android OkHttp 对无 length 的
+              // close-delimited 响应存在读包竞态(实测 body 被吞为 0 长度)
               if (response.body) {
-                socket.write(BufferMod.from(response.body));
+                resHead += `Content-Length: ${response.body.length}\r\n`;
               }
-              socket.end();
+              resHead += "Connection: keep-alive\r\n\r\n";
+
+              // 合并单帧写入(避免 write 队列与 end 竞态导致 body 截断)
+              const headBytes = BufferMod.from(resHead);
+              const bodyBytes = response.body ? BufferMod.from(response.body) : null;
+              if (bodyBytes) {
+                socket.write(BufferMod.concat([headBytes, bodyBytes]));
+              } else {
+                socket.write(headBytes);
+              }
             } catch (err) {
               console.error("TCP Sync handler Error:", err);
-              socket.write("HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n");
-              socket.end();
+              socket.write(
+                BufferMod.concat([
+                  BufferMod.from(
+                    "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n",
+                  ),
+                ]),
+              );
+            } finally {
+              inFlight = false;
             }
           }
+        };
+
+        socket.on("data", (data: any) => {
+          buffer += data.toString();
+          if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+          }
+          void processFrames();
         });
 
+        // 发送缓冲排空后 5s 无新请求则关闭(与 keep-alive 响应头协同)
+        socket.on("drain", () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => socket.end(), 5000);
+        });
         socket.on("error", (err: any) => {
           console.warn("Socket error:", err);
         });
@@ -834,7 +869,7 @@ export class ExpoPlatformService implements IPlatformService {
         reject(err);
       });
 
-      server.listen({ port, host: "0.0.0.0" }, () => {
+      server.listen({ port, host }, () => {
         resolve({ port: (server.address() as any)?.port || port, server });
       });
     });

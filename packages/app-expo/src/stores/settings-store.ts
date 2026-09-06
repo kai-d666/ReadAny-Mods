@@ -28,6 +28,8 @@ export interface SettingsState {
     readerBottomBarBackground: boolean;
     /** 同步详细日志横幅(开发者调试:悬浮显示同步到哪一步) */
     syncTraceBanner: boolean;
+    /** 本机书源服务端(开发者调试:本地起 OPDS 服务,自动注册"本机书源"，实验性) */
+    localOpdsServer: boolean;
   };
   _hasHydrated: boolean;
   _apiKeysLoaded: boolean;
@@ -140,6 +142,7 @@ function migrateSettingsState(state: SettingsState): SettingsState {
         readerTopBarBackground: true,
         readerBottomBarBackground: true,
         syncTraceBanner: false,
+        localOpdsServer: false,
       },
     };
   }
@@ -491,6 +494,7 @@ export const useSettingsStore = create<SettingsState>()(
         readerTopBarBackground: true,
         readerBottomBarBackground: true,
         syncTraceBanner: false,
+        localOpdsServer: false,
       },
       _hasHydrated: false,
       _apiKeysLoaded: false,

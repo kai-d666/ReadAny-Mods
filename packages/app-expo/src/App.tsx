@@ -69,6 +69,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { ThemeProvider, useTheme } from "@/styles/ThemeContext";
 import { useAutoSync } from "@readany/core/hooks/use-auto-sync";
+import { useLocalOpdsServer } from "@/hooks/use-local-opds-server";
 
 installFeedbackLogCapture();
 
@@ -322,6 +323,8 @@ function AppInner() {
   const loadBooks = useLibraryStore((s) => s.loadBooks);
   useUpdateChecker();
   useAutoSync(loadBooks);
+  // 本机书源服务端(实验性,dev 开关控制生命周期:启动/停止/自动注册书源)
+  useLocalOpdsServer();
   // 进度直读 store:启动即 hydrate(唯一账本 reading_progress 的内存读模型)
   useEffect(() => {
     void useProgressStore.getState().hydrate();

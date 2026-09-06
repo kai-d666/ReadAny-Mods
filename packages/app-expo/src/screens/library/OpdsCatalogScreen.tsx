@@ -84,6 +84,7 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
 
   const loadFeedWith = useCallback(
     async (activeClient: OpdsClient, href: string, title: string, append: boolean) => {
+      console.log(`[OpdsCatalog] loadFeedWith href=${href} title=${title} append=${append}`);
       setLoading(true);
       setError(null);
       try {
@@ -117,6 +118,10 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
     let cancelled = false;
     void (async () => {
       const stored = useOpdsSourcesStore.getState().getSource(route.params.sourceId);
+      console.log(
+        `[OpdsCatalog] init sourceId=${route.params.sourceId} found=${!!stored}`,
+        stored ? { name: stored.name, url: stored.url } : "",
+      );
       if (!stored) return;
       const password = await useOpdsSourcesStore.getState().getPassword(route.params.sourceId);
       if (cancelled) return;
@@ -194,6 +199,7 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
       const tmpName = `readany-opds-${Date.now()}-${safeName}.${acq.extension}`;
       const tmpFile = new File(Paths.cache, tmpName);
       try {
+        console.log(`[OpdsCatalog] downloadFile href=${acq.href} title="${pub.title}"`);
         setImportState({ phase: "downloading", name: pub.title, loaded: 0, total: 0 });
         const downloadFile = getPlatformService().downloadFile;
         if (!downloadFile) throw new Error("downloadFile is not available on this platform");
@@ -203,6 +209,22 @@ export function OpdsCatalogScreen({ navigation, route }: Props) {
           onProgress: (loaded, total) =>
             setImportState({ phase: "downloading", name: pub.title, loaded, total }),
         });
+        // 魔数校验:libgen 等上游忙时可能返回 HTML 错误页(200/500),
+        // 存成 epub 会让阅读器"不支持"且元数据全空。epub=PK, pdf=%PDF。
+        const extensionLower = acq.extension.toLowerCase();
+        if (extensionLower === "epub" || extensionLower === "pdf") {
+          const head = (await tmpFile.bytes()).slice(0, 4);
+          const isEpub = head[0] === 0x50 && head[1] === 0x4b;
+          const isPdf =
+            head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46;
+          if (!isEpub && !isPdf) {
+            throw new Error(
+              t("library.opdsDownloadVerificationFailed", {
+                defaultValue: "下载的内容不是有效的电子书(书源服务器可能繁忙),请稍后重试。",
+              }),
+            );
+          }
+        }
         setImportState({ phase: "importing", name: pub.title });
         const result = await useLibraryStore.getState().importBooks([
           { uri: tmpFile.uri, name: `${safeName}.${acq.extension}` },

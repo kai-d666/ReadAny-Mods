@@ -200,6 +200,8 @@
     "opdsSourcesEntry": "OPDS 在线目录",
     "opdsManageEntry": "书源管理",
     "opdsDownload": "下载",
+    "opdsLocalServerSourceName": "本机书源服务",
+    "opdsDownloadVerificationFailed": "下载的内容不是有效的电子书（书源服务器可能繁忙），请稍后重试。",
     "opdsErrorNotOpds": "服务器返回的不是有效的 OPDS 目录（需要 Atom 1.0 Feed）",
     "opdsErrorAuth": "认证失败，请检查用户名和密码。",
     "opdsErrorForbidden": "目录访问被拒绝，请检查账号权限。",

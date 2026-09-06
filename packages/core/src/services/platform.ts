@@ -131,6 +131,7 @@ export interface IPlatformService {
       path: string,
       headers: Record<string, string>,
     ) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>,
+    host?: string,
   ): Promise<{ port: number; server: unknown }>;
   // Stop the local HTTP server
   stopLANServer?(server: unknown): Promise<void>;

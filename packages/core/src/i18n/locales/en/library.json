@@ -200,6 +200,8 @@
     "opdsSourcesEntry": "OPDS Catalogs",
     "opdsManageEntry": "Manage Sources",
     "opdsDownload": "Download",
+    "opdsLocalServerSourceName": "Local Source Server",
+    "opdsDownloadVerificationFailed": "Downloaded content is not a valid ebook (the source server may be busy). Please try again later.",
     "opdsErrorNotOpds": "The server did not return a valid OPDS catalog (an Atom 1.0 Feed is expected)",
     "opdsErrorAuth": "Authentication failed. Check the username and password.",
     "opdsErrorForbidden": "Access to the catalog was denied. Check the account permissions.",
