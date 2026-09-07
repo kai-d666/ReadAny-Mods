@@ -581,7 +581,7 @@ export function HomePage() {
               <SyncButton />
               <button
                 type="button"
-                className="rounded-lg p-2 text-[#f59e0b] hover:bg-amber-500/10 hover:text-amber-600 transition-colors"
+                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 title={t("sync.cloudLibraryTitle", "云端书库")}
                 onClick={() => setShowCloudLibrary(true)}
               >
