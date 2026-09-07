@@ -2431,6 +2431,40 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           overflowX: string;
         } | null = null;
 
+        // Track mouse button states for cancellation gesture:
+        // Left drag + Right click -> cancel selection
+        let isLeftPointerDown = false;
+        let selectionCancelledByRightClick = false;
+
+        const cancelCurrentSelection = () => {
+          selectionCancelledByRightClick = true;
+          clearCrossPageSelectionState();
+          clearLongPressTimer("right-click-cancel");
+          longPressTriggered = false;
+
+          try {
+            doc.getSelection()?.removeAllRanges();
+          } catch {}
+          try {
+            window.getSelection()?.removeAllRanges();
+          } catch {}
+          try {
+            const view = viewRef.current;
+            if (view) {
+              const contents = getRendererContents(view);
+              for (const content of contents) {
+                try {
+                  content.doc?.getSelection?.()?.removeAllRanges();
+                } catch {}
+              }
+            }
+          } catch {}
+
+          currentSelectionRange.current = null;
+          currentSelectionIndex.current = undefined;
+          onSelectionRef.current?.(null);
+        };
+
         // --- Long-press word lookup ---
         const LONG_PRESS_DELAY = 300;
         const LONG_PRESS_MOVE_TOLERANCE = 10;
@@ -2562,6 +2596,22 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handlePointerDown = (ev: PointerEvent) => {
+          // Check for right-click while left button is held down (cancel gesture)
+          if (ev.button === 2 || (ev.buttons & 2)) {
+            if (isLeftPointerDown || (ev.buttons & 1)) {
+              cancelCurrentSelection();
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+            return;
+          }
+
+          if (ev.button !== 0) return;
+
+          isLeftPointerDown = true;
+          selectionCancelledByRightClick = false;
+
           // Reset annotation click flag
           annotationClickedRef.current = false;
           // Record if there's a selection when pointer goes down
@@ -2574,7 +2624,6 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           // Start long-press timer (left button only)
           clearLongPressTimer("pointerdown-reset");
           longPressTriggered = false;
-          if (ev.button !== 0) return;
           longPressStart = { x: ev.clientX, y: ev.clientY };
           console.log("[LongPress] pointerdown", longPressStart);
 
@@ -2586,6 +2635,16 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
             console.log("[LongPress] timer fired");
             fireLongPress(doc);
           }, LONG_PRESS_DELAY);
+        };
+
+        const handleMouseDown = (ev: MouseEvent) => {
+          if (ev.button === 2 || (ev.buttons & 2)) {
+            if (isLeftPointerDown || (ev.buttons & 1)) {
+              cancelCurrentSelection();
+              ev.preventDefault();
+              ev.stopPropagation();
+            }
+          }
         };
 
         const fireLongPress = (targetDoc: Document) => {
@@ -2697,6 +2756,20 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
 
         const handlePointerUp = (ev: PointerEvent) => {
           clearLongPressTimer("pointerup");
+
+          if (ev.button === 0) {
+            isLeftPointerDown = false;
+          }
+
+          if (selectionCancelledByRightClick) {
+            longPressTriggered = false;
+            cancelCurrentSelection();
+            if (ev.button === 0 || (ev.buttons & 1) === 0) {
+              selectionCancelledByRightClick = false;
+            }
+            return;
+          }
+
           // Long press was already handled at the 450ms mark: skip selection,
           // popover dismissal and single-click page-turn entirely.
           if (longPressTriggered) {
@@ -2850,6 +2923,12 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handleSelectionChange = () => {
+          if (selectionCancelledByRightClick) {
+            try {
+              doc.getSelection()?.removeAllRanges();
+            } catch {}
+            return;
+          }
           if (!supportsCrossPageSelection()) return;
 
           const view = viewRef.current;
@@ -2900,6 +2979,17 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
         };
 
         const handlePointerMove = (ev: PointerEvent) => {
+          if (selectionCancelledByRightClick) {
+            try {
+              doc.getSelection()?.removeAllRanges();
+            } catch {}
+            return;
+          }
+          // Detect simultaneous left+right button during move
+          if ((ev.buttons & 3) === 3 || ((ev.buttons & 2) && isLeftPointerDown)) {
+            cancelCurrentSelection();
+            return;
+          }
           // Cancel long press once the pointer moves beyond tolerance
           if (longPressTimer) {
             const dx = ev.clientX - longPressStart.x;
@@ -2914,14 +3004,36 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
           handleSelectionChange();
         };
 
+        const handleMouseUp = (ev: MouseEvent) => {
+          if (ev.button === 0 || (ev.buttons & 1) === 0) {
+            isLeftPointerDown = false;
+          }
+          if (selectionCancelledByRightClick) {
+            cancelCurrentSelection();
+            if (ev.button === 0 || (ev.buttons & 1) === 0) {
+              selectionCancelledByRightClick = false;
+            }
+          }
+        };
+
+        const handleContextMenu = (e: MouseEvent) => {
+          e.preventDefault();
+          if (isLeftPointerDown || selectionCancelledByRightClick || (e.buttons & 1)) {
+            cancelCurrentSelection();
+            e.stopPropagation();
+          }
+        };
+
         doc.addEventListener("pointerdown", handlePointerDown);
         doc.addEventListener("pointerup", handlePointerUp);
         doc.addEventListener("pointermove", handlePointerMove, { passive: true });
+        doc.addEventListener("mousedown", handleMouseDown);
+        doc.addEventListener("mouseup", handleMouseUp);
         doc.addEventListener("selectstart", handleSelectStart);
         doc.addEventListener("selectionchange", handleSelectionChange);
         // Content lives in an iframe whose events don't bubble to the main
-        // document — suppress the native context menu here as well.
-        doc.addEventListener("contextmenu", (e) => e.preventDefault());
+        // document — suppress the native context menu and cancel selection on right-click gesture.
+        doc.addEventListener("contextmenu", handleContextMenu);
       },
       [bookKey],
     );
@@ -3225,6 +3337,7 @@ export const FoliateViewer = forwardRef<FoliateViewerHandle, FoliateViewerProps>
       viewSettings.viewMode,
       viewSettings.paginatedLayout,
       viewSettings.fixedLayoutZoom,
+      viewSettings.animatedPageTurn,
       isFixedLayout,
       appTheme,
     ]);
@@ -3550,8 +3663,12 @@ function applyRendererSettings(
       rendererWidth > 0 ? Math.round(Math.max(980, Math.min(rendererWidth * 0.94, 1600))) : 1280;
     renderer.setAttribute("max-inline-size", isSinglePage ? `${singlePageInlineSize}px` : "760px");
     renderer.setAttribute("max-block-size", "1440px");
-    // 平滑翻页动画(foliate 内置,animated 门控:同章 300ms 滑动过渡,翻页跟手) — 移植自安卓 bae545e
-    renderer.setAttribute("animated", "");
+    // 平滑翻页动画(foliate 内置,animated 门控:同章 300ms 滑动过渡,翻页跟手) — 可在阅读设置中开关
+    if (settings.animatedPageTurn !== false) {
+      renderer.setAttribute("animated", "");
+    } else {
+      renderer.removeAttribute("animated");
+    }
     renderer.setAttribute("gap", isSinglePage ? "1.2%" : "4.5%");
     applyReflowLayoutSettings(view, settings);
   }
@@ -3563,6 +3680,12 @@ function applyRendererSettings(
 function applyReflowLayoutSettings(view: FoliateView, settings: ViewSettings) {
   const renderer = view.renderer;
   if (!renderer) return;
+
+  if (settings.animatedPageTurn !== false) {
+    renderer.setAttribute("animated", "");
+  } else {
+    renderer.removeAttribute("animated");
+  }
 
   renderer.setAttribute(
     "max-column-count",

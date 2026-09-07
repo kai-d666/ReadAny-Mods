@@ -92,6 +92,12 @@ export interface ViewSettings {
   fixedLayoutZoom?: number; // relative zoom multiplier for PDF/CBZ fixed layouts
   pageMargin: number; // px
   paragraphSpacing: number;
+  /** 平滑翻页动画：翻页时是否呈现滑动过渡动画，默认 true */
+  animatedPageTurn?: boolean;
+  /** 划词即翻译：选中文本松手后是否自动弹出翻译结果，默认 true */
+  autoTranslateOnSelection?: boolean;
+  /** 划词菜单高亮颜色栏展开状态（记忆功能，默认 false） */
+  showHighlightColors?: boolean;
 }
 
 export interface ReadSettings extends ViewSettings {

@@ -63,6 +63,9 @@ const defaultReadSettings: ReadSettings = {
   volumeButtonsPageTurn: false,
   defaultHighlightColor: "yellow",
   followSystemFontScale: false,
+  animatedPageTurn: true,
+  autoTranslateOnSelection: true,
+  showHighlightColors: false,
 };
 
 const defaultTranslationConfig: TranslationConfig = {

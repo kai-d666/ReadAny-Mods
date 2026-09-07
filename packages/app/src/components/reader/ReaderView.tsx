@@ -772,6 +772,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const [translationText, setTranslationText] = useState("");
   const [translationPos, setTranslationPos] = useState({ x: 0, y: 0 });
   const [translationMode, setTranslationMode] = useState<"normal" | "dictionary">("normal");
+  const [translationPlacement, setTranslationPlacement] = useState<
+    "above" | "below" | "right" | "left"
+  >("below");
   // Ref mirror so the window message handler can close the popover without
   // re-registering its listener every time the popover opens/closes.
   const showTranslationRef = useRef(showTranslation);
@@ -1533,12 +1536,42 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           }
 
           setSelectionPos({ x, y });
+
+          // 划词即翻译: 选中文本松手后立即弹出划词翻译 (可选项，默认开启)
+          if (
+            viewSettings.autoTranslateOnSelection !== false &&
+            sel.text.trim().length > 0 &&
+            !sel.annotated
+          ) {
+            const rects = sel.rects;
+            const top = Math.min(...rects.map((r) => r.top));
+            const bottom = Math.max(...rects.map((r) => r.bottom));
+            const left = Math.min(...rects.map((r) => r.left));
+            const right = Math.max(...rects.map((r) => r.right));
+            const pos = {
+              x: (left + right) / 2,
+              y: y === yAbove ? lastBottom + gap : firstTop - gap,
+              top,
+              bottom,
+              left,
+              right,
+            };
+            setTranslationText(sel.text);
+            setTranslationPos(pos);
+            setTranslationMode("normal");
+            setTranslationPlacement(y === yAbove ? "below" : "above");
+            setShowTranslation(true);
+          }
         }
       } else {
         setSelectedText(tabId, "", null);
+        if (translationMode === "normal") {
+          setShowTranslation(false);
+          setTranslationText("");
+        }
       }
     },
-    [tabId, setSelectedText, toolbarVisible],
+    [tabId, setSelectedText, toolbarVisible, viewSettings.autoTranslateOnSelection, translationMode],
   );
 
   // --- Navigation (for toolbar buttons) ---
@@ -1571,7 +1604,11 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             useAnnotationStore.getState().removeHighlight(existingHighlight.id);
             foliateRef.current?.deleteAnnotation({ value: existingHighlight.cfi });
             renderedHighlightsRef.current.delete(existingHighlight.id);
-            setSelection(null);
+            setSelection((prev) =>
+              prev
+                ? { ...prev, annotated: false, color: undefined, highlightId: undefined }
+                : null,
+            );
             return;
           }
           useAnnotationStore.getState().updateHighlight(existingHighlight.id, {
@@ -1585,7 +1622,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             color,
             note: existingHighlight.note,
           });
-          setSelection(null);
+          setSelection((prev) => (prev ? { ...prev, annotated: true, color } : null));
           return;
         }
 
@@ -1616,8 +1653,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           hasNote: false,
           color,
         });
+
+        setSelection((prev) => (prev ? { ...prev, annotated: true, color, highlightId } : null));
       }
-      setSelection(null);
     },
     [
       selection,
@@ -1659,18 +1697,20 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
 
   // Handle removing an existing highlight
   const handleRemoveHighlight = useCallback(() => {
-    if (selection?.annotated && selection?.highlightId && selection?.cfi) {
-      // Remove from store
-      useAnnotationStore.getState().removeHighlight(selection.highlightId);
-
-      // Remove from view
+    if (selection?.cfi) {
+      const hId =
+        selection.highlightId ??
+        highlights.find((h) => h.bookId === bookId && h.cfi === selection.cfi)?.id;
+      if (hId) {
+        useAnnotationStore.getState().removeHighlight(hId);
+        renderedHighlightsRef.current.delete(hId);
+      }
       foliateRef.current?.deleteAnnotation({ value: selection.cfi });
-
-      // Remove from rendered tracking
-      renderedHighlightsRef.current.delete(selection.highlightId);
+      setSelection((prev) =>
+        prev ? { ...prev, annotated: false, color: undefined, highlightId: undefined } : null,
+      );
     }
-    setSelection(null);
-  }, [selection]);
+  }, [selection, highlights, bookId]);
 
   // Handle show-annotation event (user clicked on existing highlight)
   const handleShowAnnotation = useCallback(
@@ -1802,9 +1842,9 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
       setTranslationText(selection.text);
       setTranslationPos(pos);
       setTranslationMode("normal");
+      setTranslationPlacement("below");
       setShowTranslation(true);
     }
-    setSelection(null);
   }, [selection, selectionPos]);
 
   // Long-press word lookup: always opens the translation popover in dictionary
@@ -3074,6 +3114,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 annotated={selection.annotated}
                 currentColor={selection.color as HighlightColor | undefined}
                 defaultColor={viewSettings.defaultHighlightColor ?? "yellow"}
+                showColors={viewSettings.showHighlightColors ?? false}
+                onToggleColors={(show) => updateReadSettings({ showHighlightColors: show })}
                 isPdf={bookFormat === "PDF"}
                 onHighlight={handleHighlight}
                 onRemoveHighlight={handleRemoveHighlight}
@@ -3092,6 +3134,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 text={translationText}
                 position={translationPos}
                 dictionary={translationMode === "dictionary"}
+                preferPlacement={translationPlacement}
                 onClose={closeTranslationPopover}
               />
             )}

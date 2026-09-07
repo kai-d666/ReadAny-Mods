@@ -109,6 +109,38 @@ export function ReadSettingsPanel() {
             />
           </div>
 
+          {/* Smooth page-turn animation */}
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-sm text-foreground">
+                {t("settings.animatedPageTurn", "平滑翻页动画")}
+              </span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t("settings.animatedPageTurnDesc", "翻页时呈现平滑滑动过渡效果，关闭后立即切页")}
+              </p>
+            </div>
+            <Switch
+              checked={readSettings.animatedPageTurn !== false}
+              onCheckedChange={(checked) => updateReadSettings({ animatedPageTurn: checked })}
+            />
+          </div>
+
+          {/* Translate on selection */}
+          <div className="flex items-center justify-between pt-1">
+            <div>
+              <span className="text-sm text-foreground">
+                {t("settings.autoTranslateOnSelection", "划词即翻译")}
+              </span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t("settings.autoTranslateOnSelectionDesc", "选中文本松手后自动弹出翻译结果")}
+              </p>
+            </div>
+            <Switch
+              checked={readSettings.autoTranslateOnSelection !== false}
+              onCheckedChange={(checked) => updateReadSettings({ autoTranslateOnSelection: checked })}
+            />
+          </div>
+
           {/* Font Size */}
           <div>
             <div className="mb-3 flex items-center justify-between">

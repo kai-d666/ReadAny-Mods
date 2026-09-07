@@ -28,6 +28,8 @@ interface TranslationPopoverProps {
   onClose: () => void;
   /** Dictionary mode: uses the customizable dictionary prompt instead of the default translation prompt */
   dictionary?: boolean;
+  /** Preferred placement relative to anchor (e.g. "below" when SelectionPopover is above) */
+  preferPlacement?: "above" | "below" | "right" | "left";
 }
 
 const POPOVER_WIDTH = 288; // w-72 = 18rem = 288px
@@ -42,6 +44,7 @@ export function TranslationPopover({
   position,
   onClose,
   dictionary = false,
+  preferPlacement,
 }: TranslationPopoverProps) {
   const { t } = useTranslation();
   const translationConfig = useSettingsStore((s) => s.translationConfig);
@@ -191,8 +194,9 @@ export function TranslationPopover({
     let y: number;
     let mode: "above" | "below" | "right" | "left";
 
-    if (preferMode) {
-      mode = preferMode;
+    const targetMode = preferMode ?? preferPlacement;
+    if (targetMode) {
+      mode = targetMode;
       if (mode === "above") {
         x = position.x;
         y = anchorTop - GAP;
