@@ -39,6 +39,7 @@ import { SYNC_SECRET_KEYS } from "@readany/core/sync/sync-backend";
 import { mkdir, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { join, tempDir } from "@tauri-apps/api/path";
+import { DesktopOpdsManageDialog } from "./opds/DesktopOpdsManageDialog";
 import {
   ArrowLeft,
   BookOpen,
@@ -47,6 +48,7 @@ import {
   Cloud,
   FolderOpen,
   Globe,
+  Library,
   Loader2,
   Search,
   Upload,
@@ -746,6 +748,7 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
 
   const [temporaryOpen, setTemporaryOpen] = useState(false);
   const [browserSource, setBrowserSource] = useState<WebDavImportSource | null>(null);
+  const [opdsManageOpen, setOpdsManageOpen] = useState(false);
 
   useEffect(() => {
     void loadSyncConfig();
@@ -882,6 +885,23 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
             </div>
             <ChevronRight className="size-4 text-muted-foreground" />
           </DropdownMenuItem>
+          <DropdownMenuSeparator className="mx-2" />
+
+          <DropdownMenuItem
+            className="items-center gap-3 rounded-xl px-3 py-2.5"
+            onSelect={(event) => {
+              event.preventDefault();
+              setOpdsManageOpen(true);
+            }}
+          >
+            <div className="flex size-7 shrink-0 items-center justify-center text-primary">
+              <Library className="size-4.5" />
+            </div>
+            <div className="min-w-0 flex-1 whitespace-nowrap text-sm font-medium text-foreground">
+              {t("library.opdsSourcesTitle", "OPDS 书源")}
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -893,6 +913,10 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
       <DesktopWebDavImportBrowserDialog
         source={browserSource}
         onClose={() => setBrowserSource(null)}
+      />
+      <DesktopOpdsManageDialog
+        open={opdsManageOpen}
+        onClose={() => setOpdsManageOpen(false)}
       />
     </>
   );

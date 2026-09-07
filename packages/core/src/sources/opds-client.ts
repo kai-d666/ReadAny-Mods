@@ -272,4 +272,37 @@ export class OpdsClient {
   async testConnection(): Promise<OpdsFeed> {
     return this.fetchFeed(this.baseUrl);
   }
+
+  /** 下载条目书籍文件 (两端通用，基于 platform.fetch 携带 Auth / allowInsecure) */
+  async downloadFile(
+    href: string,
+    options: {
+      timeoutMs?: number;
+      onProgress?: (loaded: number, total: number) => void;
+    } = {},
+  ): Promise<Uint8Array> {
+    const platform = getPlatformService();
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    try {
+      const response = await platform.fetch(href, {
+        method: "GET",
+        headers: {
+          ...this.getAuthHeaders(),
+          Accept: "*/*",
+        },
+        responseType: "arraybuffer",
+        allowInsecure: this.allowInsecure,
+        timeoutMs,
+        onDownloadProgress: options.onProgress,
+      });
+      if (!response.ok) {
+        throw createOpdsHttpError(response.status, href);
+      }
+      const buffer = await response.arrayBuffer();
+      return new Uint8Array(buffer);
+    } catch (error: unknown) {
+      if (error instanceof OpdsError) throw error;
+      throw createRequestOpdsError(error, href, timeoutMs);
+    }
+  }
 }
