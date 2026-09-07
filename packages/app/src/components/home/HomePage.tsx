@@ -4,6 +4,7 @@
 import { DesktopImportActions } from "@/components/home/DesktopImportActions";
 import { GroupPickerPopover } from "@/components/home/GroupPickerPopover";
 import { SyncButton } from "@/components/ui/SyncButton";
+import { CloudIcon } from "@/components/ui/CloudIcon";
 import { triggerVectorizeBook } from "@/lib/rag/vectorize-trigger";
 import { useLibraryStore } from "@/stores/library-store";
 import { useProgressStore } from "@readany/core/stores/progress-store";
@@ -13,7 +14,6 @@ import {
   ArrowLeft,
   ArrowUpAZ,
   CheckCheck,
-  Cloud,
   Database,
   FolderInput,
   FolderMinus,
@@ -581,11 +581,11 @@ export function HomePage() {
               <SyncButton />
               <button
                 type="button"
-                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                className="rounded-lg p-2 text-[#f59e0b] hover:bg-amber-500/10 hover:text-amber-600 transition-colors"
                 title={t("sync.cloudLibraryTitle", "云端书库")}
                 onClick={() => setShowCloudLibrary(true)}
               >
-                <Cloud className="size-4 text-amber-500" />
+                <CloudIcon size={18} />
               </button>
             </div>
             <div className="flex items-center gap-2">

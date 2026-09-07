@@ -6,13 +6,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
-  Cloud,
   Loader2,
   RefreshCw,
   Trash2,
   Check,
   HardDriveDownload,
 } from "lucide-react";
+import { CloudIcon } from "@/components/ui/CloudIcon";
 import {
   Dialog,
   DialogContent,
@@ -152,7 +152,7 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
         <DialogHeader className="flex flex-row items-center justify-between pb-2 border-b">
           <div>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-              <Cloud className="h-5 w-5 text-amber-500" />
+              <CloudIcon size={20} className="text-[#f59e0b]" />
               {t("sync.cloudLibraryTitle", "云端书库")}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-0.5">
@@ -174,7 +174,7 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
         <div className="flex-1 overflow-y-auto py-2 min-h-[260px]">
           {!isSyncConfigured ? (
             <div className="flex flex-col items-center justify-center h-48 text-center px-4 gap-2">
-              <Cloud className="h-10 w-10 text-muted-foreground/50" />
+              <CloudIcon size={36} className="text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">
                 {t("sync.notConfigured", "尚未配置同步后端，请在设置中开启 WebDAV 或云同步。")}
               </p>
@@ -186,7 +186,7 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
             </div>
           ) : !entries || entries.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 text-center px-4 gap-2">
-              <Cloud className="h-10 w-10 text-amber-500/50" />
+              <CloudIcon size={36} className="text-[#f59e0b]/60" />
               <p className="text-sm font-medium text-foreground">
                 {t("sync.cloudLibraryEmpty", "云端书库暂无书籍")}
               </p>
