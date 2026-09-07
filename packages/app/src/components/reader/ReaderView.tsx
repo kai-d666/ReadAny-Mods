@@ -965,7 +965,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
     [updateReadSettings],
   );
   const toolbarVisible = controlsVisible || isToolbarPinned;
-  const readingHeaderTitle = (readerTab?.chapterTitle || book?.meta.title || "").trim();
   const contentTopPadding = isToolbarPinned ? 78 : 56;
   const incrementPagesRead = useReadingSessionStore((s) => s.incrementPagesRead);
   const incrementCharactersRead = useReadingSessionStore((s) => s.incrementCharactersRead);
@@ -2995,12 +2994,6 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           className="relative flex flex-1 overflow-hidden transition-[padding] duration-300"
           style={{ paddingTop: contentTopPadding }}
         >
-          {readingHeaderTitle && (
-            <div className="pointer-events-none absolute left-5 top-3 z-[4] max-w-[70%] select-none truncate text-[20px] font-semibold tracking-tight text-foreground/86">
-              {readingHeaderTitle}
-            </div>
-          )}
-
           {/* Reading area — FoliateViewer */}
           <div className="relative flex-1 overflow-hidden" ref={containerRef}>
             {/* Click zone indicators — visible only during reader tour (driver.js highlights them) */}

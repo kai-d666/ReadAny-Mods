@@ -116,6 +116,8 @@ export interface ReadSettings extends ViewSettings {
    * existing persisted settings deserialize cleanly.
    */
   followSystemFontScale?: boolean;
+  /** 桌面端阅读器内是否显示顶部窗口标题栏/标签栏 (记忆开关，默认 false) */
+  readerTitleBarVisible?: boolean;
 }
 
 export type SortField = "title" | "author" | "addedAt" | "lastOpenedAt" | "progress";

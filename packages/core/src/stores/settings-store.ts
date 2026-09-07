@@ -66,6 +66,7 @@ const defaultReadSettings: ReadSettings = {
   animatedPageTurn: true,
   autoTranslateOnSelection: true,
   showHighlightColors: false,
+  readerTitleBarVisible: false,
 };
 
 const defaultTranslationConfig: TranslationConfig = {

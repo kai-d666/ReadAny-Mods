@@ -131,19 +131,10 @@ export function AppLayout() {
   const draftTabs = tabs.filter((t) => t.type === "epubDraft" && t.draftId);
   const isReaderActive = readerTabs.some((t) => t.id === activeTabId);
   const isWorkspaceActive = draftTabs.some((t) => t.id === activeTabId);
-  const [showTabBar, setShowTabBar] = useState(!isReaderActive);
-  const hideTabBarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevIsReaderActiveRef = useRef(isReaderActive);
-
-  useEffect(() => {
-    if (isReaderActive && !prevIsReaderActiveRef.current) {
-      setShowTabBar(false);
-    }
-    if (!isReaderActive) {
-      setShowTabBar(true);
-    }
-    prevIsReaderActiveRef.current = isReaderActive;
-  }, [isReaderActive]);
+  const readerTitleBarVisible = useSettingsStore(
+    (s) => s.readSettings.readerTitleBarVisible ?? false,
+  );
+  const showTabBar = isReaderActive ? readerTitleBarVisible : true;
 
   const toggleCommandPalette = useCallback(() => {
     setCommandPaletteOpen((prev) => !prev);
@@ -170,71 +161,6 @@ export function AppLayout() {
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, [toggleCommandPalette]);
-
-  useEffect(() => {
-    if (!isReaderActive) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const threshold = 10;
-      if (e.clientY <= threshold) {
-        if (hideTabBarTimerRef.current) {
-          clearTimeout(hideTabBarTimerRef.current);
-          hideTabBarTimerRef.current = null;
-        }
-        setShowTabBar(true);
-      }
-    };
-
-    const handleMouseLeaveTabBar = () => {
-      if (hideTabBarTimerRef.current) {
-        clearTimeout(hideTabBarTimerRef.current);
-      }
-      hideTabBarTimerRef.current = setTimeout(() => {
-        setShowTabBar(false);
-      }, 500);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-
-    const tabBarEl = document.querySelector("[data-tab-bar]");
-    if (tabBarEl) {
-      tabBarEl.addEventListener("mouseleave", handleMouseLeaveTabBar);
-      tabBarEl.addEventListener("mouseenter", () => {
-        if (hideTabBarTimerRef.current) {
-          clearTimeout(hideTabBarTimerRef.current);
-          hideTabBarTimerRef.current = null;
-        }
-      });
-    }
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      if (tabBarEl) {
-        tabBarEl.removeEventListener("mouseleave", handleMouseLeaveTabBar);
-      }
-      if (hideTabBarTimerRef.current) {
-        clearTimeout(hideTabBarTimerRef.current);
-      }
-    };
-  }, [isReaderActive]);
-
-  const handleTabBarMouseEnter = useCallback(() => {
-    if (hideTabBarTimerRef.current) {
-      clearTimeout(hideTabBarTimerRef.current);
-      hideTabBarTimerRef.current = null;
-    }
-    setShowTabBar(true);
-  }, []);
-
-  const handleTabBarMouseLeave = useCallback(() => {
-    if (!isReaderActive) return;
-    if (hideTabBarTimerRef.current) {
-      clearTimeout(hideTabBarTimerRef.current);
-    }
-    hideTabBarTimerRef.current = setTimeout(() => {
-      setShowTabBar(false);
-    }, 500);
-  }, [isReaderActive]);
 
   // Determine which home sub-view is active
   const homeViewKey = isReaderActive || isWorkspaceActive ? null : (activeTabId ?? "home");
@@ -339,8 +265,6 @@ export function AppLayout() {
       {_hasHydrated && <OnboardingModal />}
       <div
         data-tab-bar
-        onMouseEnter={handleTabBarMouseEnter}
-        onMouseLeave={handleTabBarMouseLeave}
         className={`absolute left-0 right-0 top-0 z-[80] transition-transform duration-300 ease-in-out ${
           isReaderActive && !showTabBar ? "-translate-y-full" : "translate-y-0"
         }`}
@@ -348,6 +272,7 @@ export function AppLayout() {
         <TabBar />
       </div>
       <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Placeholder spacing for non-reader views: Home and Workspace */}
         {!isReaderActive && !isWorkspaceActive && <div className="h-8 shrink-0" />}
         {/* === Home layer (sidebar + content card) === */}
         <div
@@ -381,7 +306,9 @@ export function AppLayout() {
           return (
             <div
               key={tab.id}
-              className="absolute inset-0 overflow-hidden"
+              className={`absolute left-0 right-0 bottom-0 overflow-hidden transition-[top] duration-300 ease-in-out ${
+                showTabBar ? "top-8" : "top-0"
+              }`}
               style={{ display: isActive ? "block" : "none" }}
             >
               {isHibernated ? (

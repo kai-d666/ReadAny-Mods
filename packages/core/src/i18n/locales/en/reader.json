@@ -63,6 +63,8 @@
     "goBackToPreviousLocation": "Go back to previous location",
     "pinToolbar": "Pin toolbar",
     "unpinToolbar": "Unpin toolbar",
+    "showTitleBar": "Show title bar",
+    "hideTitleBar": "Hide title bar",
     "pdfZoom": "PDF zoom",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",

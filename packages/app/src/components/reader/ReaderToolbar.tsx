@@ -8,6 +8,7 @@ import { useNotebookStore } from "@/stores/notebook-store";
 import { useReaderStore } from "@/stores/reader-store";
 import type { ChapterTranslationState } from "@readany/core/hooks";
 import { generateId } from "@readany/core/utils";
+import { useSettingsStore } from "@readany/core/stores/settings-store";
 import {
   ArrowLeft,
   Bookmark,
@@ -16,6 +17,7 @@ import {
   Maximize,
   MessageSquare,
   NotebookPen,
+  PanelTop,
   Pin,
   RotateCcw,
   Search,
@@ -100,6 +102,8 @@ export function ReaderToolbar({
   const canGoBack = useReaderStore((s) => s.canGoBack(tabId));
   const goBack = useReaderStore((s) => s.goBack);
   const { isOpen: isNotebookOpen, toggleNotebook } = useNotebookStore();
+  const readerTitleBarVisible = useSettingsStore((s) => s.readSettings.readerTitleBarVisible ?? false);
+  const updateReadSettings = useSettingsStore((s) => s.updateReadSettings);
 
   const bookmarks = useAnnotationStore((s) => s.bookmarks);
   const addBookmark = useAnnotationStore((s) => s.addBookmark);
@@ -138,16 +142,17 @@ export function ReaderToolbar({
 
   return (
     <div
-      className={`absolute left-0 right-0 top-2 z-40 flex h-10 items-center justify-between bg-background/95 backdrop-blur-sm px-2 shadow-sm transition-all duration-300 ${
+      data-tauri-drag-region
+      className={`fixed left-0 right-0 top-0 z-[90] flex h-10 items-center justify-between bg-background/95 backdrop-blur-sm px-2 shadow-md transition-all duration-300 ${
         isVisible
           ? "translate-y-0 opacity-100 pointer-events-auto"
-          : "-translate-y-[calc(100%+0.5rem)] opacity-0 pointer-events-none"
+          : "-translate-y-full opacity-0 pointer-events-none"
       }`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
       {/* Left: back + history back + TOC + notebook */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: "no-drag" } as Record<string, string>} data-no-window-drag>
         <Button
           variant="ghost"
           size="icon"
@@ -219,7 +224,7 @@ export function ReaderToolbar({
       </div>
 
       {/* Right: translate + TTS + search + AI chat + settings */}
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: "no-drag" } as Record<string, string>} data-no-window-drag>
         <ChapterTranslationMenu
           state={chapterTranslationState}
           onStart={onChapterTranslationStart}
@@ -298,6 +303,15 @@ export function ReaderToolbar({
           title={isPinned ? t("reader.unpinToolbar") : t("reader.pinToolbar")}
         >
           <Pin className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${readerTitleBarVisible ? "bg-primary/10 text-primary" : ""}`}
+          onClick={() => updateReadSettings({ readerTitleBarVisible: !readerTitleBarVisible })}
+          title={readerTitleBarVisible ? t("reader.hideTitleBar") : t("reader.showTitleBar")}
+        >
+          <PanelTop className="h-3.5 w-3.5" />
         </Button>
         <Button
           variant="ghost"
