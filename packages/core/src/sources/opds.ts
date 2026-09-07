@@ -319,7 +319,16 @@ function isDownloadLink(link: RawLink): boolean {
 function parsePublication(entry: XmlNode, feedHref: string, ns: string | null): OpdsPublication {
   const children = elements(entry);
   const links = parseLinks(entry, ns);
-  const title = textOf(children.find((c) => isAtomElement(c, "title", ns)));
+  const titleNode = children.find((c) => {
+    const local = (c.localName ?? "").toLowerCase();
+    const nodeName = (c.nodeName ?? "").toLowerCase();
+    return local === "title" || nodeName === "title" || nodeName.endsWith(":title");
+  });
+  let title = textOf(titleNode);
+  if (!title) {
+    const titledLink = links.find((l) => l.title && l.title.trim());
+    title = titledLink?.title?.trim() ?? "";
+  }
 
   const acquisitions: OpdsAcquisition[] = [];
   for (const link of links.filter(isDownloadLink)) {
@@ -368,8 +377,58 @@ function parseNavigation(entry: XmlNode, feedHref: string, ns: string | null): O
   const fallbackLink = links.find((l) => l.href);
   const href = catalogLink?.href ?? fallbackLink?.href;
   if (!href) return null;
+
+  // 标题获取策略：多级 Fallback，决不返回空字符串
+  // 1. entry 内部 title 子标签（兼容 atom:title, dc:title, Title 等）
+  const titleNode = children.find((c) => {
+    const local = (c.localName ?? "").toLowerCase();
+    const nodeName = (c.nodeName ?? "").toLowerCase();
+    return local === "title" || nodeName === "title" || nodeName.endsWith(":title");
+  });
+  let title = textOf(titleNode);
+
+  // 2. 匹配目录 link 或 fallback link 上的 title 属性
+  if (!title) {
+    title = (catalogLink?.title || fallbackLink?.title || "").trim();
+  }
+
+  // 3. 任一包含非空 title 的链接
+  if (!title) {
+    const titledLink = links.find((l) => l.title && l.title.trim());
+    if (titledLink?.title) {
+      title = titledLink.title.trim();
+    }
+  }
+
+  // 4. content / summary / name / label 文本
+  if (!title) {
+    const textNode = children.find((c) => {
+      const local = (c.localName ?? "").toLowerCase();
+      const nodeName = (c.nodeName ?? "").toLowerCase();
+      return ["content", "summary", "name", "label"].some(
+        (t) => local === t || nodeName === t || nodeName.endsWith(`:${t}`),
+      );
+    });
+    title = textOf(textNode);
+  }
+
+  // 5. 从 URL pathname 推断易读的叶子名称（如 /bookshelf/fiction -> fiction，decode 避免乱码）
+  if (!title && href) {
+    try {
+      const resolved = resolveOpdsHref(href, feedHref);
+      const pathname = new URL(resolved).pathname;
+      const segments = pathname.split("/").filter(Boolean);
+      const leaf = segments.pop();
+      if (leaf) {
+        title = decodeURIComponent(leaf).replace(/[-_+]/g, " ").trim();
+      }
+    } catch {
+      // 忽略 URL 解析异常
+    }
+  }
+
   return {
-    title: textOf(children.find((c) => isAtomElement(c, "title", ns)) || children[0]),
+    title: title || "在线目录",
     href: resolveOpdsHref(href, feedHref),
   };
 }
@@ -407,6 +466,21 @@ export function parseOpdsFeed(xml: string, baseUrl: string): OpdsFeed {
     } else {
       const nav = parseNavigation(entry, baseUrl, ns);
       if (nav) navigation.push(nav);
+    }
+  }
+
+  // 收集 feed 根节点的导航链接（许多 OPDS feed 将子分类直接定义在根 feed 的 link 中）
+  for (const link of feedLinks.filter(
+    (l) => relIncludes(l, "subsection") || (isOpdsCatalogType(l.type) && !relIncludes(l, "self")),
+  )) {
+    if (link.href && !relIncludes(link, "self") && !relIncludes(link, "next") && !relIncludes(link, "search")) {
+      const resolvedHref = resolveOpdsHref(link.href, baseUrl);
+      if (!navigation.some((n) => n.href === resolvedHref)) {
+        navigation.push({
+          title: link.title?.trim() || "在线目录",
+          href: resolvedHref,
+        });
+      }
     }
   }
 

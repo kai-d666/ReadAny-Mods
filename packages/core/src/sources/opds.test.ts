@@ -122,6 +122,55 @@ describe("parseOpdsFeed", () => {
     expect(feed.publications).toHaveLength(0);
   });
 
+  it("extracts navigation title from link title attribute when entry has no title tag", () => {
+    const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:tag:1</id>
+    <link rel="subsection" title="科幻小说" type="application/atom+xml;profile=opds-catalog" href="category/scifi"/>
+  </entry>
+</feed>`;
+    const feed = parseOpdsFeed(xml, "https://server.com/opds/");
+    expect(feed.navigation).toEqual([
+      { title: "科幻小说", href: "https://server.com/opds/category/scifi" },
+    ]);
+  });
+
+  it("extracts navigation title from dc:title, content/summary, and fallback URL pathname", () => {
+    const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <entry>
+    <dc:title>历史地理</dc:title>
+    <link rel="subsection" href="/categories/history"/>
+  </entry>
+  <entry>
+    <content type="text">哲学思想</content>
+    <link rel="subsection" href="/categories/philosophy"/>
+  </entry>
+  <entry>
+    <link rel="subsection" href="/categories/popular-science"/>
+  </entry>
+</feed>`;
+    const feed = parseOpdsFeed(xml, "https://server.com/opds/");
+    expect(feed.navigation).toEqual([
+      { title: "历史地理", href: "https://server.com/categories/history" },
+      { title: "哲学思想", href: "https://server.com/categories/philosophy" },
+      { title: "popular science", href: "https://server.com/categories/popular-science" },
+    ]);
+  });
+
+  it("collects feed-level subsection links into navigation", () => {
+    const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Feed Level</title>
+  <link rel="subsection" title="热门排行" href="ranking" type="application/atom+xml;profile=opds-catalog"/>
+</feed>`;
+    const feed = parseOpdsFeed(xml, "https://server.com/opds/");
+    expect(feed.navigation).toEqual([
+      { title: "热门排行", href: "https://server.com/opds/ranking" },
+    ]);
+  });
+
   it("throws OpdsParseError for JSON / HTML / non-feed roots", () => {
     expect(() => parseOpdsFeed('{"metadata":{"title":"x"}}', "https://server.com")).toThrow(
       OpdsParseError,
