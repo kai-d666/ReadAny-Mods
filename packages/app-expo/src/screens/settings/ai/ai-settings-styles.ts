@@ -132,11 +132,6 @@ export const makeStyles = (colors: ThemeColors) =>
       color: colors.foreground,
       textAlignVertical: "center",
     },
-    baseUrlHint: {
-      fontSize: fontSize.sm,
-      lineHeight: 20,
-      color: colors.mutedForeground,
-    },
     exactUrlCard: {
       flexDirection: "row",
       alignItems: "center",
@@ -150,14 +145,6 @@ export const makeStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.sm,
     },
     exactUrlInfo: { flex: 1, gap: 2 },
-    previewCard: {
-      gap: spacing.xs,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: withOpacity(colors.border, 0.8),
-      backgroundColor: withOpacity(colors.background, 0.7),
-      padding: spacing.sm,
-    },
     previewHeader: {
       flexDirection: "row",
       alignItems: "center",
@@ -202,22 +189,6 @@ export const makeStyles = (colors: ThemeColors) =>
     },
     testModelChipText: { fontSize: fontSize.xs, color: colors.foreground },
     testModelChipTextActive: { color: colors.primary, fontWeight: fontWeight.medium },
-
-    providerGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-    providerBtn: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.xs,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      backgroundColor: colors.background,
-    },
-    providerBtnActive: {
-      borderColor: colors.primary,
-      backgroundColor: withOpacity(colors.primary, 0.1),
-    },
-    providerBtnText: { fontSize: fontSize.sm, color: colors.foreground },
-    providerBtnTextActive: { color: colors.primary, fontWeight: fontWeight.medium },
 
     modelsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     modelsActions: { flexDirection: "row", alignItems: "center", gap: spacing.xs },

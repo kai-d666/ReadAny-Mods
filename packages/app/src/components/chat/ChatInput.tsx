@@ -1,15 +1,23 @@
 /**
  * ChatInput — Double-layer card input with smooth sliding drawer architecture.
+ * Replicating the exact Android mathematical & visual model:
  *
- * Layer Hierarchy:
- * - Upper Layer (Z-10): Input Card (Textarea + Send Button + Drag Handle).
- *   Slides up and down to reveal and cover the underlying toolbar.
- * - Under Layer (Z-0): Stationary Toolbar (ModeSlider + DeepThinking, ToolPrefs + SpoilerFree).
- *   Anchored at the bottom and remains stationary without translating with the pull.
- * - Visual Occlusion & Full Reveal:
- *   When expanded, the upper card lifts completely clear of the toolbar (+8px gap),
- *   guaranteeing 100% full visibility of Row 1 (ModeSlider + DeepThinking) and Row 2 (Tools + SpoilerFree).
- *   When collapsed, the toolbar aperture closes to 0, completely concealed under the solid input card.
+ * 1. Layer Hierarchy:
+ *    - Upper Layer (combo, Z-10): The rounded input card (textarea + send button + drag slot).
+ *      Fully rounded (rounded-3xl), opaque background, subtle shadow.
+ *    - Under Layer (layerPanel, Z-0): The tool card body.
+ *      Anchored at bottom: 0. Top edge extends up to combo's center line (top: comboHeight / 2).
+ *      Has border-x, border-b, border-t-0, rounded-b-3xl, rounded-t-0.
+ *      combo's bottom rounded corners sit directly on layerPanel's card surface!
+ *
+ * 2. Motion & Full Reveal:
+ *    - In collapsed state (paddingBottom: 0):
+ *      layerPanel height is only comboHeight / 2, completely hidden behind combo.
+ *    - In expanded state (paddingBottom: expandHeight):
+ *      combo is raised by expandHeight.
+ *      layerPanel's bottom stays at bottom: 0 (completely stationary!).
+ *      toolArea is pinned at layerPanel's bottom, perfectly revealed below combo with zero clipping.
+ *      The side borders of layerPanel seamlessly extend up behind combo!
  */
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AIChatMode, AttachedQuote } from "@readany/core/types";
@@ -42,8 +50,6 @@ interface ChatInputProps {
   onRemoveQuote?: (id: string) => void;
 }
 
-const TOOLBAR_GAP = 8; // Spacing between upper card and lower toolbar when expanded
-
 export function ChatInput({
   onSend,
   onStop,
@@ -66,9 +72,11 @@ export function ChatInput({
     }
   });
 
-  // Dynamic measurement of stationary toolbar height (full offsetHeight including padding & borders)
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const [toolbarHeight, setToolbarHeight] = useState(96);
+  // Dynamic measurements: upper card height (combo) & tool area height
+  const comboRef = useRef<HTMLDivElement>(null);
+  const toolAreaRef = useRef<HTMLDivElement>(null);
+  const [comboHeight, setComboHeight] = useState(52);
+  const [expandHeight, setExpandHeight] = useState(86);
 
   // Pointer drag gesture tracking for smooth tactile pull
   const [isDragging, setIsDragging] = useState(false);
@@ -84,27 +92,33 @@ export function ChatInput({
 
   const resolvedPlaceholder = placeholder || t("chat.inputPlaceholder", "输入消息...");
 
-  // Total expanded lift distance needed to ensure zero clipping and full visibility
-  const totalExpansionHeight = toolbarHeight + TOOLBAR_GAP;
-
-  // Measure toolbar's true rendered height dynamically
+  // Measure combo (upper card) height
   useEffect(() => {
-    const measureHeight = () => {
-      if (!toolbarRef.current) return;
-      const el = toolbarRef.current;
-      const h = Math.max(el.offsetHeight, el.scrollHeight, 92);
-      if (h > 0) {
-        setToolbarHeight(h);
+    const measureCombo = () => {
+      if (comboRef.current) {
+        const h = Math.max(comboRef.current.offsetHeight, 46);
+        setComboHeight(h);
       }
     };
+    measureCombo();
+    if (!comboRef.current) return;
+    const obs = new ResizeObserver(measureCombo);
+    obs.observe(comboRef.current);
+    return () => obs.disconnect();
+  }, [value, quotes]);
 
-    measureHeight();
-
-    if (!toolbarRef.current) return;
-    const obs = new ResizeObserver(() => {
-      measureHeight();
-    });
-    obs.observe(toolbarRef.current);
+  // Measure toolArea (tools in under layer) height
+  useEffect(() => {
+    const measureTool = () => {
+      if (toolAreaRef.current) {
+        const h = Math.max(toolAreaRef.current.offsetHeight, 80);
+        setExpandHeight(h);
+      }
+    };
+    measureTool();
+    if (!toolAreaRef.current) return;
+    const obs = new ResizeObserver(measureTool);
+    obs.observe(toolAreaRef.current);
     return () => obs.disconnect();
   }, []);
 
@@ -184,12 +198,12 @@ export function ChatInput({
       if (e.button !== 0) return;
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       dragStartYRef.current = e.clientY;
-      const baseOffset = expanded ? totalExpansionHeight : 0;
+      const baseOffset = expanded ? expandHeight : 0;
       dragStartOffsetRef.current = baseOffset;
       setDragOffset(baseOffset);
       setIsDragging(true);
     },
-    [expanded, totalExpansionHeight],
+    [expanded, expandHeight],
   );
 
   const handlePointerMove = useCallback(
@@ -197,10 +211,10 @@ export function ChatInput({
       if (!isDragging) return;
       // Dragging upwards (clientY decreases) increases lift distance
       const dy = dragStartYRef.current - e.clientY;
-      const target = Math.max(0, Math.min(totalExpansionHeight, dragStartOffsetRef.current + dy));
+      const target = Math.max(0, Math.min(expandHeight, dragStartOffsetRef.current + dy));
       setDragOffset(target);
     },
-    [isDragging, totalExpansionHeight],
+    [isDragging, expandHeight],
   );
 
   const handlePointerUp = useCallback(
@@ -219,48 +233,50 @@ export function ChatInput({
       }
 
       // Drag gesture threshold: snap based on 40% threshold
-      const shouldOpen = dragOffset > totalExpansionHeight * 0.4;
+      const shouldOpen = dragOffset > expandHeight * 0.4;
       setExpanded(shouldOpen);
       try {
         localStorage.setItem("readany_chat_drawer_expanded", String(shouldOpen));
       } catch {}
     },
-    [isDragging, dragOffset, totalExpansionHeight, toggleExpanded],
+    [isDragging, dragOffset, expandHeight, toggleExpanded],
   );
 
   const canSend = (value.trim().length > 0 || quotes.length > 0) && !disabled;
 
-  // Active expansion padding and aperture height
-  const currentExpansion = isDragging ? dragOffset : expanded ? totalExpansionHeight : 0;
-  const currentProgress = totalExpansionHeight > 0 ? currentExpansion / totalExpansionHeight : expanded ? 1 : 0;
+  // Active expansion lift distance
+  const currentLift = isDragging ? dragOffset : expanded ? expandHeight : 0;
+  const isLayerActive = expanded || isDragging || currentLift > 0;
 
   return (
     <div
       className="relative mx-auto w-full max-w-3xl"
       style={{
-        paddingBottom: `${currentExpansion}px`,
-        transition: isDragging ? "none" : "padding-bottom 240ms cubic-bezier(0.16, 1, 0.3, 1)",
+        paddingBottom: `${currentLift}px`,
+        transition: isDragging ? "none" : "padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      {/* ── 底层: 固定在底部的工具栏卡片 (Stationary Toolbar Under-layer) ── */}
-      {/* 核心逻辑: 工具栏在下面绝对不动，展开时输入栏完全抬升到工具栏之上(+8px 间距)，所有工具100%全景展示 */}
+      {/* ── 底层: layerPanel (实体大卡, 完美对齐 Android 双层架构) ── */}
+      {/* 顶端延伸到上层卡片中心线 (top: comboHeight / 2), 底端锚定最底部 (bottom: 0) */}
+      {/* 上层下圆角坐在下层卡面上 (弧外三角区为下层实体卡面), 侧边框向上延伸, 形成一体化机械嵌合 */}
       <div
         className={cn(
-          "absolute inset-x-0 bottom-0 z-0 overflow-hidden select-none pointer-events-none",
-          (expanded || isDragging) && "pointer-events-auto",
+          "absolute inset-x-0 bottom-0 z-0 flex flex-col justify-end overflow-hidden select-none border-x border-b border-border/70 bg-card/90 dark:bg-card/85 shadow-sm transition-opacity duration-200",
+          isLayerActive ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         )}
         style={{
-          height: `${Math.min(toolbarHeight, currentExpansion)}px`,
-          transition: isDragging ? "none" : "height 240ms cubic-bezier(0.16, 1, 0.3, 1)",
+          top: `${Math.round(comboHeight / 2)}px`,
+          borderBottomLeftRadius: "1.75rem",
+          borderBottomRightRadius: "1.75rem",
+          borderTopLeftRadius: "0",
+          borderTopRightRadius: "0",
+          borderTopWidth: 0,
         }}
       >
-        {/* 工具栏实体卡片: 钉死在最底部 (bottom: 0), 尺寸稳定不晃动 */}
+        {/* 工具内容区 (toolArea): 停靠在卡壳底部, 向上展开时完全在 combo 下方呈现 */}
         <div
-          ref={toolbarRef}
-          className="absolute inset-x-0 bottom-0 rounded-3xl border border-border/50 bg-card/90 dark:bg-card/85 backdrop-blur-md px-4 py-3 space-y-2.5 shadow-sm transition-opacity duration-200"
-          style={{
-            opacity: currentProgress > 0.08 ? Math.min(1, currentProgress * 1.25) : 0,
-          }}
+          ref={toolAreaRef}
+          className="w-full px-4 pt-2 pb-2.5 space-y-2"
         >
           {/* Row 1: ModeSlider (左) + 深度思考 (右) */}
           <div className="flex items-center justify-between gap-2">
@@ -324,9 +340,12 @@ export function ChatInput({
         </div>
       </div>
 
-      {/* ── 上层: 可上下滑动的输入卡片 (Sliding Input Over-layer) ── */}
-      {/* 实体不透明背景 (bg-card/98) + 阴影, 落下时完全覆盖底层工具栏 */}
-      <div className="relative z-10 w-full rounded-3xl border border-border/70 bg-card/98 dark:bg-card/95 backdrop-blur-md shadow-[0_4px_24px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_24px_-4px_rgba(0,0,0,0.35)] transition-shadow duration-200 overflow-hidden">
+      {/* ── 上层: combo 输入卡 (唯一运动层, 坐在下层卡面上) ── */}
+      {/* 独立完整圆角 (rounded-3xl) + 实体背景 (bg-background/98) + 阴影 */}
+      <div
+        ref={comboRef}
+        className="relative z-10 w-full rounded-3xl border border-border/75 bg-background/98 dark:bg-background/95 backdrop-blur-md shadow-[0_2px_12px_-2px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_16px_-2px_rgba(0,0,0,0.4)] overflow-hidden"
+      >
         {/* 顶部手柄条: 支持鼠标按下上下拖拽拉动 与 单击切换 */}
         <div
           role="button"

@@ -19,7 +19,9 @@ import {
   View,
 } from "react-native";
 import { LoaderIcon, Trash2Icon, XIcon } from "../../../components/ui/Icon";
+import { InfoTip } from "../../../components/ui/InfoTip";
 import { PasswordInput } from "../../../components/ui/PasswordInput";
+import { SelectRow } from "../../../components/ui/SelectRow";
 import type { ThemeColors } from "../../../styles/theme";
 import { makeStyles } from "./ai-settings-styles";
 
@@ -330,34 +332,26 @@ export function EndpointEditor({
 
       <View style={styles.fieldGroup}>
         <Text style={styles.fieldLabel}>{t("settings.ai_providerLabel", "提供商")}</Text>
-        <View style={styles.providerGrid}>
-          {PROVIDERS.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.providerBtn, ep.provider === p.id && styles.providerBtnActive]}
-              onPress={() => {
-                const config = PROVIDER_CONFIGS[p.id];
-                const defaultBaseUrl = getDefaultBaseUrl(p.id);
-                onUpdate(ep.id, {
-                  provider: p.id,
-                  baseUrl: defaultBaseUrl,
-                  useExactRequestUrl: false,
-                  name: config?.name || p.label,
-                  models: [],
-                  modelsFetched: false,
-                }).catch(console.error);
-                setBaseUrl(defaultBaseUrl);
-                setUseExactRequestUrl(false);
-                setName(config?.name || p.label);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.providerBtnText, ep.provider === p.id && styles.providerBtnTextActive]}>
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <SelectRow
+          value={ep.provider}
+          options={PROVIDERS.map((p) => ({ value: p.id, label: p.label }))}
+          onSelect={(value) => {
+            const id = value as AIProviderType;
+            const config = PROVIDER_CONFIGS[id];
+            const defaultBaseUrl = getDefaultBaseUrl(id);
+            onUpdate(ep.id, {
+              provider: id,
+              baseUrl: defaultBaseUrl,
+              useExactRequestUrl: false,
+              name: config?.name || id,
+              models: [],
+              modelsFetched: false,
+            }).catch(console.error);
+            setBaseUrl(defaultBaseUrl);
+            setUseExactRequestUrl(false);
+            setName(config?.name || id);
+          }}
+        />
       </View>
 
       <View style={styles.fieldGroup}>
@@ -374,11 +368,16 @@ export function EndpointEditor({
       </View>
 
       <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>
-          {exactRequestUrlEnabled
-            ? t("settings.ai_exactRequestUrlLabel", "完整请求地址")
-            : t("settings.ai_baseUrl", "Base URL")}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={styles.fieldLabel}>
+            {exactRequestUrlEnabled
+              ? t("settings.ai_exactRequestUrlLabel", "完整请求地址")
+              : t("settings.ai_baseUrl", "Base URL")}
+          </Text>
+          {!exactRequestUrlEnabled && PROVIDER_CONFIGS[ep.provider]?.needsV1Suffix && (
+            <InfoTip text={t("settings.ai_baseUrlHint", "OpenAI-compatible endpoints append /v1 by default.")} />
+          )}
+        </View>
         <TextInput
           style={styles.input}
           includeFontPadding={false} // 防字体 padding 撑高行高,小输入框文本被上下裁剪
@@ -392,8 +391,10 @@ export function EndpointEditor({
         {supportsExactRequestUrl && (
           <View style={styles.exactUrlCard}>
             <View style={styles.exactUrlInfo}>
-              <Text style={styles.fieldLabel}>{t("settings.ai_exactRequestUrl", "完全自定义请求地址")}</Text>
-              <Text style={styles.baseUrlHint}>{t("settings.ai_exactRequestUrlDesc", "启用后将按你填写的地址原样请求，不再自动追加 /v1、/chat/completions 或 /models。")}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={styles.fieldLabel}>{t("settings.ai_exactRequestUrl", "完全自定义请求地址")}</Text>
+                <InfoTip text={t("settings.ai_exactRequestUrlDesc", "启用后将按你填写的地址原样请求，不再自动追加 /v1、/chat/completions 或 /models。")} />
+              </View>
             </View>
             <Switch
               value={exactRequestUrlEnabled}
@@ -406,32 +407,36 @@ export function EndpointEditor({
             />
           </View>
         )}
-        {!exactRequestUrlEnabled && PROVIDER_CONFIGS[ep.provider]?.needsV1Suffix && (
-          <Text style={styles.baseUrlHint}>{t("settings.ai_baseUrlHint", "OpenAI-compatible endpoints append /v1 by default.")}</Text>
-        )}
-        <View style={styles.previewCard}>
-          <View style={styles.previewHeader}>
-            <Text style={styles.previewLabel}>{t("settings.ai_requestUrlPreview", "最终请求地址")}</Text>
-            <TouchableOpacity style={styles.previewCopyButton} onPress={handleCopyRequestPreview} activeOpacity={0.8} disabled={!requestPreview}>
-              <Text style={styles.previewCopyButtonText}>{t("common.copy", "复制")}</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.previewValue}>{requestPreview || "—"}</Text>
-          <Text style={styles.previewLabel}>{t("settings.ai_testModel", "测试模型")}</Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <TouchableOpacity
-              style={[styles.testModelChip, testModel === "__auto__" && styles.testModelChipActive]}
-              onPress={() => setTestModel("__auto__")}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.testModelChipText, testModel === "__auto__" && styles.testModelChipTextActive]}>
-                {t("settings.ai_testModelAuto", "自动")}
-              </Text>
-            </TouchableOpacity>
-            {testModel !== "__auto__" && (
-              <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "500" }}>{testModel}</Text>
-            )}
-          </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={styles.previewLabel}>{t("settings.ai_requestUrlPreview", "最终请求地址")}</Text>
+          <InfoTip title={t("settings.ai_requestUrlPreview", "最终请求地址")} size={14}>
+            <Text style={styles.previewValue}>{requestPreview || "—"}</Text>
+            <View style={styles.previewHeader}>
+              <Text style={styles.previewLabel}>{t("settings.ai_testModel", "测试模型")}</Text>
+              <TouchableOpacity
+                style={styles.previewCopyButton}
+                onPress={handleCopyRequestPreview}
+                activeOpacity={0.8}
+                disabled={!requestPreview}
+              >
+                <Text style={styles.previewCopyButtonText}>{t("common.copy", "复制")}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <TouchableOpacity
+                style={[styles.testModelChip, testModel === "__auto__" && styles.testModelChipActive]}
+                onPress={() => setTestModel("__auto__")}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.testModelChipText, testModel === "__auto__" && styles.testModelChipTextActive]}>
+                  {t("settings.ai_testModelAuto", "自动")}
+                </Text>
+              </TouchableOpacity>
+              {testModel !== "__auto__" && (
+                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "500" }}>{testModel}</Text>
+              )}
+            </View>
+          </InfoTip>
         </View>
       </View>
 

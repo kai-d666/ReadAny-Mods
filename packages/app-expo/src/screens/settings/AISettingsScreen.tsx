@@ -43,7 +43,7 @@ export default function AISettingsScreen() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [aiAssistantOpen, setAiAssistantOpen] = useState(true);
+  const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
   const [endpointPickerVisible, setEndpointPickerVisible] = useState(false);
 
   const activeEndpoint = aiConfig.endpoints.find((e) => e.id === aiConfig.activeEndpointId);
