@@ -216,7 +216,12 @@
     "opdsErrorHttp": "Request failed ({{status}}).",
     "opdsErrorTimeout": "Connection timed out ({{seconds}}s). Check your network.",
     "opdsErrorTls": "TLS certificate validation failed. Check the certificate or enable \"allow insecure connections\".",
-    "opdsErrorNetwork": "Could not reach the server. Check your network or URL."
+    "opdsErrorNetwork": "Could not reach the server. Check your network or URL.",
+    "opdsMoreSimilar": "Similar Books",
+    "opdsComments": "Reader Comments",
+    "opdsNoComments": "No comments available",
+    "opdsDetailLoading": "Fetching download info…",
+    "opdsFacetMore": "More…"
   },
   "home": {
     "library": "Library",

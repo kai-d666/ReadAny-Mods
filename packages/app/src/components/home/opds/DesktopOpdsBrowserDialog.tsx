@@ -21,6 +21,7 @@ import {
 import {
   buildOpenSearchUrl,
   type OpdsAcquisition,
+  type OpdsFacet,
   type OpdsFeed,
   type OpdsPublication,
   type OpdsSource,
@@ -43,8 +44,11 @@ import {
   LayoutGrid,
   List,
   Loader2,
+  MessageSquare,
   RefreshCw,
   Search,
+  Sparkles,
+  Star,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -62,6 +66,30 @@ type ImportState =
   | { phase: "importing"; name: string };
 
 type NavPathEntry = { title: string; href: string };
+
+/** 分面组显示配置: label + 内联上限 */
+const FACET_GROUP_META: Record<string, { label: string; inlineLimit: number }> = {
+  order: { label: "排序", inlineLimit: Number.MAX_SAFE_INTEGER },
+  language: { label: "语言", inlineLimit: 8 },
+  format: { label: "格式", inlineLimit: 6 },
+};
+
+/** 分面组 → URL 参数键 */
+const FACET_PARAM_KEY: Record<string, "order" | "lang" | "ext"> = {
+  order: "order",
+  language: "lang",
+  format: "ext",
+};
+
+function facetValueOf(facet: OpdsFacet, paramKey: string): string {
+  try {
+    return new URL(facet.href).searchParams.get(paramKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+type FilterSel = { order: string; lang: string; ext: string };
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|\[\]{}#%&]/g, "_").trim() || `book-${Date.now()}`;
@@ -158,21 +186,99 @@ function OpdsBookCover({
 function OpdsBookDetailsModal({
   pub,
   open,
+  client,
   onClose,
   onDownload,
+  onSelectSimilar,
   isDownloading,
   isAlreadyInLibrary,
 }: {
   pub: OpdsPublication | null;
   open: boolean;
+  client: OpdsClient | null;
   onClose: () => void;
   onDownload: (acq: OpdsAcquisition) => void;
+  onSelectSimilar?: (pub: OpdsPublication) => void;
   isDownloading: boolean;
   isAlreadyInLibrary: boolean;
 }) {
   const { t } = useTranslation();
   const [enrichedPub, setEnrichedPub] = useState<OpdsPublication | null>(pub);
   const [isEnriching, setIsEnriching] = useState(false);
+
+  // 相似书籍 & 评论状态
+  const [similarList, setSimilarList] = useState<OpdsPublication[] | null>(null);
+  const [similarBusy, setSimilarBusy] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsList, setCommentsList] = useState<Array<{ id?: number | string; user: string; premium?: boolean; date?: string; text: string }> | null>(null);
+  const [commentsBusy, setCommentsBusy] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+
+  const currentPub = enrichedPub ?? pub;
+
+  const driverEndpointUrl = useCallback((p: OpdsPublication, endpoint: string): string | null => {
+    const detailHref = p.detailHref;
+    if (detailHref) {
+      try {
+        const u = new URL(detailHref);
+        u.pathname = u.pathname.replace(/\/detail(?=\?|$)/, `/${endpoint}`);
+        return u.toString();
+      } catch {}
+    }
+    const acq = p.acquisitions[0];
+    if (!acq) return null;
+    try {
+      const u = new URL(acq.href);
+      u.pathname = u.pathname.replace(/\/download(?=\?|$)/, `/${endpoint}`);
+      u.searchParams.delete("extension");
+      u.searchParams.delete("href");
+      return u.toString();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const handleOpenSimilar = useCallback(async () => {
+    if (!currentPub || !client) return;
+    const url = driverEndpointUrl(currentPub, "similar");
+    if (!url) {
+      toast.info(t("library.opdsNoResults", "当前书源不支持相似书籍推荐"));
+      return;
+    }
+    setSimilarBusy(true);
+    try {
+      const feed = await client.fetchFeed(url);
+      setSimilarList(feed.publications);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSimilarBusy(false);
+    }
+  }, [client, currentPub, driverEndpointUrl, t]);
+
+  const handleOpenComments = useCallback(async () => {
+    if (!currentPub) return;
+    const url = driverEndpointUrl(currentPub, "comments");
+    if (!url) {
+      toast.info(t("library.opdsNoResults", "当前书源不支持查看书评"));
+      return;
+    }
+    setCommentsOpen(true);
+    setCommentsBusy(true);
+    setCommentsError(null);
+    setCommentsList(null);
+    try {
+      const { getPlatformService } = await import("@readany/core/services");
+      const resp = await getPlatformService().fetch(url, { responseType: "text" });
+      const text = await resp.text();
+      const data = JSON.parse(text) as { comments?: Array<{ id?: number | string; user: string; premium?: boolean; date?: string; text: string }> };
+      setCommentsList(data.comments ?? []);
+    } catch (err) {
+      setCommentsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCommentsBusy(false);
+    }
+  }, [currentPub, driverEndpointUrl, t]);
 
   useEffect(() => {
     setEnrichedPub(pub);
@@ -233,8 +339,7 @@ function OpdsBookDetailsModal({
     };
   }, [pub]);
 
-  if (!pub) return null;
-  const currentPub = enrichedPub ?? pub;
+  if (!pub || !currentPub) return null;
 
   const supportedAcqs = currentPub.acquisitions
     .filter((a) => a.priority >= 0)
@@ -341,6 +446,36 @@ function OpdsBookDetailsModal({
                   </div>
                 )}
               </div>
+
+              {/* 动作区 (koplugin 同款: 更多相似书籍 + 读者评论) */}
+              <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenSimilar}
+                  disabled={similarBusy}
+                  className="gap-1.5 rounded-xl text-xs h-8"
+                >
+                  {similarBusy ? (
+                    <Loader2 className="size-3.5 animate-spin text-primary" />
+                  ) : (
+                    <Sparkles className="size-3.5 text-amber-500" />
+                  )}
+                  <span>{t("library.opdsMoreSimilar", "更多相似书籍")}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenComments}
+                  className="gap-1.5 rounded-xl text-xs h-8"
+                >
+                  <MessageSquare className="size-3.5 text-blue-500" />
+                  <span>{t("library.opdsComments", "读者评论")}</span>
+                </Button>
+              </div>
             </div>
 
             <div className="mt-4 flex justify-end gap-2 border-t pt-3">
@@ -370,6 +505,94 @@ function OpdsBookDetailsModal({
           </div>
         </div>
       </DialogContent>
+
+      {/* 更多相似书籍弹层 */}
+      <Dialog open={!!similarList} onOpenChange={(next) => !next && setSimilarList(null)}>
+        <DialogContent className="max-w-lg p-5">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="text-base font-semibold flex items-center gap-2">
+              <Sparkles className="size-4 text-amber-500" />
+              <span>{t("library.opdsMoreSimilar", "更多相似书籍")}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-2 py-2">
+            {similarList?.length === 0 ? (
+              <p className="text-center py-8 text-xs text-muted-foreground">
+                {t("library.opdsNoResults", "没有搜到结果")}
+              </p>
+            ) : (
+              similarList?.map((item) => (
+                <button
+                  key={`${item.id ?? item.title}`}
+                  type="button"
+                  onClick={() => {
+                    setSimilarList(null);
+                    onSelectSimilar?.(item);
+                  }}
+                  className="w-full flex items-center gap-3 p-2.5 rounded-xl border border-border bg-card hover:bg-accent/40 hover:border-primary/40 text-left transition-all group"
+                >
+                  <div className="size-10 shrink-0 overflow-hidden rounded bg-muted flex items-center justify-center">
+                    {item.thumbnailUrl ? (
+                      <img src={item.thumbnailUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      <BookOpen className="size-5 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                      {item.title}
+                    </p>
+                    {item.authors.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                        {item.authors.join(" / ")}
+                      </p>
+                    )}
+                  </div>
+                  <ChevronRight className="size-4 text-muted-foreground shrink-0 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 读者评论弹层 */}
+      <Dialog open={commentsOpen} onOpenChange={(next) => !next && setCommentsOpen(false)}>
+        <DialogContent className="max-w-lg p-5">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="text-base font-semibold flex items-center gap-2">
+              <MessageSquare className="size-4 text-blue-500" />
+              <span>{t("library.opdsComments", "读者评论")}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-3 py-2">
+            {commentsBusy ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="size-6 animate-spin text-primary" />
+              </div>
+            ) : commentsError ? (
+              <p className="text-center py-8 text-xs text-destructive">{commentsError}</p>
+            ) : (commentsList ?? []).length === 0 ? (
+              <p className="text-center py-8 text-xs text-muted-foreground">
+                {t("library.opdsNoComments", "暂无评论内容")}
+              </p>
+            ) : (
+              commentsList?.map((c, idx) => (
+                <div key={`${c.id ?? idx}`} className="rounded-xl border border-border p-3 bg-muted/20 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground flex items-center gap-1">
+                      {c.user}
+                      {c.premium && <Star className="size-3 text-amber-500 fill-amber-500" />}
+                    </span>
+                    {c.date && <span className="text-[10px]">{c.date}</span>}
+                  </div>
+                  <p className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap">{c.text}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
@@ -390,6 +613,7 @@ export function DesktopOpdsBrowserDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [filterSel, setFilterSel] = useState<FilterSel | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [importState, setImportState] = useState<ImportState>({ phase: "idle" });
   const [selectedPublication, setSelectedPublication] = useState<OpdsPublication | null>(null);
@@ -397,7 +621,13 @@ export function DesktopOpdsBrowserDialog({
   const openSearchRef = useRef<{ href?: string; template: string } | null>(null);
 
   const loadFeedWith = useCallback(
-    async (activeClient: OpdsClient, href: string, title: string, append: boolean) => {
+    async (
+      activeClient: OpdsClient,
+      href: string,
+      title: string,
+      append: boolean,
+      navMode: "push" | "replace" | "none" = "push",
+    ) => {
       setLoading(true);
       setError(null);
       try {
@@ -407,9 +637,12 @@ export function DesktopOpdsBrowserDialog({
             ? { ...nextFeed, publications: [...prev.publications, ...nextFeed.publications] }
             : nextFeed,
         );
-        if (!append) {
+        if (!append && navMode !== "none") {
           setNavPath((cur) => {
             const top = cur[cur.length - 1];
+            if (navMode === "replace" && top && top.href !== href) {
+              return [...cur.slice(0, -1), { title, href }];
+            }
             if (top && top.href === href) return cur;
             return [...cur, { title, href }];
           });
@@ -422,6 +655,40 @@ export function DesktopOpdsBrowserDialog({
     },
     [],
   );
+
+  // 初始化或到达带分面的源时，同步分面默认选中状态
+  useEffect(() => {
+    if (feed?.facets && feed.facets.length > 0) {
+      setFilterSel((cur) => {
+        if (cur) return cur;
+        const facets = feed.facets ?? [];
+        const pick = (group: string, key: string) => {
+          const active = facets.find((f) => f.group === group && f.active);
+          return active ? facetValueOf(active, key) : "";
+        };
+        return {
+          order: pick("order", "order") || "bestmatch",
+          lang: pick("language", "lang"),
+          ext: pick("format", "ext"),
+        };
+      });
+    } else {
+      setFilterSel(null);
+    }
+  }, [feed?.facets]);
+
+  const handleFacetTap = useCallback((groupId: string, facet: OpdsFacet) => {
+    const key = FACET_PARAM_KEY[groupId];
+    if (!key) return;
+    const value = facetValueOf(facet, key);
+    setFilterSel((cur) => ({
+      order: "bestmatch",
+      lang: "",
+      ext: "",
+      ...(cur ?? {}),
+      [key]: value,
+    }));
+  }, []);
 
   useEffect(() => {
     if (!source) return;
@@ -499,11 +766,31 @@ export function DesktopOpdsBrowserDialog({
       const template = openSearchRef.current?.template;
       if (!template) return;
       const searchUrl = buildOpenSearchUrl(template, query);
-      await loadFeedWith(client, searchUrl, query, false);
+
+      let finalUrl = searchUrl;
+      try {
+        const u = new URL(searchUrl);
+        if (filterSel) {
+          u.searchParams.set("order", filterSel.order);
+          if (filterSel.lang) u.searchParams.set("lang", filterSel.lang);
+          if (filterSel.ext) u.searchParams.set("ext", filterSel.ext);
+        } else if (feed?.href) {
+          const cur = new URL(feed.href);
+          for (const key of ["order", "lang", "ext"]) {
+            const value = cur.searchParams.get(key);
+            if (value) u.searchParams.set(key, value);
+          }
+        }
+        finalUrl = u.toString();
+      } catch {}
+
+      const top = navPath[navPath.length - 1];
+      const topIsSearch = !!top && (top.href.includes("/search?") || top.href.includes("?q="));
+      await loadFeedWith(client, finalUrl, query, false, topIsSearch ? "replace" : "push");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, feed, loadFeedWith, search]);
+  }, [client, feed, filterSel, loadFeedWith, navPath, search]);
 
   const handleLoadNext = useCallback(() => {
     if (!client || !feed?.nextHref || loading) return;
@@ -723,29 +1010,88 @@ export function DesktopOpdsBrowserDialog({
 
                 {/* 搜索框 (支持回车提交与一键清空) */}
                 {hasSearch && (
-                  <div className="relative w-48 sm:w-64 shrink-0">
-                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void handleSearchSubmit();
-                      }}
-                      className="h-7.5 pl-8 pr-7 text-xs rounded-xl"
-                      placeholder={t("library.opdsSearchPlaceholder", "搜索书名或作者...")}
-                    />
-                    {search && (
-                      <button
-                        type="button"
-                        onClick={() => setSearch("")}
-                        className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
-                      >
-                        <X className="size-3" />
-                      </button>
-                    )}
+                  <div className="relative w-48 sm:w-64 shrink-0 flex items-center gap-1.5">
+                    <div className="relative flex-1">
+                      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void handleSearchSubmit();
+                        }}
+                        className="h-7.5 pl-8 pr-7 text-xs rounded-xl"
+                        placeholder={t("library.opdsSearchPlaceholder", "搜索书名或作者...")}
+                      />
+                      {search && (
+                        <button
+                          type="button"
+                          onClick={() => setSearch("")}
+                          className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void handleSearchSubmit()}
+                      disabled={loading || !search.trim()}
+                      className="h-7.5 px-2.5 rounded-xl text-xs"
+                    >
+                      {loading ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
+                    </Button>
                   </div>
                 )}
               </div>
+
+              {/* 第 3 行：分面筛选条 (Facets Filter Bar: 排序 / 语言 / 格式) */}
+              {feed?.facets && feed.facets.length > 0 && (
+                <div className="flex flex-col gap-2 border-t pt-2.5">
+                  {Object.entries(
+                    feed.facets.reduce<Record<string, OpdsFacet[]>>((acc, facet) => {
+                      const group = facet.group || "default";
+                      if (!acc[group]) acc[group] = [];
+                      acc[group].push(facet);
+                      return acc;
+                    }, {}),
+                  ).map(([groupId, facets]) => {
+                    const meta = FACET_GROUP_META[groupId] ?? { label: groupId, inlineLimit: 6 };
+                    const paramKey = FACET_PARAM_KEY[groupId];
+                    const selectedVal = paramKey && filterSel ? filterSel[paramKey] : "";
+
+                    return (
+                      <div key={groupId} className="flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
+                        <span className="shrink-0 text-[11px] font-semibold text-muted-foreground/80 uppercase">
+                          {meta.label}:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {facets.slice(0, meta.inlineLimit).map((facet, fIdx) => {
+                            const val = paramKey ? facetValueOf(facet, paramKey) : "";
+                            const isSelected = selectedVal === val || (!selectedVal && facet.active);
+
+                            return (
+                              <button
+                                key={`facet-${groupId}-${fIdx}-${facet.title}`}
+                                type="button"
+                                onClick={() => handleFacetTap(groupId, facet)}
+                                className={cn(
+                                  "shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all",
+                                  isSelected
+                                    ? "bg-primary text-primary-foreground shadow-xs"
+                                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
+                                )}
+                              >
+                                {facet.title}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </DialogHeader>
 
@@ -1122,7 +1468,9 @@ export function DesktopOpdsBrowserDialog({
       <OpdsBookDetailsModal
         pub={selectedPublication}
         open={!!selectedPublication}
+        client={client}
         onClose={() => setSelectedPublication(null)}
+        onSelectSimilar={(item) => setSelectedPublication(item)}
         onDownload={(acq) => {
           if (selectedPublication) void runDownload(acq, selectedPublication);
         }}
