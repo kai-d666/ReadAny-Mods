@@ -57,6 +57,8 @@ describe("local opds request handler", () => {
 
     const feed = parseOpdsFeed(response.text, "http://127.0.0.1:19090/opds/libgen/");
     expect(feed.title).toBe("LibGen · alice");
+    // 搜索结果同样带 searchHref:客户端据此在结果页保留搜索栏(原地再搜)
+    expect(feed.searchHref).toBe("http://127.0.0.1:19090/opds/libgen/opensearch.xml");
     expect(feed.publications).toHaveLength(1);
     expect(feed.publications[0].acquisitions[0].href).toBe(
       "http://127.0.0.1:19090/opds/libgen/download?md5=b529a8968792449ca7368a284e7b0aec",

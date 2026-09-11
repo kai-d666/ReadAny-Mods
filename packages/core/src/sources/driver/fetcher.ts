@@ -12,6 +12,8 @@ export type Fetcher = (
     headers?: Record<string, string>;
     body?: string;
     responseType?: "text" | "arraybuffer";
+    /** 覆盖默认 15s 超时(大文件下载等长任务用;平台 XHR 超时=整包时长) */
+    timeoutMs?: number;
   },
 ) => Promise<Response>;
 
@@ -23,7 +25,7 @@ export const defaultFetcher: Fetcher = (url, init) =>
     headers: init?.headers,
     body: init?.body as BodyInit | undefined,
     responseType: init?.responseType ?? "text",
-    timeoutMs: DRIVER_FETCH_TIMEOUT_MS,
+    timeoutMs: init?.timeoutMs ?? DRIVER_FETCH_TIMEOUT_MS,
   });
 
 /** 仅当响应是"非 HTML"且达到最低大小时才判定为真实文件(加载/错误页兜底) */

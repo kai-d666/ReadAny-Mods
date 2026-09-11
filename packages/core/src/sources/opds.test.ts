@@ -122,6 +122,28 @@ describe("parseOpdsFeed", () => {
     expect(feed.publications).toHaveLength(0);
   });
 
+  it("treats cover-only entries (no download, no catalog link) as publications, not navigation", () => {
+    // ZL 最热列表"残条"形态:只有封面、没有下载链接 —— 必须归为出版物,
+    // 否则被渲染成目录项,点开把封面图当目录加载(2026-09-11 实锤 bug)
+    const xml = `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>b</title>
+  <entry>
+    <title>The Odyssey</title>
+    <link rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" href="https://cdn.example/covers/ody.jpg"/>
+    <link rel="alternate" type="application/json" href="/opds/zlib/detail?id=4774597&amp;hash=74c80f"/>
+  </entry>
+</feed>`;
+    const feed = parseOpdsFeed(xml, "https://server.com/opds/zlib/");
+    expect(feed.navigation).toHaveLength(0);
+    expect(feed.publications).toHaveLength(1);
+    expect(feed.publications[0].title).toBe("The Odyssey");
+    expect(feed.publications[0].thumbnailUrl).toBe("https://cdn.example/covers/ody.jpg");
+    expect(feed.publications[0].detailHref).toBe(
+      "https://server.com/opds/zlib/detail?id=4774597&hash=74c80f",
+    );
+  });
+
   it("extracts navigation title from link title attribute when entry has no title tag", () => {
     const xml = `<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">

@@ -20,6 +20,7 @@ export const OPDS_NS_OPENSEARCH = "http://a9.com/-/spec/opensearch/1.1/";
 export const OPDS_MIME_ATOM = "application/atom+xml";
 export const OPDS_MIME_OPENSEARCH = "application/opensearchdescription+xml";
 export const OPDS_REL_ACQUISITION = "http://opds-spec.org/acquisition";
+export const OPDS_REL_FACET = "http://opds-spec.org/facet";
 export const OPDS_REL_COVER = ["http://opds-spec.org/image", "http://opds-spec.org/cover"];
 export const OPDS_REL_THUMBNAIL = [
   "http://opds-spec.org/image/thumbnail",
@@ -81,11 +82,15 @@ export interface OpdsPublication {
   id?: string;
   title: string;
   authors: string[];
-  summary?: string;
+  summary?: string; // 简介(dc:summary/content)
   language?: string; // dc:language
   issued?: string; // dc:issued / dc:date
+  publisher?: string; // dc:publisher
+  extent?: string; // dc:extent(页数等)
   thumbnailUrl?: string;
   coverUrl?: string;
+  /** 详情补全接口(rel=alternate, application/json):列表"残条"缺下载信息时按此取全字段 */
+  detailHref?: string;
   acquisitions: OpdsAcquisition[];
 }
 
@@ -99,6 +104,16 @@ export interface OpdsFeed {
   searchHref?: string; // feed 级 <link rel="search">(OpenSearch Description 地址)
   /** OPDS-2:搜索模板直接内联在 catalog 元数据里,无需外取 OpenSearch 文档 */
   searchTemplate?: string;
+  /** OPDS-1 分面(rel=.../facet):服务端生成的筛选/排序链接(如 ZL 的最热排序/语言/格式) */
+  facets?: OpdsFacet[];
+}
+
+/** OPDS 1.x facet link(同一 facetGroup 为一组选项;active=true 为当前选中项) */
+export interface OpdsFacet {
+  group: string;
+  title: string;
+  href: string;
+  active?: boolean;
 }
 
 export interface OpdsOpenSearch {
@@ -272,6 +287,9 @@ interface RawLink {
   type: string;
   title: string;
   length?: string;
+  /** facet 专用属性(OPDS 1.x:opds:facetGroup / opds:activeFacet,兼容无前缀写法) */
+  facetGroup?: string;
+  activeFacet?: boolean;
 }
 
 function parseLinks(node: XmlNode, ns: string | null): RawLink[] {
@@ -283,6 +301,10 @@ function parseLinks(node: XmlNode, ns: string | null): RawLink[] {
       type: link.getAttribute("type") ?? "",
       title: link.getAttribute("title") ?? "",
       length: link.getAttribute("length") ?? undefined,
+      facetGroup:
+        link.getAttribute("opds:facetGroup") ?? link.getAttribute("facetGroup") ?? undefined,
+      activeFacet:
+        (link.getAttribute("opds:activeFacet") ?? link.getAttribute("activeFacet")) === "true",
     }));
 }
 
@@ -364,8 +386,16 @@ function parsePublication(entry: XmlNode, feedHref: string, ns: string | null): 
       textOf(children.find((c) => isDcElement(c, ["issued"]))) ||
       textOf(children.find((c) => isDcElement(c, ["date", "published"]))) ||
       undefined,
+    publisher: textOf(children.find((c) => isDcElement(c, ["publisher"]))) || undefined,
+    extent: textOf(children.find((c) => isDcElement(c, ["extent"]))) || undefined,
     thumbnailUrl: findCover(OPDS_REL_THUMBNAIL),
     coverUrl: findCover(OPDS_REL_COVER),
+    detailHref: (() => {
+      const link = links.find(
+        (l) => l.rels.includes("alternate") && l.type.includes("json") && l.href,
+      );
+      return link ? resolveOpdsHref(link.href, feedHref) : undefined;
+    })(),
     acquisitions,
   };
 }
@@ -460,7 +490,14 @@ export function parseOpdsFeed(xml: string, baseUrl: string): OpdsFeed {
 
   for (const entry of children.filter((c) => isAtomElement(c, "entry", ns))) {
     const entryLinks = parseLinks(entry, ns);
-    const isPub = entryLinks.some(isDownloadLink);
+    const hasDownload = entryLinks.some(isDownloadLink);
+    // 有封面但没有任何"目录型"链接的条目 = 不可下载的书目(ZL 热门列表等"残条"数据),
+    // 归为出版物而非目录 —— 否则被渲染成文件夹,点开会把封面图当目录加载而失败(2026-09-11)
+    const hasCatalogLink = entryLinks.some((l) => isOpdsCatalogType(l.type));
+    const hasCoverArt = entryLinks.some((l) =>
+      l.rels.some((r) => OPDS_REL_COVER.includes(r) || OPDS_REL_THUMBNAIL.includes(r)),
+    );
+    const isPub = hasDownload || (!hasCatalogLink && hasCoverArt);
     if (isPub) {
       publications.push(parsePublication(entry, baseUrl, ns));
     } else {
@@ -484,6 +521,17 @@ export function parseOpdsFeed(xml: string, baseUrl: string): OpdsFeed {
     }
   }
 
+  // 分面:rel=http://opds-spec.org/facet 的 link(服务端筛选/排序入口)
+  const facets: OpdsFacet[] = feedLinks
+    .filter((l) => l.rels.includes(OPDS_REL_FACET) && l.href)
+    .map((l) => ({
+      group: l.facetGroup ?? "",
+      title: l.title?.trim() || "",
+      href: resolveOpdsHref(l.href, baseUrl),
+      active: !!l.activeFacet,
+    }))
+    .filter((f) => f.title && f.href);
+
   return {
     title: textOf(children.find((c) => isAtomElement(c, "title", ns))),
     subtitle: textOf(children.find((c) => isAtomElement(c, "subtitle", ns))) || undefined,
@@ -492,6 +540,7 @@ export function parseOpdsFeed(xml: string, baseUrl: string): OpdsFeed {
     publications,
     nextHref: nextLink?.href ? resolveOpdsHref(nextLink.href, baseUrl) : undefined,
     searchHref: searchLink?.href ? resolveOpdsHref(searchLink.href, baseUrl) : undefined,
+    facets: facets.length > 0 ? facets : undefined,
   };
 }
 

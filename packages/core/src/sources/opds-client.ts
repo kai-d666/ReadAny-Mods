@@ -25,7 +25,9 @@ import {
 } from "./opds";
 import { parseOpds2 } from "./opds2";
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+// 30s:本机驱动源在服务端会串行做"镜像探测+登录+上游检索",冷启动可达十几秒
+// (15s 曾导致"第一次必失败、重试就好"——响应写出时客户端已超时弃连,2026-09-11)
+const DEFAULT_TIMEOUT_MS = 30_000;
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 500;
 
@@ -231,6 +233,9 @@ export class OpdsClient {
         throw createOpdsHttpError(response.status, href);
       } catch (error: unknown) {
         if (error instanceof OpdsError) throw error;
+        console.warn(
+          `[OpdsClient] GET ${href} request error after ${Date.now() - startTime}ms: ${error instanceof Error ? error.message : String(error)}`,
+        );
         throw createRequestOpdsError(error, href, timeoutMs);
       }
     }

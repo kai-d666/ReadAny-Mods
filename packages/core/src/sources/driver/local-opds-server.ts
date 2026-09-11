@@ -23,7 +23,16 @@ import { OpdsParseError, type OpdsFeed } from "../opds";
 export interface BookSourceDriver {
   readonly id: string;
   readonly name: string;
-  search(query: string): Promise<OpdsFeed>;
+  /** 目录检索;params = 附加筛选/排序参数(order/lang/ext 等,各驱动按需解释,忽略未知键) */
+  search(query: string, params?: Record<string, string>): Promise<OpdsFeed>;
+  /** 打开即浏览(可选):入口 feed(无 query)优先用它(如 ZL 的"最热");params 为筛选参数 */
+  browse?(params?: Record<string, string>): Promise<OpdsFeed>;
+  /** 相似书籍(可选;koplugin 同款入口):返回 OPDS feed,客户端列表可直接点开 */
+  similar?(bookId: string, hash: string): Promise<OpdsFeed>;
+  /** 评论(可选):返回结构化条目数组(JSON) */
+  comments?(bookId: string): Promise<unknown[]>;
+  /** 详情补全(可选):列表残条取全字段(extension/description 等;JSON) */
+  detail?(bookId: string, hash: string): Promise<object>;
   download(params: Record<string, string>): Promise<Uint8Array>;
 }
 
@@ -65,7 +74,7 @@ export function serializeOpdsFeed(feed: OpdsFeed): string {
   const parts: string[] = [];
   parts.push('<?xml version="1.0" encoding="utf-8"?>');
   parts.push(
-    '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">',
+    '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opds="http://opds-spec.org/2010/catalog">',
   );
   parts.push(`<title>${xmlEscape(feed.title)}</title>`);
   parts.push(`<link rel="self" href="${xmlEscape(feed.href)}"/>`);
@@ -78,6 +87,12 @@ export function serializeOpdsFeed(feed: OpdsFeed): string {
   if (feed.nextHref) {
     parts.push(
       `<link rel="next" type="application/atom+xml;type=feed;profile=opds-catalog" href="${xmlEscape(feed.nextHref)}"/>`,
+    );
+  }
+  // 分面(ZL 排序/语言/格式等筛选入口;OPDS 1.x facet 规范属性)
+  for (const facet of feed.facets ?? []) {
+    parts.push(
+      `<link rel="http://opds-spec.org/facet" href="${xmlEscape(facet.href)}" title="${xmlEscape(facet.title)}" opds:facetGroup="${xmlEscape(facet.group)}"${facet.active ? ' opds:activeFacet="true"' : ""}/>`,
     );
   }
 
@@ -99,15 +114,23 @@ export function serializeOpdsFeed(feed: OpdsFeed): string {
     }
     if (pub.language) parts.push(`<dc:language>${xmlEscape(pub.language)}</dc:language>`);
     if (pub.issued) parts.push(`<dc:issued>${xmlEscape(pub.issued)}</dc:issued>`);
+    if (pub.publisher) parts.push(`<dc:publisher>${xmlEscape(pub.publisher)}</dc:publisher>`);
+    if (pub.extent) parts.push(`<dc:extent>${xmlEscape(pub.extent)}</dc:extent>`);
     if (pub.summary) parts.push(`<summary>${xmlEscape(pub.summary)}</summary>`);
     if (pub.thumbnailUrl) {
       parts.push(
         `<link rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" href="${xmlEscape(pub.thumbnailUrl)}"/>`,
       );
     }
-    for (const acq of pub.acquisitions) {
+    if (pub.detailHref) {
       parts.push(
-        `<link rel="http://opds-spec.org/acquisition" type="${xmlEscape(extToMime(acq.extension))}" href="${xmlEscape(acq.href)}"/>`,
+        `<link rel="alternate" type="application/json" href="${xmlEscape(pub.detailHref)}"/>`,
+      );
+    }
+    for (const acq of pub.acquisitions) {
+      const lengthAttr = acq.size && acq.size > 0 ? ` length="${acq.size}"` : "";
+      parts.push(
+        `<link rel="http://opds-spec.org/acquisition" type="${xmlEscape(extToMime(acq.extension))}" href="${xmlEscape(acq.href)}"${lengthAttr}/>`,
       );
     }
     parts.push("</entry>");
@@ -190,6 +213,42 @@ export function createLocalOpdsRequestHandler(
         return openSearchResponse(driver.name, `${base}/opds/${driver.id}/search?q={searchTerms}`);
       }
 
+      // 相似书籍(koplugin "More Similar Books" 同款):返回 OPDS feed
+      if (sub === "similar") {
+        if (!driver.similar) return textResponse(404, "Not Found");
+        const id = url.searchParams.get("id") ?? "";
+        const hash = url.searchParams.get("hash") ?? "";
+        if (!id || !hash) return textResponse(400, "Missing id/hash");
+        return opdsResponse(await driver.similar(id, hash));
+      }
+
+      // 详情补全(koplugin fetchDetailsThenDownload 同款):列表残条取全字段
+      if (sub === "detail") {
+        if (!driver.detail) return textResponse(404, "Not Found");
+        const id = url.searchParams.get("id") ?? "";
+        const hash = url.searchParams.get("hash") ?? "";
+        if (!id || !hash) return textResponse(400, "Missing id/hash");
+        const book = await driver.detail(id, hash);
+        return {
+          status: 200,
+          body: new TextEncoder().encode(JSON.stringify({ book })),
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+        };
+      }
+
+      // 评论(koplugin "Comments" 同款):返回 JSON 条目数组
+      if (sub === "comments") {
+        if (!driver.comments) return textResponse(404, "Not Found");
+        const id = url.searchParams.get("id") ?? "";
+        if (!id) return textResponse(400, "Missing id");
+        const items = await driver.comments(id);
+        return {
+          status: 200,
+          body: new TextEncoder().encode(JSON.stringify({ comments: items })),
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+        };
+      }
+
       // 下载代理:驱动按参数(如 md5/id+hash)抓取,魔数校验在驱动内,客户端无感
       if (sub === "download") {
         const params: Record<string, string> = {};
@@ -205,17 +264,29 @@ export function createLocalOpdsRequestHandler(
       }
 
       if (!sub || sub === "search") {
+        // 附加筛选参数(order/lang/ext…)透传给驱动解释(browse 与 search 均可用)
+        const extra: Record<string, string> = {};
+        url.searchParams.forEach((value, key) => {
+          if (key !== "q" && key !== "query") extra[key] = value;
+        });
+        const searchHref = `${base}/opds/${driver.id}/opensearch.xml`;
         if (!query) {
-          // driver 入口:空目录 + searchHref 指向本机 OpenSearch 描述
+          // driver 入口:优先 browse(如 ZL 打开即出"最热"且可预配筛选);否则空目录 + 搜索框
+          if (driver.browse) {
+            const feed = await driver.browse(extra);
+            return opdsResponse({ ...feed, searchHref: feed.searchHref ?? searchHref });
+          }
           return opdsResponse({
             title: driver.name,
             href: `${base}/opds/${driver.id}/`,
             navigation: [],
             publications: [],
-            searchHref: `${base}/opds/${driver.id}/opensearch.xml`,
+            searchHref,
           });
         }
-        return opdsResponse(await driver.search(query));
+        // 搜索结果同样带 searchHref:客户端据此保留搜索栏(否则搜完搜索栏消失,无法原地再搜)
+        const feed = await driver.search(query, extra);
+        return opdsResponse({ ...feed, searchHref: feed.searchHref ?? searchHref });
       }
 
       return textResponse(404, "Not Found");
