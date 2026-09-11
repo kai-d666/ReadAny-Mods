@@ -913,7 +913,7 @@ export function DesktopOpdsBrowserDialog({
   return (
     <>
       <Dialog open={!!source} onOpenChange={(next) => !next && onClose()}>
-        <DialogContent className="flex h-[88vh] max-h-[920px] w-[min(95vw,1100px)] flex-col gap-0 overflow-hidden p-0">
+        <DialogContent className="flex h-[90vh] max-h-[1000px] w-[min(94vw,1320px)] max-w-[1320px] flex-col gap-0 overflow-hidden p-0">
           {/* Header 顶部工具栏 (双层桌面式布局：防止小窗下互相挤压) */}
           <DialogHeader className="border-b px-6 pt-4 pb-3.5 pr-16 bg-background/95 backdrop-blur shrink-0">
             <div className="flex flex-col gap-3">
@@ -1014,7 +1014,7 @@ export function DesktopOpdsBrowserDialog({
 
                 {/* 搜索框 (支持回车提交与一键清空) */}
                 {hasSearch && (
-                  <div className="relative w-48 sm:w-64 shrink-0 flex items-center gap-1.5">
+                  <div className="relative w-48 sm:w-72 md:w-80 shrink-0 flex items-center gap-1.5">
                     <div className="relative flex-1">
                       <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input
@@ -1229,7 +1229,7 @@ export function DesktopOpdsBrowserDialog({
 
                     {/* 网格视图 (Grid View)：自适应 minmax 网格，保证书籍封面永不挤压变形 */}
                     {viewMode === "grid" ? (
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-x-4.5 gap-y-6">
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-x-5 gap-y-7">
                         {feed.publications.map((pub, index) => {
                           const isDownloadingThis = importBusy && importState.name === pub.title;
                           const isAlreadyInLib = Boolean(
