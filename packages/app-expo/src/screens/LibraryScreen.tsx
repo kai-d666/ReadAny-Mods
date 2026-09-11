@@ -1271,16 +1271,13 @@ export function LibraryScreen() {
         onPickSavedWebDav={() => void handleOpenSavedWebDav()}
         onPickTemporaryWebDav={handleOpenTemporaryWebDav}
         onPickOpds={() => {
+          // 在线书源唯一入口:有书源 → 列表(列表内可增删改/浏览);无书源 → 直达添加表单
           setSourceSheetOpen(false);
           if (opdsSourceCount > 0) {
             nav.navigate("OpdsSources");
           } else {
             nav.navigate("OpdsSourceForm", {});
           }
-        }}
-        onManageOpds={() => {
-          setSourceSheetOpen(false);
-          nav.navigate("OpdsSources");
         }}
       />
       <WebDavConnectSheet

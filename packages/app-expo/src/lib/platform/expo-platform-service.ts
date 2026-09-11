@@ -795,6 +795,7 @@ export class ExpoPlatformService implements IPlatformService {
             if (lines.length === 0 || !lines[0]) continue;
 
             const [method, path] = lines[0].split(" ");
+            console.log(`[LocalHttp] → ${method} ${path}`); // 探针:请求到达(2026-09-11 首击丢响应排查)
             const reqHeaders: Record<string, string> = {};
             for (let i = 1; i < lines.length; i++) {
               const line = lines[i];
@@ -831,6 +832,9 @@ export class ExpoPlatformService implements IPlatformService {
               } else {
                 socket.write(headBytes);
               }
+              console.log(
+                `[LocalHttp] ← ${response.status} (${response.body?.length ?? 0}B) ${path}`,
+              ); // 探针:响应已写入 socket
             } catch (err) {
               console.error("TCP Sync handler Error:", err);
               socket.write(
@@ -858,7 +862,13 @@ export class ExpoPlatformService implements IPlatformService {
         // 发送缓冲排空后 5s 无新请求则关闭(与 keep-alive 响应头协同)
         socket.on("drain", () => {
           if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => socket.end(), 5000);
+          idleTimer = setTimeout(() => {
+            console.log("[LocalHttp] idle-close socket (5s no request)");
+            socket.end();
+          }, 5000);
+        });
+        socket.on("close", () => {
+          console.log("[LocalHttp] socket closed");
         });
         socket.on("error", (err: any) => {
           console.warn("Socket error:", err);
