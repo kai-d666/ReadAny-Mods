@@ -1,7 +1,15 @@
 /**
- * 桌面端本机书源服务端生命周期 Hook
- * 监听 useDeveloperStore 中的 isDeveloperMode 和 localOpdsServer
- * 当开启时，在 127.0.0.1:19090 启动内置 OPDS 网关，并自动向 OPDS 书源注册「本机书源」
+ * 桌面端「本机书源」生命周期 Hook
+ * 监听 useDeveloperStore 中的 isDeveloperMode / localOpdsServer。
+ *
+ * 桌面端【不真起 HTTP 服务】:本机书源是自用闭环(app 自己访问自己),
+ * 全部请求都在 TauriPlatformService.fetch 里进程内短路直接调 handler ——
+ * 不经 TCP,也就免疫 Clash/TUN/系统代理拦回环那一跳(2026-09-12)。
+ * 书源表里那个 127.0.0.1:19090 因此只是【虚拟地址】:不占端口,
+ * 也不会和 LAN 同步抢 Rust 端 start_lan_server 的单例槽位。
+ *
+ * 服务器代码没有扔:core 的 createLocalOpdsRequestHandler + 驱动装配照旧,
+ * 只是把「监听端口」换成「注册 handler」。将来真要对外提供,加回一行 startLANServer 即可。
  */
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,13 +25,16 @@ import { useOpdsSourcesStore } from "@readany/core/sources/opds-source-store";
 import { useDeveloperStore } from "@/stores/developer-store";
 
 export const DESKTOP_LOCAL_OPDS_SOURCE_ID = "local-opds-server";
-const DESKTOP_LOCAL_OPDS_PORT = 19090;
+/** 虚拟端口:桌面端不真绑端口,仅用于书源 URL 与短路匹配 */
+const DESKTOP_LOCAL_OPDS_VIRTUAL_PORT = 19090;
+/** 本机书源的源地址(短路按它精确匹配,避免误劫持别的 localhost OPDS 源) */
+const DESKTOP_LOCAL_OPDS_ORIGIN = `http://127.0.0.1:${DESKTOP_LOCAL_OPDS_VIRTUAL_PORT}`;
 
-let activeDesktopServer: { port: number; server: unknown } | null = null;
-let builtDesktopRev: string | null = null;
+let builtRev: string | null = null;
 let desktopLifecycle: Promise<void> = Promise.resolve();
 let desktopGeneration = 0;
 
+/** 驱动配置版本串(与 hook 依赖同构;在 hydrate 之后读取才是有效值) */
 function currentDesktopRev(): string {
   const z = useDriverConfigStore.getState().zlib;
   return `${z.enabled}|${z.domain}|${z.authId}|${z.username}|${z.hasPassword}`;
@@ -35,16 +46,10 @@ function enqueueDesktop(task: () => Promise<void>): void {
   });
 }
 
-async function stopActiveDesktopServer(): Promise<void> {
-  if (!activeDesktopServer) return;
-  const s = activeDesktopServer;
-  activeDesktopServer = null;
-  builtDesktopRev = null;
-  try {
-    await getPlatformService().stopLANServer?.(s.server);
-  } catch {
-    // ignore
-  }
+/** 注销进程内 handler(幂等) */
+function unregisterHandler(): void {
+  getPlatformService().setLocalOpdsHandler?.(null);
+  builtRev = null;
 }
 
 export function useDesktopLocalOpdsServer() {
@@ -63,8 +68,10 @@ export function useDesktopLocalOpdsServer() {
       if (myGen !== desktopGeneration) return;
 
       if (!shouldRun) {
-        await stopActiveDesktopServer();
-        const existing = useOpdsSourcesStore.getState().sources.find((s) => s.id === DESKTOP_LOCAL_OPDS_SOURCE_ID);
+        unregisterHandler();
+        const existing = useOpdsSourcesStore
+          .getState()
+          .sources.find((s) => s.id === DESKTOP_LOCAL_OPDS_SOURCE_ID);
         if (existing) {
           void useOpdsSourcesStore.getState().removeSource(DESKTOP_LOCAL_OPDS_SOURCE_ID);
         }
@@ -72,91 +79,65 @@ export function useDesktopLocalOpdsServer() {
       }
 
       const platform = getPlatformService();
-      if (!platform.startLANServer) {
-        console.warn("[DesktopLocalOpds] startLANServer not available on platform");
+      if (!platform.setLocalOpdsHandler) {
+        console.warn("[DesktopLocalOpds] setLocalOpdsHandler not available on platform");
         return;
       }
 
+      // hydrate 会改写 driver-config store(进而触发本 effect 重跑);
+      // 读 rev 必须在 hydrate 之后,这样"hydrate 触发的重跑"能命中 rev 未变 → 不重建
       await useDriverConfigStore.getState().hydrate();
       if (myGen !== desktopGeneration) return;
       const rev = currentDesktopRev();
 
-      if (activeDesktopServer && builtDesktopRev === rev) {
-        // 只需确保源存在
-        await useOpdsSourcesStore.getState().hydrate();
-        await useOpdsSourcesStore.getState().saveSource(
-          {
-            id: DESKTOP_LOCAL_OPDS_SOURCE_ID,
-            name: t("library.opdsLocalServerSourceName", "本机书源 (Z-Library / LibGen)"),
-            url: `http://127.0.0.1:${activeDesktopServer.port}/opds/`,
-            username: "",
-            allowInsecure: true,
-          },
-          "",
-        );
-        return;
-      }
+      if (builtRev !== rev) {
+        try {
+          const drivers: LocalOpdsDriver[] = [new LibgenDriver()];
+          const currentZl = useDriverConfigStore.getState().zlib;
 
-      // 确定性先停后起
-      await stopActiveDesktopServer();
+          if (currentZl.enabled) {
+            const password = await useDriverConfigStore.getState().getZlibPassword();
+            const userKey = await useDriverConfigStore.getState().getZlibUserKey();
+            drivers.push(
+              new ZlibDriver({
+                domain: currentZl.domain.trim() || undefined,
+                username: currentZl.username.trim() || "",
+                password: password || "",
+                ...(currentZl.authId && userKey
+                  ? { auth: { id: currentZl.authId, key: userKey } }
+                  : {}),
+              }),
+            );
+          }
 
-      try {
-        const drivers: LocalOpdsDriver[] = [new LibgenDriver()];
-        const currentZl = useDriverConfigStore.getState().zlib;
-
-        if (currentZl.enabled) {
-          const password = await useDriverConfigStore.getState().getZlibPassword();
-          const userKey = await useDriverConfigStore.getState().getZlibUserKey();
-          drivers.push(
-            new ZlibDriver({
-              domain: currentZl.domain.trim() || undefined,
-              username: currentZl.username.trim() || "",
-              password: password || "",
-              ...(currentZl.authId && userKey
-                ? { auth: { id: currentZl.authId, key: userKey } }
-                : {}),
-            }),
-          );
-        }
-
-        const requestHandler = createLocalOpdsRequestHandler(drivers);
-        const started = await platform.startLANServer(
-          DESKTOP_LOCAL_OPDS_PORT,
-          requestHandler,
-          "127.0.0.1",
-        );
-
-        if (myGen !== desktopGeneration) {
-          await platform.stopLANServer?.(started.server);
+          if (myGen !== desktopGeneration) return;
+          platform.setLocalOpdsHandler(createLocalOpdsRequestHandler(drivers), DESKTOP_LOCAL_OPDS_ORIGIN);
+          builtRev = rev;
+          console.log("[DesktopLocalOpds] in-process handler registered (no port bound)");
+        } catch (err) {
+          console.error("[DesktopLocalOpds] failed to build local OPDS handler:", err);
           return;
         }
-
-        activeDesktopServer = started;
-        builtDesktopRev = rev;
-
-        await useOpdsSourcesStore.getState().hydrate();
-        await useOpdsSourcesStore.getState().saveSource(
-          {
-            id: DESKTOP_LOCAL_OPDS_SOURCE_ID,
-            name: t("library.opdsLocalServerSourceName", "本机书源 (Z-Library / LibGen)"),
-            url: `http://127.0.0.1:${started.port}/opds/`,
-            username: "",
-            allowInsecure: true,
-          },
-          "",
-        );
-
-        console.log(`[DesktopLocalOpds] Server started at http://127.0.0.1:${started.port}`);
-      } catch (err) {
-        console.error("[DesktopLocalOpds] Failed to start server:", err);
       }
+
+      await useOpdsSourcesStore.getState().hydrate();
+      await useOpdsSourcesStore.getState().saveSource(
+        {
+          id: DESKTOP_LOCAL_OPDS_SOURCE_ID,
+          name: t("library.opdsLocalServerSourceName", "本机书源 (Z-Library / LibGen)"),
+          url: `${DESKTOP_LOCAL_OPDS_ORIGIN}/opds/`,
+          username: "",
+          allowInsecure: true,
+        },
+        "",
+      );
     });
   }, [shouldRun, zlConfigRev, t]);
 
-  // 组件卸载时停服
+  // 组件卸载(应用退出)时注销 handler
   useEffect(() => {
     return () => {
-      void stopActiveDesktopServer();
+      unregisterHandler();
     };
   }, []);
 }

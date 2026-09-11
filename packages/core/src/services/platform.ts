@@ -56,6 +56,13 @@ export interface IWebSocket {
   onError(handler: (error: unknown) => void): void;
 }
 
+/** 本机 HTTP 请求处理器签名(startLANServer 的 LAN 同步 / 桌面端 setLocalOpdsHandler 共用) */
+export type LocalHttpHandler = (
+  method: string,
+  path: string,
+  headers: Record<string, string>,
+) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>;
+
 export interface IPlatformService {
   // ---- Platform info ----
   readonly platformType: "desktop" | "mobile" | "web";
@@ -126,15 +133,18 @@ export interface IPlatformService {
   // Start a local HTTP server for LAN sync
   startLANServer?(
     port: number,
-    handler: (
-      method: string,
-      path: string,
-      headers: Record<string, string>,
-    ) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>,
+    handler: LocalHttpHandler,
     host?: string,
   ): Promise<{ port: number; server: unknown }>;
   // Stop the local HTTP server
   stopLANServer?(server: unknown): Promise<void>;
+
+  // ---- Local OPDS source (desktop in-process short-circuit) ----
+  // 桌面端:进程内注册/注销「本机书源」的 handler,不走真实 TCP
+  // (自用闭环,免系统代理/TUN 拦回环那一跳;传 null 注销)。
+  // origin = 该源在书源表里的地址(如 http://127.0.0.1:19090),用于精确匹配,
+  // 避免误劫持用户自建的其它 localhost OPDS 源(如 Calibre 8080)。
+  setLocalOpdsHandler?(handler: LocalHttpHandler | null, origin?: string): void;
 }
 
 /**

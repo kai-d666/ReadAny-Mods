@@ -12,6 +12,7 @@ import type {
   IDatabase,
   IPlatformService,
   IWebSocket,
+  LocalHttpHandler,
   UpdateInfo,
   WebSocketOptions,
 } from "@readany/core/services";
@@ -81,14 +82,20 @@ export class TauriPlatformService implements IPlatformService {
   readonly isMobile = false;
   readonly isDesktop = true;
 
-  /** Port bound by startLANServer; used to intercept localhost OPDS fetches in-process */
-  private localOpdsPort: number | null = null;
-  /** JS-side handler registered by startLANServer; called directly without Rust round-trip */
-  private localOpdsHandler: ((
-    method: string,
-    path: string,
-    headers: Record<string, string>,
-  ) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>) | null = null;
+  /**
+   * 本机书源(OPDS)的进程内 handler —— 由 useDesktopLocalOpdsServer 注册(2026-09-12)。
+   * 桌面端自用闭环,不真起 HTTP 服:fetch 命中 origin 时直接进程内调用,
+   * 不经 TCP,也就免疫 Clash/TUN/系统代理对回环那一跳的干扰。
+   */
+  private localOpdsHandler: LocalHttpHandler | null = null;
+  /** 该 handler 对应的书源地址(如 http://127.0.0.1:19090),用于精确匹配、避免劫持别的 localhost OPDS 源 */
+  private localOpdsOrigin: string | null = null;
+
+  /** 注册/注销本机书源 handler;origin 为该源在书源表里的地址(传 null 注销) */
+  setLocalOpdsHandler(handler: LocalHttpHandler | null, origin?: string): void {
+    this.localOpdsHandler = handler ?? null;
+    this.localOpdsOrigin = handler && origin ? origin.replace(/\/+$/, "") : null;
+  }
 
   // ---- File system ----
 
@@ -195,83 +202,45 @@ export class TauriPlatformService implements IPlatformService {
   // ---- Network ----
 
   async fetch(url: string, options?: FetchOptions): Promise<Response> {
-    // Intercept local OPDS requests in-process to avoid cross-process Tauri event bridge deadlocks/timeouts/network errors
-    try {
-      const parsed = new URL(url);
-      const isLocalhost =
-        parsed.hostname === "127.0.0.1" ||
-        parsed.hostname === "localhost" ||
-        parsed.hostname === "0.0.0.0";
-      const isOpdsPath = parsed.pathname.startsWith("/opds");
-
-      if (isLocalhost && isOpdsPath) {
-        let handlerToUse = this.localOpdsHandler;
-
-        // Fallback: if server wasn't started or handler is unset, create handler dynamically
-        if (!handlerToUse) {
-          try {
-            const { createLocalOpdsRequestHandler } = await import(
-              "@readany/core/sources/driver/local-opds-server"
-            );
-            const { LibgenDriver } = await import("@readany/core/sources/driver/libgen");
-            const { ZlibDriver } = await import("@readany/core/sources/driver/zlib");
-            const { useDriverConfigStore } = await import(
-              "@readany/core/sources/driver/driver-config-store"
-            );
-
-            const drivers: any[] = [new LibgenDriver()];
-            const currentZl = useDriverConfigStore.getState().zlib;
-            if (currentZl?.enabled) {
-              const password = await useDriverConfigStore.getState().getZlibPassword();
-              const userKey = await useDriverConfigStore.getState().getZlibUserKey();
-              drivers.push(
-                new ZlibDriver({
-                  domain: currentZl.domain?.trim() || undefined,
-                  username: currentZl.username?.trim() || "",
-                  password: password || "",
-                  ...(currentZl.authId && userKey
-                    ? { auth: { id: currentZl.authId, key: userKey } }
-                    : {}),
-                }),
-              );
-            }
-            handlerToUse = createLocalOpdsRequestHandler(drivers);
-            this.localOpdsHandler = handlerToUse;
-          } catch (e) {
-            console.error("[TauriPlatform] Failed to create fallback OPDS handler:", e);
-          }
-        }
-
-        if (handlerToUse) {
+    // 本机书源(OPDS)短路:进程内直接调 handler,不经 TCP —— 免系统代理/TUN 拦回环那一跳。
+    // 只拦「已注册的那个源」的 origin(端口精确匹配),用户自建的其它 localhost OPDS 源照常走网络。
+    if (this.localOpdsHandler && this.localOpdsOrigin) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.origin === this.localOpdsOrigin && parsed.pathname.startsWith("/opds/")) {
           const reqPath = parsed.pathname + parsed.search;
           const reqHeaders = { ...((options?.headers as Record<string, string>) || {}) };
-          // Preserve the original host and port so generated links (e.g. /opds/zlib/) don't lose their port
+          // 保留 host(含端口):OPDS feed 里的相对链接要靠它还成绝对地址
           if (!reqHeaders.host && !reqHeaders.Host) {
-            reqHeaders.host = parsed.host || (this.localOpdsPort ? `127.0.0.1:${this.localOpdsPort}` : "127.0.0.1");
+            reqHeaders.host = parsed.host;
           }
-          const reqMethod = (options?.method || "GET").toUpperCase();
-          const res = await handlerToUse(reqMethod, reqPath, reqHeaders);
+          try {
+            const res = await this.localOpdsHandler(
+              (options?.method || "GET").toUpperCase(),
+              reqPath,
+              reqHeaders,
+            );
 
-          const responseHeaders = new Headers();
-          if (res.headers) {
-            for (const [key, val] of Object.entries(res.headers)) {
-              responseHeaders.set(key, val);
+            const responseHeaders = new Headers();
+            if (res.headers) {
+              for (const [key, val] of Object.entries(res.headers)) {
+                responseHeaders.set(key, val);
+              }
             }
-          }
 
-          let responseBody: BodyInit | null = null;
-          if (res.body) {
-            responseBody = new Uint8Array(res.body);
+            return new Response(res.body ? new Uint8Array(res.body) : null, {
+              status: res.status,
+              headers: responseHeaders,
+            });
+          } catch (e) {
+            // handler 自身异常:立刻回 500,别掉回网络层(那条路在代理环境下会挂到超时)
+            console.error("[TauriPlatform] Local OPDS handler error:", e);
+            return new Response("Local OPDS handler error", { status: 500 });
           }
-
-          return new Response(responseBody, {
-            status: res.status,
-            headers: responseHeaders,
-          });
         }
+      } catch (e) {
+        console.error("[TauriPlatform] Error during local OPDS in-process fetch interception:", e);
       }
-    } catch (e) {
-      console.error("[TauriPlatform] Error during local OPDS in-process fetch interception:", e);
     }
 
     const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
@@ -532,11 +501,7 @@ export class TauriPlatformService implements IPlatformService {
 
   async startLANServer(
     port: number,
-    handler: (
-      method: string,
-      path: string,
-      headers: Record<string, string>,
-    ) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>,
+    handler: LocalHttpHandler,
   ): Promise<{ port: number; server: unknown }> {
     ensureTauriRuntimeForLAN();
 
@@ -544,8 +509,6 @@ export class TauriPlatformService implements IPlatformService {
     const { listen } = await import("@tauri-apps/api/event");
 
     const boundPort = await invoke<number>("start_lan_server", { port });
-    this.localOpdsPort = boundPort;
-    this.localOpdsHandler = handler;
 
     // Listen for HTTP requests coming from the Rust Axum server
     const unlisten = await listen<any>("lan-request", async (event) => {
@@ -587,9 +550,6 @@ export class TauriPlatformService implements IPlatformService {
 
   async stopLANServer(server: unknown): Promise<void> {
     ensureTauriRuntimeForLAN();
-
-    this.localOpdsPort = null;
-    this.localOpdsHandler = null;
 
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("stop_lan_server");

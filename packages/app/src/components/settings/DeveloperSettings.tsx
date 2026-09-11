@@ -148,16 +148,16 @@ export function DeveloperSettings() {
             <div className="flex items-center gap-2">
               <Radio className="size-4 text-primary" />
               <span className="text-sm font-semibold text-foreground">
-                {t("settings.localOpdsServerTitle", "本机书源服务端")}
+                {t("settings.localOpdsServerTitle", "本机书源")}
               </span>
               <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                127.0.0.1:19090
+                进程内 · 不占端口
               </span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {t(
                 "settings.localOpdsServerDesc",
-                "在 PC 本机启动内置 OPDS 网关，自动将 Z-Library 等上游聚合为一条「本机书源」并注册到书架。仅限自用。",
+                "把 Z-Library、LibGen 等上游聚合成一条「本机书源」注册到书架。请求走进程内直连（不监听端口、不受系统代理/VPN 影响），仅限本机自用。",
               )}
             </p>
           </div>
@@ -166,9 +166,9 @@ export function DeveloperSettings() {
             onCheckedChange={(v) => {
               setLocalOpdsServer(v);
               if (v) {
-                toast.success(t("settings.localOpdsStarted", "本机书源服务端已就绪"));
+                toast.success(t("settings.localOpdsStarted", "本机书源已启用"));
               } else {
-                toast.info(t("settings.localOpdsStopped", "本机书源服务端已关闭"));
+                toast.info(t("settings.localOpdsStopped", "本机书源已关闭"));
               }
             }}
           />

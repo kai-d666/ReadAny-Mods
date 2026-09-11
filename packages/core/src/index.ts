@@ -22,6 +22,7 @@ export type {
   IDatabase,
   IWebSocket,
   FilePickerOptions,
+  LocalHttpHandler,
   WebSocketOptions,
   UpdateInfo,
 } from "./services";
