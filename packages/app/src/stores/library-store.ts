@@ -323,6 +323,8 @@ export async function repairMissingCovers(): Promise<number> {
 export type LibraryViewMode = "grid" | "list";
 export interface RemoveBookOptions {
   preserveData?: boolean;
+  /** 同时删除云端副本(若有;默认关,2026-09-11) */
+  deleteCloud?: boolean;
 }
 
 function keepActiveGroupId(activeGroupId: string, groups: BookGroup[]): string {
@@ -353,6 +355,8 @@ export interface LibraryState {
   setActiveGroupId: (groupId: string) => void;
   addBook: (book: Book) => void;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
+  /** 批量标记"纯本地"(不上传云端):在线书源(OPDS)导入后调用,2026-09-11 */
+  setBooksCloudExcluded: (bookIds: string[]) => Promise<void>;
   updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
   setFilter: (filter: Partial<LibraryFilter>) => void;
   setViewMode: (mode: LibraryViewMode) => void;
@@ -837,6 +841,34 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         console.error("[removeBook] File cleanup error:", err);
       }
     }
+
+    // 同时删除云端副本(可选,默认关):同步配置缺失/未绑定则静默跳过
+    if (options.deleteCloud && book?.fileHash) {
+      try {
+        const { useSyncStore } = await import("@/stores/sync-store");
+        const res = await useSyncStore.getState().deleteCloudBook(book.fileHash);
+        if (res && "error" in res) {
+          console.warn("[Library] deleteCloudBook (with book) failed:", res.error);
+        }
+      } catch (err) {
+        console.warn("[Library] deleteCloudBook (with book) threw:", err);
+      }
+    }
+  },
+
+  setBooksCloudExcluded: async (bookIds) => {
+    if (bookIds.length === 0) return;
+    const idSet = new Set(bookIds);
+    set((state) => ({
+      books: state.books.map((b) => (idSet.has(b.id) ? { ...b, cloudExcluded: true } : b)),
+    }));
+    try {
+      await db.initDatabase();
+      await Promise.all(bookIds.map((id) => db.updateBook(id, { cloudExcluded: true })));
+    } catch (err) {
+      console.error("[Library] setBooksCloudExcluded failed:", err);
+    }
+    debouncedSave("library-books", get().books);
   },
 
   updateBook: async (bookId, updates) => {

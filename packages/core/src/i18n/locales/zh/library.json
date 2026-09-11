@@ -247,6 +247,8 @@
     "cloud_bound": "绑定",
     "uploadCloud": "上传云端",
     "cloudAlreadyBound": "这本书已经在云书库了",
-    "cloudUploaded": "已同步到云书库，其他设备可在云书库页看到"
+    "cloudUploaded": "已同步到云书库，其他设备可在云书库页看到",
+    "deleteCloudTooLabel": "同时删除云端副本",
+    "deleteCloudTooHint": "若这本书已上传过云书库，勾选后会把云端文件一并删除；未上传或未配置同步时自动跳过。"
   }
 }

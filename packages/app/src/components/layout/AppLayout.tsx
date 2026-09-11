@@ -38,6 +38,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HomeSidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
+import { useDesktopLocalOpdsServer } from "@/hooks/use-desktop-local-opds-server";
 
 /** All home sub-views — each stays mounted and uses display:none to toggle. */
 const HOME_VIEWS: { id: string; Component: React.ComponentType }[] = [
@@ -55,6 +56,7 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 2 * 60 * 1000;
 
 export function AppLayout() {
+  useDesktopLocalOpdsServer();
   const tabs = useAppStore((s) => s.tabs);
   const activeTabId = useAppStore((s) => s.activeTabId);
   const showSettings = useAppStore((s) => s.showSettings);

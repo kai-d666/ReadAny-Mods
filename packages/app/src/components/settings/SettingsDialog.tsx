@@ -18,13 +18,15 @@ import { SyncSettings } from "./SyncSettings";
 import { TTSSettings } from "./TTSSettings";
 import { TranslationSettings } from "./TranslationSettings";
 import { VectorModelSettings } from "./VectorModelSettings";
+import { DeveloperSettings } from "./DeveloperSettings";
+import { useDeveloperStore } from "@/stores/developer-store";
 
 interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const TAB_IDS: SettingsTab[] = [
+const BASE_TAB_IDS: SettingsTab[] = [
   "general",
   "reading",
   "fonts",
@@ -49,6 +51,7 @@ const TAB_KEYS: Record<SettingsTab, string> = {
   externalAi: "settings.externalAi",
   feedback: "feedback.title",
   about: "settings.about",
+  developer: "settings.developerOptions",
 };
 
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
@@ -73,12 +76,15 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     };
   }, [open, settingsTab]);
 
+  const isDeveloperMode = useDeveloperStore((s) => s.isDeveloperMode);
+  const tabIds: SettingsTab[] = isDeveloperMode ? [...BASE_TAB_IDS, "developer"] : BASE_TAB_IDS;
+
   const setActiveTab = (tab: SettingsTab) => {
     setShowSettings(true, tab);
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
       <DialogContent className="flex min-h-[80vh] max-h-[80vh] w-[800px] max-w-[800px] flex-col overflow-hidden p-0">
         {/* Header */}
         <div className="flex-shrink-0 border-b border-border px-4 py-3.5">
@@ -90,7 +96,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
           {/* Sidebar */}
           <div className="w-48 flex-shrink-0 overflow-y-auto border-r border-border p-2.5">
             <nav className="space-y-0.5">
-              {TAB_IDS.map((id) => (
+              {tabIds.map((id) => (
                 <button
                   key={id}
                   className={cn(
@@ -98,6 +104,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                     settingsTab === id
                       ? "bg-muted/80 font-medium text-foreground"
                       : "text-muted-foreground hover:bg-muted/50",
+                    id === "developer" && "text-amber-500 hover:text-amber-600 font-medium",
                   )}
                   onClick={() => setActiveTab(id)}
                 >
@@ -126,6 +133,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             {settingsTab === "externalAi" && <ExternalAISettings />}
             {settingsTab === "feedback" && <FeedbackSettings />}
             {settingsTab === "about" && <AboutSettings />}
+            {settingsTab === "developer" && <DeveloperSettings />}
           </div>
         </div>
       </DialogContent>

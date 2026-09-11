@@ -19,19 +19,25 @@ pub struct LanServerState {
     pub abort_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LanRequestPayload {
+    #[serde(alias = "req_id")]
     pub req_id: String,
     pub method: String,
     pub path: String,
     pub headers: std::collections::HashMap<String, String>,
+    #[serde(alias = "body_base64")]
     pub body_base64: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct LanResponsePayload {
     pub status: u16,
+    #[serde(default)]
     pub headers: std::collections::HashMap<String, String>,
+    #[serde(alias = "body_base64")]
     pub body_base64: Option<String>,
 }
 
@@ -96,7 +102,11 @@ pub async fn lan_server_respond(
     state: TauriState<'_, LanServerState>,
 ) -> Result<(), String> {
     if let Some((_, sender)) = state.pending_requests.remove(&req_id) {
-        let _ = sender.send(payload);
+        if let Err(_) = sender.send(payload) {
+            eprintln!("[LANServer] Failed to send response via oneshot channel (receiver dropped)");
+        }
+    } else {
+        eprintln!("[LANServer] pending_requests NOT found for req_id: {}", req_id);
     }
     Ok(())
 }
@@ -127,17 +137,19 @@ async fn handler(
         Some(general_purpose::STANDARD.encode(&body))
     };
 
+    let path_str = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or(uri.path()).to_string();
+
     let payload = LanRequestPayload {
         req_id: req_id.clone(),
         method: method.as_str().to_string(),
-        path: uri.path_and_query().map(|pq| pq.as_str()).unwrap_or(uri.path()).to_string(),
+        path: path_str.clone(),
         headers: headers_map,
         body_base64,
     };
 
     let target_event = "lan-request";
     if let Err(e) = app.emit(target_event, payload) {
-        eprintln!("Failed to emit {}: {}", target_event, e);
+        eprintln!("[LANServer] Failed to emit {}: {}", target_event, e);
     }
 
     match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
@@ -153,7 +165,10 @@ async fn handler(
                 use base64::{engine::general_purpose, Engine as _};
                 match general_purpose::STANDARD.decode(b64) {
                     Ok(bytes) => axum::body::Body::from(bytes),
-                    Err(_) => axum::body::Body::empty(),
+                    Err(e) => {
+                        eprintln!("[LANServer] Failed to decode response base64 body: {}", e);
+                        axum::body::Body::empty()
+                    }
                 }
             } else {
                 axum::body::Body::empty()
@@ -161,7 +176,16 @@ async fn handler(
 
             response_builder.body(response_body).unwrap_or_default()
         }
-        _ => {
+        Ok(Err(oneshot_err)) => {
+            eprintln!("[LANServer] oneshot channel closed without response for req_id: {}: {}", req_id, oneshot_err);
+            pending.remove(&req_id);
+            axum::response::Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(axum::body::Body::from("Internal Server Error: handler dropped"))
+                .unwrap()
+        }
+        Err(_) => {
+            eprintln!("[LANServer] Request timeout after 30s for req_id: {}", req_id);
             pending.remove(&req_id);
             axum::response::Response::builder()
                 .status(StatusCode::GATEWAY_TIMEOUT)

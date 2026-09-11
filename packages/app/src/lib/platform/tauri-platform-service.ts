@@ -81,6 +81,15 @@ export class TauriPlatformService implements IPlatformService {
   readonly isMobile = false;
   readonly isDesktop = true;
 
+  /** Port bound by startLANServer; used to intercept localhost OPDS fetches in-process */
+  private localOpdsPort: number | null = null;
+  /** JS-side handler registered by startLANServer; called directly without Rust round-trip */
+  private localOpdsHandler: ((
+    method: string,
+    path: string,
+    headers: Record<string, string>,
+  ) => Promise<{ status: number; body?: Uint8Array; headers?: Record<string, string> }>) | null = null;
+
   // ---- File system ----
 
   async readFile(path: string): Promise<Uint8Array> {
@@ -186,6 +195,85 @@ export class TauriPlatformService implements IPlatformService {
   // ---- Network ----
 
   async fetch(url: string, options?: FetchOptions): Promise<Response> {
+    // Intercept local OPDS requests in-process to avoid cross-process Tauri event bridge deadlocks/timeouts/network errors
+    try {
+      const parsed = new URL(url);
+      const isLocalhost =
+        parsed.hostname === "127.0.0.1" ||
+        parsed.hostname === "localhost" ||
+        parsed.hostname === "0.0.0.0";
+      const isOpdsPath = parsed.pathname.startsWith("/opds");
+
+      if (isLocalhost && isOpdsPath) {
+        let handlerToUse = this.localOpdsHandler;
+
+        // Fallback: if server wasn't started or handler is unset, create handler dynamically
+        if (!handlerToUse) {
+          try {
+            const { createLocalOpdsRequestHandler } = await import(
+              "@readany/core/sources/driver/local-opds-server"
+            );
+            const { LibgenDriver } = await import("@readany/core/sources/driver/libgen");
+            const { ZlibDriver } = await import("@readany/core/sources/driver/zlib");
+            const { useDriverConfigStore } = await import(
+              "@readany/core/sources/driver/driver-config-store"
+            );
+
+            const drivers: any[] = [new LibgenDriver()];
+            const currentZl = useDriverConfigStore.getState().zlib;
+            if (currentZl?.enabled) {
+              const password = await useDriverConfigStore.getState().getZlibPassword();
+              const userKey = await useDriverConfigStore.getState().getZlibUserKey();
+              drivers.push(
+                new ZlibDriver({
+                  domain: currentZl.domain?.trim() || undefined,
+                  username: currentZl.username?.trim() || "",
+                  password: password || "",
+                  ...(currentZl.authId && userKey
+                    ? { auth: { id: currentZl.authId, key: userKey } }
+                    : {}),
+                }),
+              );
+            }
+            handlerToUse = createLocalOpdsRequestHandler(drivers);
+            this.localOpdsHandler = handlerToUse;
+          } catch (e) {
+            console.error("[TauriPlatform] Failed to create fallback OPDS handler:", e);
+          }
+        }
+
+        if (handlerToUse) {
+          const reqPath = parsed.pathname + parsed.search;
+          const reqHeaders = { ...((options?.headers as Record<string, string>) || {}) };
+          // Preserve the original host and port so generated links (e.g. /opds/zlib/) don't lose their port
+          if (!reqHeaders.host && !reqHeaders.Host) {
+            reqHeaders.host = parsed.host || (this.localOpdsPort ? `127.0.0.1:${this.localOpdsPort}` : "127.0.0.1");
+          }
+          const reqMethod = (options?.method || "GET").toUpperCase();
+          const res = await handlerToUse(reqMethod, reqPath, reqHeaders);
+
+          const responseHeaders = new Headers();
+          if (res.headers) {
+            for (const [key, val] of Object.entries(res.headers)) {
+              responseHeaders.set(key, val);
+            }
+          }
+
+          let responseBody: BodyInit | null = null;
+          if (res.body) {
+            responseBody = new Uint8Array(res.body);
+          }
+
+          return new Response(responseBody, {
+            status: res.status,
+            headers: responseHeaders,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("[TauriPlatform] Error during local OPDS in-process fetch interception:", e);
+    }
+
     const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
     const {
       allowInsecure,
@@ -456,12 +544,17 @@ export class TauriPlatformService implements IPlatformService {
     const { listen } = await import("@tauri-apps/api/event");
 
     const boundPort = await invoke<number>("start_lan_server", { port });
+    this.localOpdsPort = boundPort;
+    this.localOpdsHandler = handler;
 
     // Listen for HTTP requests coming from the Rust Axum server
     const unlisten = await listen<any>("lan-request", async (event) => {
-      const { req_id, method, path, headers } = event.payload;
+      const payload = event.payload ?? {};
+      const reqId = payload.reqId ?? payload.req_id;
+      const { method, path, headers } = payload;
+
       try {
-        const response = await handler(method, path, headers);
+        const response = await handler(method, path, headers ?? {});
 
         // encode body to base64
         let resBodyBase64: string | null = null;
@@ -470,18 +563,21 @@ export class TauriPlatformService implements IPlatformService {
         }
 
         await invoke("lan_server_respond", {
-          reqId: req_id,
+          req_id: reqId,
+          reqId: reqId,
           payload: {
             status: response.status,
             headers: response.headers || {},
             body_base64: resBodyBase64,
+            bodyBase64: resBodyBase64,
           },
         });
       } catch (e) {
-        console.error("LAN Sync Handler Error:", e);
+        console.error(`[TauriPlatform] LAN Sync Handler Error for ${reqId}:`, e);
         await invoke("lan_server_respond", {
-          reqId: req_id,
-          payload: { status: 500, headers: {}, body_base64: null },
+          req_id: reqId,
+          reqId: reqId,
+          payload: { status: 500, headers: {}, body_base64: null, bodyBase64: null },
         });
       }
     });
@@ -491,6 +587,9 @@ export class TauriPlatformService implements IPlatformService {
 
   async stopLANServer(server: unknown): Promise<void> {
     ensureTauriRuntimeForLAN();
+
+    this.localOpdsPort = null;
+    this.localOpdsHandler = null;
 
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("stop_lan_server");

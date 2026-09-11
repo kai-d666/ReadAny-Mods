@@ -171,9 +171,72 @@ function OpdsBookDetailsModal({
   isAlreadyInLibrary: boolean;
 }) {
   const { t } = useTranslation();
-  if (!pub) return null;
+  const [enrichedPub, setEnrichedPub] = useState<OpdsPublication | null>(pub);
+  const [isEnriching, setIsEnriching] = useState(false);
 
-  const supportedAcqs = pub.acquisitions
+  useEffect(() => {
+    setEnrichedPub(pub);
+    if (!pub || pub.acquisitions.length > 0 || !pub.detailHref) {
+      setIsEnriching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsEnriching(true);
+
+    void (async () => {
+      try {
+        const { getPlatformService } = await import("@readany/core/services");
+        const resp = await getPlatformService().fetch(pub.detailHref!, { responseType: "text" });
+        const text = await resp.text();
+        const data = JSON.parse(text) as {
+          book?: {
+            extension?: string;
+            description?: string;
+            publisher?: string;
+            pages?: number | string;
+            filesize?: number;
+            language?: string;
+          };
+        };
+        if (cancelled) return;
+        const b = data.book ?? {};
+        const ext = typeof b.extension === "string" ? b.extension.toLowerCase() : "";
+        const detailHref = pub.detailHref!;
+        setEnrichedPub({
+          ...pub,
+          summary: pub.summary ?? (b.description || undefined),
+          publisher: pub.publisher ?? (b.publisher || undefined),
+          extent: pub.extent ?? (b.pages != null && b.pages !== "" ? String(b.pages) : undefined),
+          language: pub.language ?? (b.language || undefined),
+          acquisitions: ext
+            ? [
+                {
+                  href: `${detailHref.replace(/\/detail(?=\?|$)/, "/download")}&extension=${encodeURIComponent(ext)}`,
+                  type: "",
+                  extension: ext,
+                  priority: 0,
+                  size: typeof b.filesize === "number" ? b.filesize : undefined,
+                },
+              ]
+            : pub.acquisitions,
+        });
+      } catch (err) {
+        console.warn("[DesktopOpdsBrowser] detail enrich failed:", err);
+      } finally {
+        if (!cancelled) setIsEnriching(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pub]);
+
+  if (!pub) return null;
+  const currentPub = enrichedPub ?? pub;
+
+  const supportedAcqs = currentPub.acquisitions
     .filter((a) => a.priority >= 0)
     .sort((a, b) => a.priority - b.priority);
 
@@ -185,10 +248,10 @@ function OpdsBookDetailsModal({
           <div className="relative flex sm:w-56 shrink-0 flex-col items-center justify-center bg-muted/30 p-6 border-b sm:border-b-0 sm:border-r border-border">
             <div className="w-36 max-w-full drop-shadow-md">
               <OpdsBookCover
-                title={pub.title}
-                author={pub.authors[0]}
-                coverUrl={pub.coverUrl}
-                thumbnailUrl={pub.thumbnailUrl}
+                title={currentPub.title}
+                author={currentPub.authors[0]}
+                coverUrl={currentPub.coverUrl}
+                thumbnailUrl={currentPub.thumbnailUrl}
               />
             </div>
             {isAlreadyInLibrary && (
@@ -204,16 +267,16 @@ function OpdsBookDetailsModal({
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <div>
                 <h3 className="text-lg font-bold text-foreground leading-snug">
-                  {pub.title}
+                  {currentPub.title}
                 </h3>
-                {pub.authors.length > 0 && (
+                {currentPub.authors.length > 0 && (
                   <p className="mt-1 text-sm text-primary font-medium">
-                    {pub.authors.join("、")}
+                    {currentPub.authors.join("、")}
                   </p>
                 )}
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {pub.issued && <span>{t("library.detailsPublished")}: {pub.issued}</span>}
-                  {pub.language && <span>{t("library.detailsLanguage")}: {pub.language}</span>}
+                  {currentPub.issued && <span>{t("library.detailsPublished")}: {currentPub.issued}</span>}
+                  {currentPub.language && <span>{t("library.detailsLanguage")}: {currentPub.language}</span>}
                 </div>
               </div>
 
@@ -223,16 +286,24 @@ function OpdsBookDetailsModal({
                   {t("library.detailsDescription", "简介")}
                 </h4>
                 <div className="rounded-xl bg-muted/30 p-3 text-xs leading-relaxed text-foreground whitespace-pre-wrap max-h-56 overflow-y-auto">
-                  {pub.summary || t("library.detailsNoDescription", "暂无简介内容")}
+                  {currentPub.summary || t("library.detailsNoDescription", "暂无简介内容")}
                 </div>
               </div>
 
               {/* 下载格式列表 */}
               <div className="space-y-2 border-t pt-3">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {t("library.opdsPickFormat", "可下载格式")}
-                </h4>
-                {supportedAcqs.length === 0 ? (
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {t("library.opdsPickFormat", "可下载格式")}
+                  </h4>
+                  {isEnriching && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="size-3 animate-spin" />
+                      <span>{t("common.loading", "加载格式中...")}</span>
+                    </div>
+                  )}
+                </div>
+                {!isEnriching && supportedAcqs.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
                     {t("library.opdsNoAcquisition", "暂无可下载格式")}
                   </p>
@@ -479,6 +550,13 @@ export function DesktopOpdsBrowserDialog({
         setImportState({ phase: "importing", name: pub.title });
 
         const result = await importBooks([tempPath]);
+        // 在线书源导入 = 纯本地：标记后同步引擎不再自动上传云端(2026-09-11)
+        if (result.imported.length > 0) {
+          await useLibraryStore
+            .getState()
+            .setBooksCloudExcluded(result.imported.map((b) => b.id))
+            .catch((err) => console.warn("[DesktopOpdsBrowser] mark cloudExcluded failed:", err));
+        }
         if (result.imported.length > 0) {
           toast.success(
             t("library.opdsImportDone", { defaultValue: "《{{name}}》已加入书库", name: pub.title }),

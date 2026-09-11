@@ -34,8 +34,11 @@ import {
 /**
  * AboutSettings — 关于页面
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { useDeveloperStore } from "@/stores/developer-store";
+import { useAppStore } from "@/stores/app-store";
 
 const TECH_STACK = [
   { name: "Tauri", descKey: "settings.techStackTauri", icon: Shield },
@@ -56,6 +59,12 @@ export function AboutSettings() {
   const [isChecking, setIsChecking] = useState(false);
   const [isRelaunching, setIsRelaunching] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+
+  const isDeveloperMode = useDeveloperStore((s) => s.isDeveloperMode);
+  const setDeveloperMode = useDeveloperStore((s) => s.setDeveloperMode);
+  const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const clickCountRef = useRef(0);
+  const lastClickTimeRef = useRef(0);
 
   useEffect(() => {
     getVersion().then(setAppVersion).catch(console.error);
@@ -134,7 +143,25 @@ export function AboutSettings() {
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground">{t("settings.version")}</span>
           <div className="flex items-center gap-2">
-            <span className="font-mono text-sm font-medium text-foreground">
+            <span
+              onClick={() => {
+                if (isDeveloperMode) return;
+                const now = Date.now();
+                if (now - lastClickTimeRef.current > 1500) {
+                  clickCountRef.current = 0;
+                }
+                lastClickTimeRef.current = now;
+                clickCountRef.current += 1;
+
+                if (clickCountRef.current >= 5) {
+                  setDeveloperMode(true);
+                  clickCountRef.current = 0;
+                  toast.success("已开启开发者模式");
+                  setShowSettings(true, "developer");
+                }
+              }}
+              className="select-none font-mono text-sm font-medium text-foreground"
+            >
               {appVersion || "..."}
             </span>
             <button

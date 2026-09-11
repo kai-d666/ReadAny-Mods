@@ -247,6 +247,8 @@
     "cloud_bound": "Bound",
     "uploadCloud": "Upload to Cloud",
     "cloudAlreadyBound": "This book is already in the cloud library",
-    "cloudUploaded": "Synced to the cloud library. Other devices can download it from the cloud library."
+    "cloudUploaded": "Synced to the cloud library. Other devices can download it from the cloud library.",
+    "deleteCloudTooLabel": "Delete cloud copy as well",
+    "deleteCloudTooHint": "If this book has been uploaded to the cloud library, checking this will delete the cloud file too; skipped automatically if not uploaded or sync is unconfigured."
   }
 }

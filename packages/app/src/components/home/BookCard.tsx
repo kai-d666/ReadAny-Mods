@@ -81,6 +81,7 @@ export const BookCard = memo(function BookCard({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showReindexConfirm, setShowReindexConfirm] = useState(false);
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
+  const [deleteCloudOnDelete, setDeleteCloudOnDelete] = useState(false);
   const [uploadingCloud, setUploadingCloud] = useState(false);
   const uploadCloudBook = useSyncStore((s) => s.uploadCloudBook);
   const suppressOpenUntilRef = useRef(0);
@@ -136,6 +137,7 @@ export const BookCard = memo(function BookCard({
     setShowMenu(false);
     setMenuPos(null);
     setPreserveDataOnDelete(true);
+    setDeleteCloudOnDelete(false);
     setShowDeleteDialog(true);
   }, []);
 
@@ -688,6 +690,26 @@ export const BookCard = memo(function BookCard({
             </div>
           </label>
 
+          <label className="flex cursor-pointer items-start gap-3 px-1 py-1">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-border"
+              checked={deleteCloudOnDelete}
+              onChange={(e) => setDeleteCloudOnDelete(e.target.checked)}
+            />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-foreground">
+                {t("library.deleteCloudTooLabel", "同时删除云端副本")}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                {t(
+                  "library.deleteCloudTooHint",
+                  "若这本书已上传过云书库，勾选后会把云端文件一并删除；未上传或未配置同步时自动跳过。",
+                )}
+              </div>
+            </div>
+          </label>
+
           <DialogFooter>
             <button
               type="button"
@@ -712,7 +734,10 @@ export const BookCard = memo(function BookCard({
                   closeAppTab(tabId);
                   closeReaderTab(tabId);
                 }
-                await removeBook(book.id, { preserveData: preserveDataOnDelete });
+                await removeBook(book.id, {
+                  preserveData: preserveDataOnDelete,
+                  deleteCloud: deleteCloudOnDelete,
+                });
               }}
             >
               {t("common.remove", "删除")}

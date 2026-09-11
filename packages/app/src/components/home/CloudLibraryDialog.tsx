@@ -17,6 +17,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -44,10 +45,13 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
   const [entries, setEntries] = useState<CloudBookEntry[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [busyHash, setBusyHash] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CloudBookEntry | null>(null);
+  const [alsoDeleteLocal, setAlsoDeleteLocal] = useState(false);
   const isSyncConfigured = useSyncStore((s) => s.isConfigured);
   const progressEntries = useProgressStore((s) => s.entries);
   const importBooks = useLibraryStore((s) => s.importBooks);
   const loadBooks = useLibraryStore((s) => s.loadBooks);
+  const removeBook = useLibraryStore((s) => s.removeBook);
 
   const refresh = useCallback(async () => {
     if (!open) return;
@@ -117,18 +121,16 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
     }
   };
 
-  const handleDelete = async (entry: CloudBookEntry) => {
-    if (
-      !window.confirm(
-        t(
-          "sync.confirmDeleteCloudBook",
-          "确定要删除云端的《{{title}}》吗？本地文件不受影响。",
-          { title: entry.title },
-        ),
-      )
-    ) {
-      return;
-    }
+  const handleDelete = (entry: CloudBookEntry) => {
+    setAlsoDeleteLocal(false); // 常闭: 每次打开默认不勾
+    setDeleteTarget(entry);
+  };
+
+  const confirmDelete = async () => {
+    const entry = deleteTarget;
+    if (!entry) return;
+    const deleteLocal = alsoDeleteLocal;
+    setDeleteTarget(null);
 
     setBusyHash(entry.fileHash);
     try {
@@ -136,6 +138,15 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
       if (result && "error" in result) {
         toast.error(t("sync.deleteCloudBookFailed", "删除云端书籍失败: ") + result.error);
       } else {
+        if (deleteLocal) {
+          // 同时删除本地副本(按内容哈希匹配定位本地书)
+          const localBook = useLibraryStore
+            .getState()
+            .books.find((b) => b.fileHash?.toLowerCase() === entry.fileHash.toLowerCase());
+          if (localBook) {
+            await removeBook(localBook.id, { preserveData: false });
+          }
+        }
         toast.success(t("sync.deleteCloudBookSuccess", "已从云端删除"));
       }
       await refresh();
@@ -268,6 +279,60 @@ export function CloudLibraryDialog({ open, onOpenChange }: CloudLibraryDialogPro
           )}
         </div>
       </DialogContent>
+
+      {deleteTarget && (
+        <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("sync.deleteCloudBookTitle", "删除云端书籍？")}</DialogTitle>
+              <DialogDescription>
+                {t(
+                  "sync.deleteCloudBookDesc",
+                  "确定要删除云端的《{{title}}》吗？",
+                  { title: deleteTarget.title },
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <label className="flex cursor-pointer items-start gap-3 px-1 py-1">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-border"
+                checked={alsoDeleteLocal}
+                onChange={(e) => setAlsoDeleteLocal(e.target.checked)}
+              />
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  {t("sync.alsoDeleteLocalLabel", "同时删除本地书")}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t(
+                    "sync.alsoDeleteLocalHint",
+                    "若本地书库有同一本书（按内容哈希匹配），勾选后会一并删除本地文件与记录。",
+                  )}
+                </div>
+              </div>
+            </label>
+
+            <DialogFooter>
+              <button
+                type="button"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                onClick={() => setDeleteTarget(null)}
+              >
+                {t("common.cancel", "取消")}
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-destructive px-4 text-sm font-medium text-destructive-foreground transition-colors hover:bg-destructive/90"
+                onClick={() => void confirmDelete()}
+              >
+                {t("common.delete", "删除")}
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 }

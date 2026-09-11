@@ -182,7 +182,7 @@ export function createLocalOpdsRequestHandler(
   return async (method, path, headers) => {
     if (method !== "GET") return textResponse(405, "Method Not Allowed");
     try {
-      const host = headers.host ?? "127.0.0.1";
+      const host = headers.host ?? headers.Host ?? "127.0.0.1:19090";
       const base = `http://${host}`;
       const url = new URL(path, base);
       const segments = url.pathname.split("/").filter(Boolean);

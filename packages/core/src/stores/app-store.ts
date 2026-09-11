@@ -30,7 +30,8 @@ export type SettingsTab =
   | "sync"
   | "externalAi"
   | "feedback"
-  | "about";
+  | "about"
+  | "developer";
 
 export interface AppState {
   tabs: Tab[];
