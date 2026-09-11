@@ -34,7 +34,7 @@ interface BookCardActionSheetProps {
   onShowDetails?: (book: Book) => void;
   onManageTags?: (book: Book) => void;
   onVectorize?: (book: Book) => void;
-  onDelete: (bookId: string, options?: { preserveData?: boolean }) => void;
+  onDelete: (bookId: string, options?: { preserveData?: boolean; deleteCloud?: boolean }) => void;
 }
 
 export function BookCardActionSheet({
@@ -53,6 +53,8 @@ export function BookCardActionSheet({
   const { t } = useTranslation();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [preserveDataOnDelete, setPreserveDataOnDelete] = useState(true);
+  /** 同时删除云端副本(常闭;2026-09-11 用户需求:双向删除选项) */
+  const [deleteCloudOnDelete, setDeleteCloudOnDelete] = useState(false);
   const [showGroupPicker, setShowGroupPicker] = useState(false);
   const groups = useLibraryStore((state) => state.groups);
   const moveBookToGroup = useLibraryStore((state) => state.moveBookToGroup);
@@ -156,6 +158,7 @@ export function BookCardActionSheet({
       onPress: () => {
         onClose();
         setPreserveDataOnDelete(true);
+        setDeleteCloudOnDelete(false); // 常闭:每次打开默认不勾
         setShowDeleteConfirm(true);
       },
     },
@@ -254,6 +257,29 @@ export function BookCardActionSheet({
               </View>
             </TouchableOpacity>
 
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.checkboxRow}
+              onPress={() => setDeleteCloudOnDelete((value) => !value)}
+            >
+              <View style={[styles.checkbox, deleteCloudOnDelete && styles.checkboxActive]}>
+                {deleteCloudOnDelete ? (
+                  <CheckIcon size={12} color={colors.primaryForeground} />
+                ) : null}
+              </View>
+              <View style={styles.checkboxContent}>
+                <Text style={styles.checkboxLabel}>
+                  {t("library.deleteCloudTooLabel", "同时删除云端副本")}
+                </Text>
+                <Text style={styles.checkboxHint}>
+                  {t(
+                    "library.deleteCloudTooHint",
+                    "若这本书已上传过云书库，勾选后会把云端文件一并删除；未上传或未配置同步时自动跳过。",
+                  )}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
             <View style={styles.confirmActions}>
               <TouchableOpacity
                 style={styles.confirmSecondary}
@@ -265,7 +291,10 @@ export function BookCardActionSheet({
                 style={styles.confirmDanger}
                 onPress={() => {
                   setShowDeleteConfirm(false);
-                  onDelete(book.id, { preserveData: preserveDataOnDelete });
+                  onDelete(book.id, {
+                    preserveData: preserveDataOnDelete,
+                    deleteCloud: deleteCloudOnDelete,
+                  });
                 }}
               >
                 <Text style={styles.confirmDangerText}>{t("common.remove", "删除")}</Text>

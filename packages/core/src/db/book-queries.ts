@@ -40,6 +40,7 @@ interface BookRow {
   tags: string;
   file_hash: string | null;
   sync_status: string;
+  cloud_excluded?: number | null;
 }
 
 function rowToBook(row: BookRow): Book {
@@ -74,6 +75,7 @@ function rowToBook(row: BookRow): Book {
     tags: parseJSON(row.tags, []),
     fileHash: row.file_hash || undefined,
     syncStatus: (row.sync_status as Book["syncStatus"]) || "local",
+    cloudExcluded: row.cloud_excluded === 1 ? true : undefined,
   };
 }
 
@@ -170,8 +172,8 @@ export async function insertBook(book: Book): Promise<void> {
   const syncVersion = await nextSyncVersion(database, "books");
   const now = Date.now();
   await database.execute(
-    `INSERT INTO books (id, file_path, format, title, author, publisher, language, isbn, description, cover_url, publish_date, rating, reviews, subjects, total_pages, total_chapters, group_id, added_at, last_opened_at, updated_at, deleted_at, progress, current_cfi, is_vectorized, vectorize_progress, tags, file_hash, sync_status, sync_version, last_modified_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO books (id, file_path, format, title, author, publisher, language, isbn, description, cover_url, publish_date, rating, reviews, subjects, total_pages, total_chapters, group_id, added_at, last_opened_at, updated_at, deleted_at, progress, current_cfi, is_vectorized, vectorize_progress, tags, file_hash, sync_status, cloud_excluded, sync_version, last_modified_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       book.id,
       book.filePath,
@@ -201,6 +203,7 @@ export async function insertBook(book: Book): Promise<void> {
       JSON.stringify(book.tags),
       book.fileHash || null,
       book.syncStatus || "local",
+      book.cloudExcluded ? 1 : 0,
       syncVersion,
       deviceId,
     ],
@@ -314,6 +317,10 @@ export async function updateBook(id: string, updates: Partial<Book>): Promise<vo
   if (updates.syncStatus !== undefined) {
     sets.push("sync_status = ?");
     values.push(updates.syncStatus);
+  }
+  if (updates.cloudExcluded !== undefined) {
+    sets.push("cloud_excluded = ?");
+    values.push(updates.cloudExcluded ? 1 : 0);
   }
 
   if (sets.length === 0) return;

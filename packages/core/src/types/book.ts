@@ -56,6 +56,8 @@ export interface Book {
   tags: string[];
   fileHash?: string;
   syncStatus: "local" | "remote" | "downloading"; // File availability status
+  /** 纯本地标记(true = 不自动上传云端;在线书源导入的书用,2026-09-11) */
+  cloudExcluded?: boolean;
 }
 
 export interface BookGroup {

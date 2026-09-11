@@ -13,6 +13,7 @@ import {
 import * as db from "@readany/core/db/database";
 import { runWithDbRetry } from "@readany/core/db/write-retry";
 import { useProgressStore } from "@readany/core/stores/progress-store";
+import { useSyncStore } from "@readany/core/stores/sync-store";
 import { getPlatformService } from "@readany/core/services";
 import type { Book, BookGroup, LibraryFilter, SortField, SortOrder } from "@readany/core/types";
 import { generateId } from "@readany/core/utils";
@@ -49,6 +50,8 @@ try {
 export type LibraryViewMode = "grid" | "list";
 export interface RemoveBookOptions {
   preserveData?: boolean;
+  /** 同时删除云端副本(若有;默认关,2026-09-11 用户需求) */
+  deleteCloud?: boolean;
 }
 
 function keepActiveGroupId(activeGroupId: string, groups: BookGroup[]): string {
@@ -75,6 +78,8 @@ export interface LibraryState {
   setActiveGroupId: (groupId: string) => void;
   addBook: (book: Book) => Promise<void>;
   removeBook: (bookId: string, options?: RemoveBookOptions) => Promise<void>;
+  /** 批量标记"纯本地"(不上传云端):在线书源(OPDS)导入后调用,2026-09-11 */
+  setBooksCloudExcluded: (bookIds: string[]) => Promise<void>;
   updateBook: (bookId: string, updates: Partial<Book>) => Promise<void>;
   setFilter: (filter: Partial<LibraryFilter>) => void;
   setViewMode: (mode: LibraryViewMode) => void;
@@ -833,6 +838,32 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       } catch {
         /* file may not exist */
       }
+    }
+    // 同时删除云端副本(可选,默认关):同步配置缺失/未绑定则静默跳过
+    if (options.deleteCloud && bookToRemove?.fileHash) {
+      try {
+        const res = await useSyncStore.getState().deleteCloudBook(bookToRemove.fileHash);
+        if ("error" in res) {
+          console.warn("[Library] deleteCloudBook (with book) failed:", res.error);
+        }
+      } catch (err) {
+        console.warn("[Library] deleteCloudBook (with book) threw:", err);
+      }
+    }
+    debouncedSave("library-books", get().books);
+  },
+
+  setBooksCloudExcluded: async (bookIds) => {
+    if (bookIds.length === 0) return;
+    const idSet = new Set(bookIds);
+    set((state) => ({
+      books: state.books.map((b) => (idSet.has(b.id) ? { ...b, cloudExcluded: true } : b)),
+    }));
+    try {
+      await db.initDatabase();
+      await Promise.all(bookIds.map((id) => db.updateBook(id, { cloudExcluded: true })));
+    } catch (err) {
+      console.error("[Library] setBooksCloudExcluded failed:", err);
     }
     debouncedSave("library-books", get().books);
   },

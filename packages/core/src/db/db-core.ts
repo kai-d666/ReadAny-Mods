@@ -360,7 +360,8 @@ export async function initDatabase(): Promise<void> {
       current_cfi TEXT,
       is_vectorized INTEGER DEFAULT 0,
       vectorize_progress REAL DEFAULT 0,
-      tags TEXT DEFAULT '[]'
+      tags TEXT DEFAULT '[]',
+      cloud_excluded INTEGER DEFAULT 0
     )
   `);
 
@@ -535,6 +536,13 @@ export async function initDatabase(): Promise<void> {
       }
       try {
         await database.execute("ALTER TABLE books ADD COLUMN group_id TEXT");
+      } catch {
+        // Column already exists, ignore
+      }
+      try {
+        await database.execute(
+          "ALTER TABLE books ADD COLUMN cloud_excluded INTEGER NOT NULL DEFAULT 0",
+        );
       } catch {
         // Column already exists, ignore
       }

@@ -58,7 +58,7 @@ const AnimatedLoader = () => {
 interface BookCardProps {
   book: Book;
   onOpen: (book: Book) => void;
-  onDelete: (bookId: string, options?: { preserveData?: boolean }) => void;
+  onDelete: (bookId: string, options?: { preserveData?: boolean; deleteCloud?: boolean }) => void;
   onShowDetails?: (book: Book) => void;
   onManageTags?: (book: Book) => void;
   onVectorize?: (book: Book) => void;

@@ -7,17 +7,26 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import type { CloudBookEntry } from "@readany/core/sync";
 import { getProgressPercent } from "@readany/core/stores/progress-store";
 import { getBookProgressPercent } from "@readany/core/utils";
 import { useSyncStore } from "@readany/core/stores/sync-store";
+import { useLibraryStore } from "@/stores/library-store";
 import { type ThemeColors, useTheme } from "@/styles/ThemeContext";
-import { CloudDownloadIcon, CloudIcon, RefreshCwIcon, Trash2Icon } from "@/components/ui/Icon";
+import {
+  CheckIcon,
+  CloudDownloadIcon,
+  CloudIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "@/components/ui/Icon";
 
 function formatBytes(bytes: number | null): string {
   if (bytes == null) return "";
@@ -95,33 +104,40 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
     [onImported, refresh],
   );
 
-  const handleDelete = useCallback(
-    (entry: CloudBookEntry) => {
-      Alert.alert(
-        "删除云端",
-        `确定删除《${entry.title}》在云端的文件吗?本地不受影响。`,
-        [
-          { text: "取消", style: "cancel" },
-          {
-            text: "删除",
-            style: "destructive",
-            onPress: async () => {
-              setBusyHash(entry.fileHash);
-              try {
-                const result = await useSyncStore.getState().deleteCloudBook(entry.fileHash);
-                const message = "error" in result ? result.error : null;
-                if (message) Alert.alert("删除失败", message);
-                await refresh();
-              } finally {
-                setBusyHash(null);
-              }
-            },
-          },
-        ],
-      );
-    },
-    [refresh],
-  );
+  // 删除确认(自绘弹层:带"同时删除本地书"常闭选项,2026-09-11 用户需求)
+  const [deleteTarget, setDeleteTarget] = useState<CloudBookEntry | null>(null);
+  const [alsoDeleteLocal, setAlsoDeleteLocal] = useState(false);
+
+  const handleDelete = useCallback((entry: CloudBookEntry) => {
+    setAlsoDeleteLocal(false); // 常闭:每次打开默认不勾
+    setDeleteTarget(entry);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    const entry = deleteTarget;
+    if (!entry) return;
+    const deleteLocal = alsoDeleteLocal;
+    setDeleteTarget(null);
+    setBusyHash(entry.fileHash);
+    try {
+      const result = await useSyncStore.getState().deleteCloudBook(entry.fileHash);
+      const message = "error" in result ? result.error : null;
+      if (message) {
+        Alert.alert("删除失败", message);
+      } else if (deleteLocal) {
+        // 同时删除本地副本(按内容哈希定位本地书)
+        const local = useLibraryStore
+          .getState()
+          .books.find((b) => b.fileHash?.toLowerCase() === entry.fileHash.toLowerCase());
+        if (local) {
+          await useLibraryStore.getState().removeBook(local.id, { preserveData: false });
+        }
+      }
+      await refresh();
+    } finally {
+      setBusyHash(null);
+    }
+  }, [deleteTarget, alsoDeleteLocal, refresh]);
 
   const styles = makeStyles(colors, isDark);
 
@@ -200,6 +216,55 @@ export function CloudLibraryView({ onImported }: { onImported?: () => void }) {
         </View>
         );
       })}
+
+      {deleteTarget && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDeleteTarget(null)}
+        >
+          <Pressable style={styles.confirmOverlay} onPress={() => setDeleteTarget(null)}>
+            <Pressable style={styles.confirmCard} onPress={() => {}}>
+              <Text style={styles.confirmTitle}>删除云端</Text>
+              <Text style={styles.confirmDescription}>
+                确定删除《{deleteTarget.title}》在云端的文件吗?
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.checkboxRow}
+                onPress={() => setAlsoDeleteLocal((value) => !value)}
+              >
+                <View style={[styles.checkbox, alsoDeleteLocal && styles.checkboxActive]}>
+                  {alsoDeleteLocal ? (
+                    <CheckIcon size={12} color={colors.primaryForeground} />
+                  ) : null}
+                </View>
+                <View style={styles.checkboxContent}>
+                  <Text style={styles.checkboxLabel}>同时删除本地书</Text>
+                  <Text style={styles.checkboxHint}>
+                    若本地书库有同一本书(按内容哈希匹配),勾选后会一并删除本地文件与记录。
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  style={styles.confirmSecondary}
+                  onPress={() => setDeleteTarget(null)}
+                >
+                  <Text style={styles.confirmSecondaryText}>取消</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmDanger}
+                  onPress={() => void confirmDelete()}
+                >
+                  <Text style={styles.confirmDangerText}>删除</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -236,4 +301,69 @@ const makeStyles = (colors: ThemeColors, isDark: boolean) =>
     },
     rowBtn: { padding: 6 },
     rowBtnDisabled: { opacity: 0.4 },
+    // 删除确认弹层(带"同时删除本地书"常闭选项)
+    confirmOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0,0,0,0.32)",
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 24,
+    },
+    confirmCard: {
+      width: "100%",
+      maxWidth: 360,
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 20,
+      paddingVertical: 20,
+      gap: 12,
+    },
+    confirmTitle: { fontSize: 17, fontWeight: "600", color: colors.foreground },
+    confirmDescription: { fontSize: 14, lineHeight: 20, color: colors.mutedForeground },
+    checkboxRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 12,
+      paddingVertical: 4,
+      paddingHorizontal: 2,
+    },
+    checkbox: {
+      width: 20,
+      height: 20,
+      borderRadius: 4,
+      borderWidth: 2,
+      borderColor: colors.mutedForeground,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 1,
+    },
+    checkboxActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+    checkboxContent: { flex: 1, gap: 4 },
+    checkboxLabel: { fontSize: 14, fontWeight: "500", color: colors.foreground },
+    checkboxHint: { fontSize: 12, lineHeight: 18, color: colors.mutedForeground },
+    confirmActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+    confirmSecondary: {
+      minWidth: 92,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+      paddingVertical: 11,
+      backgroundColor: colors.background,
+    },
+    confirmSecondaryText: { fontSize: 15, fontWeight: "500", color: colors.foreground },
+    confirmDanger: {
+      minWidth: 92,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: 8,
+      paddingHorizontal: 16,
+      paddingVertical: 11,
+      backgroundColor: colors.destructive,
+    },
+    confirmDangerText: { fontSize: 15, fontWeight: "500", color: colors.primaryForeground },
   });

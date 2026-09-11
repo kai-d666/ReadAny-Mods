@@ -145,6 +145,7 @@ interface BookRow {
   cover_url: string | null;
   title: string | null;
   sync_status: string | null;
+  cloud_excluded?: number | null;
 }
 
 interface BookInfo {
@@ -232,7 +233,7 @@ export async function syncFiles(
   let filesDownloadFailed = 0;
 
   const books = await db.select<BookRow>(
-    "SELECT id, file_path, format, file_hash, cover_url, title, sync_status FROM books WHERE deleted_at IS NULL",
+    "SELECT id, file_path, format, file_hash, cover_url, title, sync_status, cloud_excluded FROM books WHERE deleted_at IS NULL",
     [],
   );
 
@@ -315,7 +316,8 @@ export async function syncFiles(
 
     // --- 书文件 ---
     if (info.hasFile && info.fileExt) {
-      if (!disableUploads && localFileExists && (forceUploadAll || !remoteFileExists)) {
+      // 纯本地书(在线书源导入,cloud_excluded=1):一律不上传云端(强制全量上传也不例外)
+      if (!book.cloud_excluded && !disableUploads && localFileExists && (forceUploadAll || !remoteFileExists)) {
         const remotePath = `${REMOTE_BOOKS_ROOT}/${info.remoteFileName}`;
         const sizeBytes = localFileSize;
         uploadTasks.push({

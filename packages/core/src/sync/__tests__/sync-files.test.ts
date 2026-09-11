@@ -126,6 +126,21 @@ describe("sync-files v2", () => {
     expect(backend.put).not.toHaveBeenCalled();
   });
 
+  it("never uploads cloud-excluded books (在线书源导入 = 纯本地)", async () => {
+    mockSelect.mockResolvedValue([bookRow({ cloud_excluded: 1 })]);
+    mockAdapter.fileExists.mockResolvedValue(true);
+    const backend = createMockBackend();
+
+    const result = await syncFiles(backend);
+    expect(result.filesUploaded).toBe(0);
+    expect(backend.put).not.toHaveBeenCalled();
+
+    // 强制全量上传也不例外
+    const forced = await syncFiles(backend, undefined, { forceUploadAll: true });
+    expect(forced.filesUploaded).toBe(0);
+    expect(backend.put).not.toHaveBeenCalled();
+  });
+
   it("re-uploads when forceUploadAll is set even if the hash exists remotely", async () => {
     mockSelect.mockResolvedValue([bookRow()]);
     mockAdapter.fileExists.mockResolvedValue(true);
