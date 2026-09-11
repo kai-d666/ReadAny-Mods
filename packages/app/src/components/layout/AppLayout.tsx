@@ -24,6 +24,7 @@ import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import { ReaderView, evictBlobCache } from "@/components/reader/ReaderView";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { MissingBookPromptDialog } from "@/components/shared/MissingBookPromptDialog";
+import { SyncTraceBanner } from "@/components/shared/SyncTraceBanner";
 import { ReadingStatsPanel } from "@/components/stats/ReadingStatsPanel";
 import { FloatingTTSBubble } from "@/components/tts/FloatingTTSBubble";
 import { toggleWindowFullscreen } from "@/lib/window-fullscreen";
@@ -341,6 +342,7 @@ export function AppLayout() {
       <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
       <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
       <FloatingTTSBubble />
+      <SyncTraceBanner />
     </div>
   );
 }

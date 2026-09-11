@@ -221,7 +221,8 @@
     "opdsComments": "Reader Comments",
     "opdsNoComments": "No comments available",
     "opdsDetailLoading": "Fetching download info…",
-    "opdsFacetMore": "More…"
+    "opdsFacetMore": "More…",
+    "opdsSelectFacetHint": "Select a category or filter"
   },
   "home": {
     "library": "Library",

@@ -40,6 +40,7 @@ import { mkdir, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { join, tempDir } from "@tauri-apps/api/path";
 import { DesktopOpdsManageDialog } from "./opds/DesktopOpdsManageDialog";
+import { useOpdsSourcesStore } from "@readany/core/sources/opds-source-store";
 import {
   ArrowLeft,
   BookOpen,
@@ -48,7 +49,6 @@ import {
   Cloud,
   FolderOpen,
   Globe,
-  Library,
   Loader2,
   Search,
   Upload,
@@ -750,8 +750,12 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
   const [browserSource, setBrowserSource] = useState<WebDavImportSource | null>(null);
   const [opdsManageOpen, setOpdsManageOpen] = useState(false);
 
+  const opdsSources = useOpdsSourcesStore((state) => state.sources);
+  const hasOpdsSources = opdsSources.length > 0;
+
   useEffect(() => {
     void loadSyncConfig();
+    void useOpdsSourcesStore.getState().hydrate();
   }, [loadSyncConfig]);
 
   const handleLocalImport = useCallback(async () => {
@@ -895,10 +899,17 @@ export function DesktopImportActions({ children, align = "end" }: DesktopImportA
             }}
           >
             <div className="flex size-7 shrink-0 items-center justify-center text-primary">
-              <Library className="size-4.5" />
+              <Globe className="size-4.5" />
             </div>
-            <div className="min-w-0 flex-1 whitespace-nowrap text-sm font-medium text-foreground">
-              {t("library.opdsSourcesTitle", "OPDS 书源")}
+            <div className="min-w-0 flex-1 whitespace-nowrap">
+              <div className="text-sm font-medium text-foreground">
+                {t("library.opdsSourcesEntry", "OPDS 在线目录")}
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                {hasOpdsSources
+                  ? t("library.opdsManageEntry", "书源管理")
+                  : t("library.opdsAddSource", "添加书源")}
+              </div>
             </div>
             <ChevronRight className="size-4 text-muted-foreground" />
           </DropdownMenuItem>

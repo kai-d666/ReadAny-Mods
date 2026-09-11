@@ -31,6 +31,8 @@ export function DeveloperSettings() {
   const setDeveloperMode = useDeveloperStore((s) => s.setDeveloperMode);
   const localOpdsServer = useDeveloperStore((s) => s.localOpdsServer);
   const setLocalOpdsServer = useDeveloperStore((s) => s.setLocalOpdsServer);
+  const syncTraceBanner = useDeveloperStore((s) => s.syncTraceBanner);
+  const setSyncTraceBanner = useDeveloperStore((s) => s.setSyncTraceBanner);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
 
   const zlConfig = useDriverConfigStore((s) => s.zlib);
@@ -132,6 +134,7 @@ export function DeveloperSettings() {
           onClick={() => {
             setDeveloperMode(false);
             setLocalOpdsServer(false);
+            setSyncTraceBanner(false);
             toast.info(t("settings.devModeDisabled", "已关闭并退出开发者模式"));
             setShowSettings(true, "about");
           }}
@@ -139,6 +142,35 @@ export function DeveloperSettings() {
         >
           {t("settings.disableDevMode", "退出开发者模式")}
         </Button>
+      </div>
+
+      {/* 0. 同步调试: 同步日志横幅 */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Terminal className="size-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">
+                {t("settings.syncTraceBannerTitle", "同步日志横幅")}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t(
+                "settings.syncTraceBannerDesc",
+                "顶部常驻悬浮显示 WebDAV 同步详细步骤与阶段状态（同步到哪一步了），便于定位同步问题。",
+              )}
+            </p>
+          </div>
+          <Switch
+            checked={syncTraceBanner}
+            onCheckedChange={(v) => {
+              setSyncTraceBanner(v);
+              if (v) {
+                toast.success(t("settings.syncTraceBannerEnabled", "已开启同步日志横幅"));
+              }
+            }}
+          />
+        </div>
       </div>
 
       {/* 1. 本机书源服务端 */}

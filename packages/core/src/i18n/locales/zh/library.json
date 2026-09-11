@@ -221,7 +221,8 @@
     "opdsComments": "读者评论",
     "opdsNoComments": "暂无评论内容",
     "opdsDetailLoading": "正在获取下载信息…",
-    "opdsFacetMore": "其他…"
+    "opdsFacetMore": "其他…",
+    "opdsSelectFacetHint": "选择分类或筛选条件"
   },
   "home": {
     "library": "书库",

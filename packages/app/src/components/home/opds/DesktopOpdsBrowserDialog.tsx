@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -34,6 +35,7 @@ import {
   ArrowLeft,
   BookCheck,
   BookOpen,
+  Check,
   ChevronDown,
   ChevronRight,
   Download,
@@ -617,6 +619,8 @@ export function DesktopOpdsBrowserDialog({
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [importState, setImportState] = useState<ImportState>({ phase: "idle" });
   const [selectedPublication, setSelectedPublication] = useState<OpdsPublication | null>(null);
+  const [moreFacetGroup, setMoreFacetGroup] = useState<{ id: string; items: OpdsFacet[] } | null>(null);
+  const [facetSearch, setFacetSearch] = useState("");
 
   const openSearchRef = useRef<{ href?: string; template: string } | null>(null);
 
@@ -1059,6 +1063,18 @@ export function DesktopOpdsBrowserDialog({
                     const meta = FACET_GROUP_META[groupId] ?? { label: groupId, inlineLimit: 6 };
                     const paramKey = FACET_PARAM_KEY[groupId];
                     const selectedVal = paramKey && filterSel ? filterSel[paramKey] : "";
+                    const isFacetActive = (f: OpdsFacet) => {
+                      const val = paramKey ? facetValueOf(f, paramKey) : "";
+                      return selectedVal === val || (!selectedVal && f.active);
+                    };
+
+                    const overflow = facets.length > meta.inlineLimit;
+                    let inline = overflow ? facets.slice(0, meta.inlineLimit) : facets;
+                    // 选中项若被折进"其他",替换末位保证当前状态可见
+                    const activeItem = facets.find(isFacetActive);
+                    if (overflow && activeItem && !inline.includes(activeItem)) {
+                      inline = [...inline.slice(0, -1), activeItem];
+                    }
 
                     return (
                       <div key={groupId} className="flex items-center gap-2 overflow-x-auto scrollbar-none py-0.5">
@@ -1066,9 +1082,8 @@ export function DesktopOpdsBrowserDialog({
                           {meta.label}:
                         </span>
                         <div className="flex items-center gap-1.5">
-                          {facets.slice(0, meta.inlineLimit).map((facet, fIdx) => {
-                            const val = paramKey ? facetValueOf(facet, paramKey) : "";
-                            const isSelected = selectedVal === val || (!selectedVal && facet.active);
+                          {inline.map((facet, fIdx) => {
+                            const isSelected = isFacetActive(facet);
 
                             return (
                               <button
@@ -1086,6 +1101,19 @@ export function DesktopOpdsBrowserDialog({
                               </button>
                             );
                           })}
+
+                          {overflow && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFacetSearch("");
+                                setMoreFacetGroup({ id: groupId, items: facets });
+                              }}
+                              className="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-medium bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
+                            >
+                              {t("library.opdsFacetMore", "其他…")}
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1480,6 +1508,73 @@ export function DesktopOpdsBrowserDialog({
             findLikelyDuplicateBook(duplicateIndex, { title: selectedPublication.title }),
         )}
       />
+
+      {/* 分面筛选“其他…”更多选项弹窗（如 191 种语言 / 12 种格式） */}
+      <Dialog
+        open={moreFacetGroup !== null}
+        onOpenChange={(next) => {
+          if (!next) setMoreFacetGroup(null);
+        }}
+      >
+        <DialogContent className="max-w-md p-5">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="text-base font-semibold">
+              {moreFacetGroup ? (FACET_GROUP_META[moreFacetGroup.id]?.label ?? moreFacetGroup.id) : ""}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {t("library.opdsSelectFacetHint", "选择分类或筛选条件")}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 搜索过滤框（冷门语言众多时快速查找） */}
+          {moreFacetGroup && moreFacetGroup.items.length > 10 && (
+            <div className="relative pt-2">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground mt-1" />
+              <Input
+                value={facetSearch}
+                onChange={(e) => setFacetSearch(e.target.value)}
+                placeholder={t("common.search", "搜索...")}
+                className="h-8 pl-8 text-xs rounded-xl"
+              />
+            </div>
+          )}
+
+          <div className="max-h-[50vh] overflow-y-auto space-y-1 py-2 divide-y divide-border/40">
+            {moreFacetGroup &&
+              moreFacetGroup.items
+                .filter((item) => {
+                  if (!facetSearch.trim()) return true;
+                  return item.title.toLowerCase().includes(facetSearch.trim().toLowerCase());
+                })
+                .map((facet, idx) => {
+                  const pk = FACET_PARAM_KEY[moreFacetGroup.id];
+                  const val = pk ? facetValueOf(facet, pk) : "";
+                  const selectedVal = pk && filterSel ? filterSel[pk] : "";
+                  const isSelected = selectedVal === val || (!selectedVal && facet.active);
+
+                  return (
+                    <button
+                      key={`more-facet-${idx}-${facet.title}`}
+                      type="button"
+                      onClick={() => {
+                        handleFacetTap(moreFacetGroup.id, facet);
+                        setMoreFacetGroup(null);
+                      }}
+                      className={cn(
+                        "w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors text-left",
+                        isSelected
+                          ? "bg-primary/10 text-primary font-medium"
+                          : "text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      <span>{facet.title}</span>
+                      {isSelected && <Check className="size-3.5 text-primary" />}
+                    </button>
+                  );
+                })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
