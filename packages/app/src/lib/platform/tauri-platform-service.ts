@@ -553,6 +553,9 @@ export class TauriPlatformService implements IPlatformService {
       const reqId = payload.reqId ?? payload.req_id;
       const { method, path, headers } = payload;
 
+      // ⚠️ 只发一套字段名:req_id/reqId 或 body_base64/bodyBase64 同时出现时,
+      // serde 会因「同一字段槽出现两次」报 duplicate field → invoke 失败 → Rust 侧等到 30s 超时(504)。
+      // (2026-09-12 实测确认;lan_server.rs 的 rename_all=camelCase + alias 两套拼写都收,但只能发一套)
       try {
         const response = await handler(method, path, headers ?? {});
 
@@ -563,21 +566,18 @@ export class TauriPlatformService implements IPlatformService {
         }
 
         await invoke("lan_server_respond", {
-          req_id: reqId,
-          reqId: reqId,
+          reqId,
           payload: {
             status: response.status,
             headers: response.headers || {},
-            body_base64: resBodyBase64,
             bodyBase64: resBodyBase64,
           },
         });
       } catch (e) {
         console.error(`[TauriPlatform] LAN Sync Handler Error for ${reqId}:`, e);
         await invoke("lan_server_respond", {
-          req_id: reqId,
-          reqId: reqId,
-          payload: { status: 500, headers: {}, body_base64: null, bodyBase64: null },
+          reqId,
+          payload: { status: 500, headers: {}, bodyBase64: null },
         });
       }
     });
