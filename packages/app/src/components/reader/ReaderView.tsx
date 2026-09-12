@@ -381,6 +381,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
   const closeAppTab = useAppStore((s) => s.removeTab);
   const viewSettings = useSettingsStore((s) => s.readSettings);
   const updateReadSettings = useSettingsStore((s) => s.updateReadSettings);
+  const readerTitleBarVisible = !!viewSettings.readerTitleBarVisible;
   const setProgress = useReaderStore((s) => s.setProgress);
   const setChapter = useReaderStore((s) => s.setChapter);
   const setSelectedText = useReaderStore((s) => s.setSelectedText);
@@ -3153,6 +3154,7 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
             onToggleTranslationVisible={chapterTranslation.toggleTranslationVisible}
             onChapterTranslationReset={chapterTranslation.reset}
             isChatOpen={showChat}
+            isSettingsOpen={showSettings}
             isTTSActive={showTTS || ttsPlayState !== "stopped"}
             isFixedLayout={isFixedLayout}
             fixedLayoutZoom={fixedLayoutZoom}
@@ -3234,25 +3236,35 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
           </div>
         </div>
 
-        {/* Settings overlay */}
+        {/* Settings overlay — flush under ReaderToolbar with zero gap, bounded scrollable height */}
         {showSettings && (
           <>
             <div
-              className="absolute inset-0 z-40 bg-black/20"
+              className="fixed inset-0 z-[89] bg-black/10"
               onClick={() => setShowSettings(false)}
             />
-            <div className="absolute top-12 right-2 z-50 w-80 animate-in slide-in-from-top-2 duration-200 rounded-lg border border-border/60 bg-background shadow-lg">
-              <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
-                <span className="text-xs font-medium">{t("settings.reading_title")}</span>
+            <div
+              className={`fixed right-2 z-[100] flex w-84 flex-col rounded-lg border border-border/60 bg-background shadow-xl animate-in fade-in-0 zoom-in-95 duration-150 ${
+                readerTitleBarVisible
+                  ? "top-[72px] max-h-[calc(100vh-5.5rem)]"
+                  : "top-10 max-h-[calc(100vh-3.5rem)]"
+              }`}
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-border/40 px-4 py-2.5">
+                <span className="text-xs font-semibold text-foreground">
+                  {t("settings.reading_title")}
+                </span>
                 <button
                   type="button"
-                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onClick={() => setShowSettings(false)}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <ReadSettingsPanel />
+              <div className="flex-1 overflow-y-auto">
+                <ReadSettingsPanel />
+              </div>
             </div>
           </>
         )}

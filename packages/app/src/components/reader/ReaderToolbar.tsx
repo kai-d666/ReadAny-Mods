@@ -50,6 +50,7 @@ interface ReaderToolbarProps {
   onToggleTranslationVisible: () => void;
   onChapterTranslationReset: () => void;
   isChatOpen?: boolean;
+  isSettingsOpen?: boolean;
   isTTSActive?: boolean;
   isFixedLayout?: boolean;
   fixedLayoutZoom?: number;
@@ -83,6 +84,7 @@ export function ReaderToolbar({
   onToggleTranslationVisible,
   onChapterTranslationReset,
   isChatOpen,
+  isSettingsOpen = false,
   isTTSActive,
   isFixedLayout = false,
   fixedLayoutZoom = 1,
@@ -143,7 +145,9 @@ export function ReaderToolbar({
   return (
     <div
       data-tauri-drag-region
-      className={`fixed left-0 right-0 top-0 z-[90] flex h-10 items-center justify-between bg-background/95 backdrop-blur-sm px-2 shadow-md transition-all duration-300 ${
+      className={`fixed left-0 right-0 ${
+        readerTitleBarVisible ? "top-8" : "top-0"
+      } z-[90] flex h-10 items-center justify-between bg-background/95 backdrop-blur-sm px-2 shadow-md transition-all duration-300 ${
         isVisible
           ? "translate-y-0 opacity-100 pointer-events-auto"
           : "-translate-y-full opacity-0 pointer-events-none"
@@ -338,7 +342,13 @@ export function ReaderToolbar({
         >
           <Maximize className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleSettings}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-7 w-7 ${isSettingsOpen ? "bg-primary/10 text-primary" : ""}`}
+          onClick={onToggleSettings}
+          title={t("reader.readingSettings")}
+        >
           <Settings className="h-3.5 w-3.5" />
         </Button>
       </div>
