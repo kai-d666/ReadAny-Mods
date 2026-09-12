@@ -5,7 +5,7 @@
   "identifier": "com.readany.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:3420",
     "beforeBuildCommand": "pnpm --filter @readany/cli build && pnpm build",
     "frontendDist": "../dist"
   },
