@@ -222,7 +222,9 @@
     "opdsNoComments": "No comments available",
     "opdsDetailLoading": "Fetching download info…",
     "opdsFacetMore": "More…",
-    "opdsSelectFacetHint": "Select a category or filter"
+    "opdsSelectFacetHint": "Select a category or filter",
+    "opdsSearchAgain": "Search Again",
+    "opdsNoResultsHint": "Try a different keyword or adjust the sorting/language/format filters above."
   },
   "home": {
     "library": "Library",

@@ -9,6 +9,7 @@
  */
 
 import { DOMParser } from "@xmldom/xmldom";
+import { htmlToPlainText } from "./html-text";
 
 // ---- 常量(取值自 foliate-js/opds.js)----
 
@@ -377,10 +378,11 @@ function parsePublication(entry: XmlNode, feedHref: string, ns: string | null): 
       .filter((c) => isAtomElement(c, "author", ns))
       .map((author) => textOf(elements(author).find((sub) => sub.localName === "name")))
       .filter(Boolean),
-    summary:
+    // 部分目录(含 ZL)的 summary/content 带 HTML 标签或实体,统一转纯文本再入库
+    summary: htmlToPlainText(
       textOf(children.find((c) => isAtomElement(c, "summary", ns))) ||
-      textOf(children.find((c) => isAtomElement(c, "content", ns))) ||
-      undefined,
+        textOf(children.find((c) => isAtomElement(c, "content", ns))),
+    ),
     language: textOf(children.find((c) => isDcElement(c, ["language"]))) || undefined,
     issued:
       textOf(children.find((c) => isDcElement(c, ["issued"]))) ||

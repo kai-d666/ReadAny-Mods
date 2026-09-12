@@ -21,6 +21,7 @@ import {
   type OpdsNavLink,
   type OpdsPublication,
 } from "./opds";
+import { htmlToPlainText } from "./html-text";
 
 interface Opds2Link {
   rel?: string;
@@ -129,7 +130,7 @@ function parsePublication(
     id: metadata.identifier || undefined,
     title: metadata.title ?? "",
     authors: parseAuthors(metadata.author as never),
-    summary: metadata.description || undefined,
+    summary: htmlToPlainText(metadata.description),
     language: metadata.language || undefined,
     issued: metadata.published || undefined,
     thumbnailUrl: thumbnailHref ? resolveOpdsHref(thumbnailHref, feedHref) : undefined,

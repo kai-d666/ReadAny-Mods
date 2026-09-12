@@ -615,6 +615,7 @@ export function DesktopOpdsBrowserDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
   const [filterSel, setFilterSel] = useState<FilterSel | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [importState, setImportState] = useState<ImportState>({ phase: "idle" });
@@ -624,6 +625,11 @@ export function DesktopOpdsBrowserDialog({
 
   const openSearchRef = useRef<{ href?: string; template: string } | null>(null);
 
+  // 请求序号: 快速连点筛选/搜索时，过期响应直接丢弃(防旧响应覆盖新结果 + 面包屑乱叠)
+  const loadSeqRef = useRef(0);
+  /** 最近一次加载目标(失败也不丢): 错误/空态的重试据此重放，而不是"退回"到上一级 */
+  const lastLoadRef = useRef<{ href: string; title: string } | null>(null);
+
   const loadFeedWith = useCallback(
     async (
       activeClient: OpdsClient,
@@ -632,10 +638,13 @@ export function DesktopOpdsBrowserDialog({
       append: boolean,
       navMode: "push" | "replace" | "none" = "push",
     ) => {
+      const seq = ++loadSeqRef.current;
+      lastLoadRef.current = { href, title };
       setLoading(true);
       setError(null);
       try {
         const nextFeed = await activeClient.fetchFeed(href);
+        if (seq !== loadSeqRef.current) return;
         setFeed((prev) =>
           append && prev
             ? { ...nextFeed, publications: [...prev.publications, ...nextFeed.publications] }
@@ -650,11 +659,14 @@ export function DesktopOpdsBrowserDialog({
             if (top && top.href === href) return cur;
             return [...cur, { title, href }];
           });
+          setShowSearch(!!(nextFeed.searchHref || nextFeed.searchTemplate || openSearchRef.current));
         }
       } catch (err) {
+        if (seq !== loadSeqRef.current) return;
+        console.warn(`[DesktopOpdsBrowser] load failed: ${href} —`, err);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        setLoading(false);
+        if (seq === loadSeqRef.current) setLoading(false);
       }
     },
     [],
@@ -749,15 +761,22 @@ export function DesktopOpdsBrowserDialog({
     [client, loadFeedWith, navPath],
   );
 
+  /** 重试/重新搜索：重放最近一次加载目标（错误/空态据此重试，修复只退回上一级的缺陷） */
+  const retryLast = useCallback(() => {
+    const last = lastLoadRef.current ?? navPath[navPath.length - 1];
+    if (!client || !last) return;
+    void loadFeedWith(client, last.href, last.title, false);
+  }, [client, loadFeedWith, navPath]);
+
   const handleRefresh = useCallback(() => {
-    const current = navPath[navPath.length - 1];
-    if (!client || !current) return;
-    void loadFeedWith(client, current.href, current.title, false);
+    const target = lastLoadRef.current ?? navPath[navPath.length - 1];
+    if (!client || !target) return;
+    void loadFeedWith(client, target.href, target.title, false);
   }, [client, loadFeedWith, navPath]);
 
   const handleSearchSubmit = useCallback(async () => {
     const query = search.trim();
-    if (!query || !client || !feed) return;
+    if (!client || !feed) return;
     try {
       if (!openSearchRef.current) {
         if (feed.searchTemplate) {
@@ -768,33 +787,67 @@ export function DesktopOpdsBrowserDialog({
         }
       }
       const template = openSearchRef.current?.template;
-      if (!template) return;
-      const searchUrl = buildOpenSearchUrl(template, query);
 
-      let finalUrl = searchUrl;
-      try {
-        const u = new URL(searchUrl);
-        if (filterSel) {
-          u.searchParams.set("order", filterSel.order);
-          if (filterSel.lang) u.searchParams.set("lang", filterSel.lang);
-          if (filterSel.ext) u.searchParams.set("ext", filterSel.ext);
-        } else if (feed?.href) {
-          const cur = new URL(feed.href);
-          for (const key of ["order", "lang", "ext"]) {
-            const value = cur.searchParams.get(key);
-            if (value) u.searchParams.set(key, value);
+      let finalUrl = "";
+      let title = query;
+
+      if (query && template) {
+        const searchUrl = buildOpenSearchUrl(template, query);
+        try {
+          const u = new URL(searchUrl);
+          if (filterSel) {
+            u.searchParams.set("order", filterSel.order);
+            if (filterSel.lang) u.searchParams.set("lang", filterSel.lang);
+            if (filterSel.ext) u.searchParams.set("ext", filterSel.ext);
+          } else if (feed?.href) {
+            const cur = new URL(feed.href);
+            for (const key of ["order", "lang", "ext"]) {
+              const value = cur.searchParams.get(key);
+              if (value) u.searchParams.set(key, value);
+            }
           }
+          finalUrl = u.toString();
+        } catch {
+          finalUrl = searchUrl;
         }
-        finalUrl = u.toString();
-      } catch {}
+      } else if (!query) {
+        // 空搜索词：若选了筛选，按当前筛选条件刷新目录（如最热列表按语言/格式/排序过滤）
+        const baseHref = navPath[0]?.href ?? source?.url ?? "";
+        if (!baseHref) return;
+        try {
+          const u = new URL(baseHref);
+          if (filterSel) {
+            u.searchParams.set("order", filterSel.order);
+            if (filterSel.lang) u.searchParams.set("lang", filterSel.lang);
+            if (filterSel.ext) u.searchParams.set("ext", filterSel.ext);
+          }
+          finalUrl = u.toString();
+        } catch {
+          finalUrl = baseHref;
+        }
+        title = navPath[0]?.title ?? source?.name ?? "目录";
+      } else {
+        return;
+      }
 
       const top = navPath[navPath.length - 1];
-      const topIsSearch = !!top && (top.href.includes("/search?") || top.href.includes("?q="));
-      await loadFeedWith(client, finalUrl, query, false, topIsSearch ? "replace" : "push");
+      const topIsSearch =
+        !!top &&
+        (top.href.includes("/search?") ||
+          top.href.includes("?q=") ||
+          top.href.includes("?order=") ||
+          top.href.includes("?lang="));
+      await loadFeedWith(
+        client,
+        finalUrl,
+        title,
+        false,
+        topIsSearch ? "replace" : query ? "push" : "replace",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, feed, filterSel, loadFeedWith, navPath, search]);
+  }, [client, feed, filterSel, loadFeedWith, navPath, search, source?.name, source?.url]);
 
   const handleLoadNext = useCallback(() => {
     if (!client || !feed?.nextHref || loading) return;
@@ -878,7 +931,7 @@ export function DesktopOpdsBrowserDialog({
 
   const currentTitle =
     navPath.length > 0 ? navPath[navPath.length - 1].title : (feed?.title ?? source?.name ?? "");
-  const hasSearch = !!(feed?.searchHref || feed?.searchTemplate);
+  const hasSearch = showSearch || !!(feed?.searchHref || feed?.searchTemplate);
 
   const importBusy = importState.phase !== "idle";
   const statusLabel =
@@ -1040,7 +1093,7 @@ export function DesktopOpdsBrowserDialog({
                       type="button"
                       size="sm"
                       onClick={() => void handleSearchSubmit()}
-                      disabled={loading || !search.trim()}
+                      disabled={loading}
                       className="h-7.5 px-2.5 rounded-xl text-xs"
                     >
                       {loading ? <Loader2 className="size-3 animate-spin" /> : <Search className="size-3" />}
@@ -1123,6 +1176,14 @@ export function DesktopOpdsBrowserDialog({
             </div>
           </DialogHeader>
 
+          {/* 加载中顶部横幅指示 (已有条目时横幅提示，防止全屏转圈导致白屏闪烁，对齐安卓 commit 781698f6) */}
+          {loading && feed && (feed.publications.length > 0 || feed.navigation.length > 0) && (
+            <div className="flex items-center justify-center gap-2 border-b bg-primary/10 py-2 text-xs font-medium text-primary shrink-0 animate-in fade-in">
+              <Loader2 className="size-3.5 animate-spin text-primary" />
+              <span>{t("library.opdsLoadingFeed", "正在读取目录...")}</span>
+            </div>
+          )}
+
           {/* 浏览主视区 */}
           <div className="flex-1 overflow-y-auto p-6">
             {loading && !feed ? (
@@ -1138,7 +1199,7 @@ export function DesktopOpdsBrowserDialog({
                   </p>
                   <p className="mt-1.5 max-w-md text-xs leading-5 text-muted-foreground">{error}</p>
                 </div>
-                <Button size="sm" onClick={handleRefresh} className="rounded-xl">
+                <Button size="sm" onClick={retryLast} className="rounded-xl">
                   {t("common.retry", "重试")}
                 </Button>
               </div>
@@ -1148,9 +1209,14 @@ export function DesktopOpdsBrowserDialog({
                 <p className="text-base font-semibold text-foreground">
                   {search ? t("library.opdsNoResults", "没有搜到结果") : t("library.opdsListEmptyTitle", "目录为空")}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {search ? t("home.tryDifferentSearch") : ""}
+                <p className="text-xs text-muted-foreground max-w-sm leading-5">
+                  {search
+                    ? t("library.opdsNoResultsHint", "换个关键词试试，或调整上方的排序/语言/格式筛选")
+                    : t("home.tryDifferentSearch", "请稍后重试或检查书源地址")}
                 </p>
+                <Button size="sm" onClick={retryLast} className="rounded-xl mt-1">
+                  {search ? t("library.opdsSearchAgain", "重新搜索") : t("common.retry", "重试")}
+                </Button>
               </div>
             ) : (
               <div className="space-y-6">

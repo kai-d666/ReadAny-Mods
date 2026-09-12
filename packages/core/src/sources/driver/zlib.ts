@@ -28,6 +28,7 @@ import {
 } from "../opds";
 import type { BookSourceDriver } from "./local-opds-server";
 import { ZL_MORE_LANGUAGES } from "./zlib-languages";
+import { htmlToPlainText } from "../html-text";
 import { getPlatformService } from "../../services/platform";
 
 // UA 候选:koplugin 同款桌面 Chrome(2026-09-08 探测:24 域通过,大多数域对其放行);
@@ -634,7 +635,9 @@ export class ZlibDriver implements BookSourceDriver {
     return {
       extension: b.extension ?? undefined,
       hash: b.hash ?? undefined,
-      description: b.description ?? undefined,
+      // ZL 的 description 是 HTML(`<p>…</p>`),这里就转纯文本:
+      // 残条详情补全链(移动端/桌面端)都直接拿它当 summary,客户端不必各自处理
+      description: htmlToPlainText(b.description),
       publisher: b.publisher ?? undefined,
       pages: b.pages,
       filesize: b.filesize,
@@ -876,7 +879,7 @@ export class ZlibDriver implements BookSourceDriver {
         id: book.id != null ? String(book.id) : undefined,
         title: book.name ?? book.title ?? "untitled",
         authors: authorName(book.author) ? [authorName(book.author)] : [],
-        summary: book.description || undefined,
+        summary: htmlToPlainText(book.description),
         publisher: book.publisher || undefined,
         extent: book.pages != null && book.pages !== "" ? String(book.pages) : undefined,
         language: book.language || undefined,
