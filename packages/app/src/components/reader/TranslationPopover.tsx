@@ -11,7 +11,7 @@ import {
   type TranslationTargetLang,
   type TranslatorName,
 } from "@readany/core/types/translation";
-import { BookOpen, Check, ChevronDown, Copy, Loader2, RefreshCw } from "lucide-react";
+import { BookOpen, Check, ChevronDown, Copy, Loader2, RefreshCw, Volume2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -366,29 +366,31 @@ export function TranslationPopover({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // Auto-speak the looked-up word (TTS) when enabled in settings
-  useEffect(() => {
-    if (!dictionary || !translationConfig.dictionarySpeak) return;
-    let cancelled = false;
-    const speak = async () => {
+  const handleSpeak = useCallback(async () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    try {
+      const { useTTSStore } = await import("@/stores/tts-store");
+      void useTTSStore.getState().play(trimmed);
+    } catch {
       try {
         const { EdgeTTSPlayer, DEFAULT_TTS_CONFIG } = await import("@readany/core/tts");
-        if (cancelled) return;
         const player = new EdgeTTSPlayer();
-        // English word lookups use an English Edge voice
-        await player.speak(text, {
+        await player.speak(trimmed, {
           ...DEFAULT_TTS_CONFIG,
           edgeVoice: "en-US-AriaNeural",
         });
       } catch (err) {
         console.warn("[Speak] failed:", err);
       }
-    };
-    void speak();
-    return () => {
-      cancelled = true;
-    };
-  }, [dictionary, translationConfig.dictionarySpeak, text]);
+    }
+  }, [text]);
+
+  // Auto-speak the looked-up word (TTS) when enabled in settings
+  useEffect(() => {
+    if (!dictionary || !translationConfig.dictionarySpeak) return;
+    void handleSpeak();
+  }, [dictionary, translationConfig.dictionarySpeak, handleSpeak]);
 
   // Fetch translation (AI path; skipped on a local dictionary hit or while
   // the local lookup is still settling. For non-AI dictionary methods, AI
@@ -562,21 +564,35 @@ export function TranslationPopover({
             </div>
           </div>
 
-          {/* Refresh: clear this word's cache and re-request (top-right corner).
-              Shown while loading too — a stuck request is exactly when you
-              want to retry. */}
-          {(loading || (!error && translation)) && (
-            <button
-              type="button"
-              title="清除缓存并重新翻译"
-              className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => {
-                void clearCache(text).then(() => setRefreshKey((k) => k + 1));
-              }}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <div className="flex items-center gap-0.5">
+            {/* 查词模式：喇叭重读按钮（点击用已配置 TTS 朗读原词，对齐安卓 commit d0977159） */}
+            {dictionary && (
+              <button
+                type="button"
+                title={t("settings.dictionarySpeak", "朗读")}
+                className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => void handleSpeak()}
+              >
+                <Volume2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+
+            {/* Refresh: clear this word's cache and re-request (top-right corner).
+                Shown while loading too — a stuck request is exactly when you
+                want to retry. */}
+            {(loading || (!error && translation)) && (
+              <button
+                type="button"
+                title="清除缓存并重新翻译"
+                className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => {
+                  void clearCache(text).then(() => setRefreshKey((k) => k + 1));
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Translation content */}

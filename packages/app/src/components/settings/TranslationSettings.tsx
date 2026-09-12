@@ -22,6 +22,7 @@ import {
   TRANSLATOR_PROVIDERS,
   type DictionaryMethod,
 } from "@readany/core/types/translation";
+import { DEFAULT_DICTIONARY_PROMPT } from "@readany/core/translation/providers";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -233,7 +234,7 @@ export function TranslationSettings() {
                       <Textarea
                         rows={6}
                         value={translationConfig.dictionaryPrompt ?? ""}
-                        placeholder={t("settings.dictionaryPromptPlaceholder")}
+                        placeholder={DEFAULT_DICTIONARY_PROMPT}
                         onChange={(e) =>
                           updateTranslationConfig({ dictionaryPrompt: e.target.value })
                         }
