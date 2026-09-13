@@ -371,7 +371,6 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         const currentParts: Part[] = [];
         let currentTextPart: TextPart | null = null;
         let currentReasoningPart: ReasoningPart | null = null;
-        let currentToolCallPart: ToolCallPart | null = null;
         /** Token count of an LLM call that emitted tool calls — attached to the
          *  tool part that onToolCall creates right after (llm_usage arrives before tool_call). */
         let pendingUsageForToolCalls: number | undefined;
@@ -385,7 +384,6 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         let pendingPublishTimer: ReturnType<typeof setTimeout> | null = null;
         let pendingCurrentStep: StreamingState["currentStep"] | undefined;
         let lastPublishedAt = 0;
-        void currentToolCallPart;
 
         clearPendingPublish = () => {
           if (pendingPublishTimer) {
@@ -619,7 +617,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             }
             currentTextPart = null;
             currentReasoningPart = null;
-            currentToolCallPart = createToolCallPart(name, args);
+            const toolCallPart = createToolCallPart(name, args);
             // Attach usage of the LLM call that emitted this tool call. Keep
             // pendingUsageForToolCalls — a call can emit several tools, each
             // shares the same token count; next llm_usage overwrites it.
@@ -627,9 +625,9 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             // (deepseek/openai) fire onToolCall BEFORE llm_usage; advancing the
             // boundary would empty the retro-attach range when usage lands.
             if (pendingUsageForToolCalls != null) {
-              currentToolCallPart.tokens = pendingUsageForToolCalls;
+              toolCallPart.tokens = pendingUsageForToolCalls;
             }
-            currentParts.push(currentToolCallPart);
+            currentParts.push(toolCallPart);
             flushCurrentMessage("tool_calling");
           },
           onToolResult: (name, result) => {

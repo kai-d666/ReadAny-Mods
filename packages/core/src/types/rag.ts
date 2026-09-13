@@ -62,7 +62,6 @@ export interface VectorConfig {
   chunkSize: number; // default 300 tokens
   chunkMinSize: number; // default 50 tokens
   chunkOverlap: number; // default 0.2 (20%)
-  hybridAlpha: number; // vector weight, 0-1, default 0.7
 }
 
 export interface VectorizeProgress {
