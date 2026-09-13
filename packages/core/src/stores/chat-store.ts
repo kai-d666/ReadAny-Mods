@@ -15,7 +15,7 @@ import {
  * - Each book has its own active thread; general chat has its own.
  * - All threads are persisted to SQLite via core db module
  */
-import type { Message, MessageV2, ReasoningStep, Thread, ToolCall } from "../types";
+import type { Message, MessageV2, Thread } from "../types";
 
 export type ChatStreamingStep = "thinking" | "tool_calling" | "responding" | "idle";
 
@@ -39,11 +39,9 @@ export interface ChatState {
   threads: Thread[];
   generalActiveThreadId: string | null;
   bookActiveThreadIds: Record<string, string>;
+  /** Rollup over streamingSessions, maintained by the session methods below. */
   isStreaming: boolean;
-  streamingContent: string;
   streamingSessions: Record<string, ChatStreamingSession>;
-  toolCalls: ToolCall[];
-  reasoning: ReasoningStep[];
   currentStep: ChatStreamingStep;
   initialized: boolean;
 
@@ -57,9 +55,7 @@ export interface ChatState {
   getActiveThreadId: (bookId?: string) => string | null;
   getThreadsForContext: (bookId?: string) => Thread[];
   addMessage: (threadId: string, message: Message) => Promise<void>;
-  updateMessage: (threadId: string, messageId: string, content: string) => void;
   updateThreadTitle: (threadId: string, title: string) => Promise<void>;
-  setStreaming: (streaming: boolean) => void;
   startStreamingSession: (session: ChatStreamingSession) => void;
   updateStreamingSession: (
     key: string,
@@ -71,15 +67,6 @@ export interface ChatState {
     >,
   ) => void;
   finishStreamingSession: (key: string) => void;
-  setStreamingContent: (content: string) => void;
-  appendStreamingContent: (chunk: string) => void;
-  setToolCalls: (toolCalls: ToolCall[]) => void;
-  addToolCall: (toolCall: ToolCall) => void;
-  updateToolCall: (id: string, update: Partial<ToolCall>) => void;
-  setReasoning: (reasoning: ReasoningStep[]) => void;
-  addReasoningStep: (step: ReasoningStep) => void;
-  setCurrentStep: (step: ChatStreamingStep) => void;
-  resetStreamingState: () => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -87,10 +74,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   generalActiveThreadId: null,
   bookActiveThreadIds: {},
   isStreaming: false,
-  streamingContent: "",
   streamingSessions: {},
-  toolCalls: [],
-  reasoning: [],
   currentStep: "idle",
   initialized: false,
 
@@ -240,18 +224,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
-  updateMessage: (threadId, messageId, content) =>
-    set((state) => ({
-      threads: state.threads.map((t) =>
-        t.id === threadId
-          ? {
-              ...t,
-              messages: t.messages.map((m) => (m.id === messageId ? { ...m, content } : m)),
-            }
-          : t,
-      ),
-    })),
-
   updateThreadTitle: async (threadId, title) => {
     try {
       await dbUpdateThreadTitle(threadId, title);
@@ -264,7 +236,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
-  setStreaming: (streaming) => set({ isStreaming: streaming }),
   startStreamingSession: (session) =>
     set((state) => ({
       isStreaming: true,
@@ -305,30 +276,5 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentStep: activeSessions[0]?.currentStep ?? "idle",
         streamingSessions: sessions,
       };
-    }),
-  setStreamingContent: (content) => set({ streamingContent: content }),
-  appendStreamingContent: (chunk) =>
-    set((state) => ({ streamingContent: state.streamingContent + chunk })),
-
-  setToolCalls: (toolCalls) => set({ toolCalls }),
-  addToolCall: (toolCall) => set((state) => ({ toolCalls: [...state.toolCalls, toolCall] })),
-  updateToolCall: (id, update) =>
-    set((state) => ({
-      toolCalls: state.toolCalls.map((tc) => (tc.id === id ? { ...tc, ...update } : tc)),
-    })),
-
-  setReasoning: (reasoning) => set({ reasoning }),
-  addReasoningStep: (step) => set((state) => ({ reasoning: [...state.reasoning, step] })),
-
-  setCurrentStep: (step) => set({ currentStep: step }),
-
-  resetStreamingState: () =>
-    set({
-      isStreaming: false,
-      streamingContent: "",
-      streamingSessions: {},
-      toolCalls: [],
-      reasoning: [],
-      currentStep: "idle",
     }),
 }));

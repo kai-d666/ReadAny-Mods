@@ -18,10 +18,7 @@ function resetChatStore() {
     generalActiveThreadId: null,
     bookActiveThreadIds: {},
     isStreaming: false,
-    streamingContent: "",
     streamingSessions: {},
-    toolCalls: [],
-    reasoning: [],
     currentStep: "idle",
     initialized: false,
   });

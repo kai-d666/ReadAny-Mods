@@ -117,10 +117,6 @@ const CURRENT_PAGE_CONTEXT_RE =
   /(?:这里|這裡|当前页|當前頁|这一页|這一頁|这页|這頁|当前位置|當前位置|目前看到|我看到这里|我看到這裡)/u;
 const CURRENT_CHAPTER_CONTEXT_RE =
   /(?:这一章|這一章|这章|這章|当前章节|當前章節|当前章|當前章|現在這章|现在这章|本章)/u;
-const IMMEDIATE_CONTEXT_RE =
-  /(?:什么意思|什麼意思|看不懂|沒看懂|没看懂|解释一下|解釋一下|怎么理解|怎麼理解)/u;
-const BOOK_CONTENT_RE =
-  /(?:这本书|這本書|本书|本書|人物|角色|主角|配角|剧情|劇情|情节|情節|主题|主題|关系|關係|第一次|首次|结局|結局|梗概|总结|總結|摘要|分析|搜索|搜尋|查一下|搜一下|讲了什么|講了什麼|讲什么|講什麼)/u;
 
 const GENERAL_TOOL_NAMES = new Set([
   "listBooks",
@@ -269,12 +265,11 @@ function detectQuestionCategory(options: {
   const hasExplicitCurrentSelectionCue = CURRENT_SELECTION_RE.test(text);
   const hasExplicitCurrentPageCue = CURRENT_PAGE_CONTEXT_RE.test(text);
   const hasExplicitCurrentChapterCue = CURRENT_CHAPTER_CONTEXT_RE.test(text);
-  const asksForImmediateExplanation = IMMEDIATE_CONTEXT_RE.test(text);
 
   if (options.selectionActive && hasExplicitCurrentSelectionCue) {
     return "current_selection";
   }
-  if (hasExplicitCurrentPageCue || (asksForImmediateExplanation && hasExplicitCurrentPageCue)) {
+  if (hasExplicitCurrentPageCue) {
     return "current_page_context";
   }
   // "当前/这一章/本章" cues take priority over a bare chapter-number reference —
@@ -282,7 +277,11 @@ function detectQuestionCategory(options: {
   // not the narrow specific_chapter_request set that omits them.
   if (hasExplicitCurrentChapterCue) return "current_chapter_context";
   if (CHAPTER_REFERENCE_RE.test(text)) return "specific_chapter_request";
-  if (BOOK_CONTENT_RE.test(text)) return "book_wide_search";
+  // Everything else with a book in context is treated as a book-wide question.
+  // (A BOOK_CONTENT_RE test used to sit here and returned this same value either
+  // way — its result was never used. If the original intent was to fall back to
+  // "general_chat" for off-topic questions, that is a behavior change, not a
+  // cleanup: it would change which tools get registered.)
   return "book_wide_search";
 }
 

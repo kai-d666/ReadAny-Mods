@@ -5,20 +5,9 @@
  * - Context assembly
  */
 import type { Message, Thread } from "../types";
-import type { Book, Skill } from "../types";
-import { buildSystemPrompt } from "./system-prompt";
 
 interface PipelineConfig {
   slidingWindowSize: number; // default 8
-}
-
-interface PipelineContext {
-  book: Book | null;
-  bookId?: string | null;
-  enabledSkills: Skill[];
-  isVectorized: boolean;
-  userLanguage: string;
-  memorySummary?: string;
 }
 
 export interface ProcessedMessage {
@@ -28,30 +17,28 @@ export interface ProcessedMessage {
   reasoning?: string;
 }
 
-interface ProcessedMessages {
-  systemPrompt: string;
-  messages: ProcessedMessage[];
-}
-
 const DEFAULT_CONFIG: PipelineConfig = {
   slidingWindowSize: 8,
 };
 
-/** Process a thread into messages ready for AI API call */
+/**
+ * Process a thread into messages ready for AI API call.
+ *
+ * The system prompt is NOT built here: the agent builds it (reading-agent.ts via
+ * system-prompt.ts). This function used to assemble one per turn and return it
+ * unused — an 8-section string build whose result nobody read.
+ */
 export function processMessages(
   thread: Thread,
-  context: PipelineContext,
   config: PipelineConfig = DEFAULT_CONFIG,
-): ProcessedMessages {
-  const systemPrompt = buildSystemPrompt(context);
-
+): ProcessedMessage[] {
   // Apply sliding window — keep last N user/assistant messages; system messages
   // (thread's first-turn book info) are pinned and always stay.
   const windowedMessages = applySlidingWindow(thread.messages, config.slidingWindowSize);
 
   // Process citations in messages, preserving reasoning for DeepSeek multi-turn.
   // System messages carry the static book info — they flow through as-is.
-  const processed: ProcessedMessage[] = windowedMessages.map((m) => {
+  return windowedMessages.map((m) => {
     const msg: ProcessedMessage = {
       role: m.role,
       content: injectCitations(m),
@@ -62,8 +49,6 @@ export function processMessages(
     }
     return msg;
   });
-
-  return { systemPrompt, messages: processed };
 }
 
 /**

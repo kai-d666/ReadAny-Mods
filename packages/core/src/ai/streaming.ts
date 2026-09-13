@@ -86,18 +86,9 @@ export class StreamingChat {
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
-    const { messages } = processMessages(
-      options.thread,
-      {
-        book: options.book,
-        bookId: options.book?.id || options.bookId || options.thread.bookId || null,
-        enabledSkills: options.enabledSkills,
-        isVectorized: options.isVectorized,
-        userLanguage: i18n.language || options.book?.meta.language || "en",
-        memorySummary: options.thread.memorySummary,
-      },
-      { slidingWindowSize: options.aiConfig.slidingWindowSize },
-    );
+    const messages = processMessages(options.thread, {
+      slidingWindowSize: options.aiConfig.slidingWindowSize,
+    });
 
     const userInput = messages[messages.length - 1]?.content || "";
     const history = messages.slice(0, -1).map((m) => ({
