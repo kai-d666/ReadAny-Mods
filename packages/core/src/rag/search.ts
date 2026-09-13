@@ -160,7 +160,9 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
   const indexProvenance = await assertCompatibleIndex(query.bookId);
 
   // Get query embedding
+  const embedStart = Date.now();
   const queryEmbedding = await embeddingService.embed(query.query);
+  const embedMs = Date.now() - embedStart;
   if (indexProvenance.dimensions > 0 && queryEmbedding.length !== indexProvenance.dimensions) {
     throw new Error(
       `Vector index dimension mismatch: book uses ${indexProvenance.dimensions}d, ` +
@@ -204,6 +206,7 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
   }
 
   // Fallback: in-memory vector search
+  const scanStart = Date.now();
   const chunks = await getCachedChunks(query.bookId);
 
   // Compute cosine similarity against each chunk with an embedding
@@ -217,6 +220,19 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
     .filter((r) => r.score >= (query.threshold ?? DEFAULT_VECTOR_THRESHOLD))
     .sort((a, b) => b.score - a.score)
     .slice(0, query.topK);
+
+  // Timing probe: on mobile there is no sqlite-vec, so a query is "call the
+  // embedding endpoint" + "scan every chunk". When a search feels slow this
+  // line says which half is responsible.
+  console.log(
+    "[Search] vectorSearch",
+    JSON.stringify({
+      embedMs,
+      chunkLoadAndScanMs: Date.now() - scanStart,
+      chunks: chunks.length,
+      hits: results.length,
+    }),
+  );
 
   return results;
 }
@@ -251,19 +267,25 @@ async function bm25Search(query: SearchQuery): Promise<SearchResult[]> {
 
 /** Hybrid search combining vector and BM25 with RRF fusion */
 async function hybridSearch(query: SearchQuery): Promise<SearchResult[]> {
-  // Run both searches in parallel with double the topK to get better fusion
+  // Both halves run with double the topK for better fusion — and genuinely in
+  // parallel. Awaiting the vector half first meant a slow embedding endpoint
+  // held up a BM25 half that was ready in seconds: on device the stalled vector
+  // search consumed the whole 30s tool budget while BM25 alone finished in 7s.
   const expandedQuery = { ...query, topK: query.topK * 2 };
 
-  let vectorResults: SearchResult[] = [];
-  let bm25Results: SearchResult[] = [];
+  const [vectorOutcome, bm25Results] = await Promise.all([
+    vectorSearch(expandedQuery).then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    ),
+    bm25Search(expandedQuery),
+  ]);
 
-  // Vector search may fail if no embeddings are configured
-  try {
-    vectorResults = await vectorSearch(expandedQuery);
-  } catch (err) {
+  // Vector search may fail if no embeddings are configured, or time out.
+  if (!vectorOutcome.ok) {
+    const err = vectorOutcome.error;
     console.warn("[Search] Vector search failed, falling back to BM25 only:", err);
     const vectorError = err instanceof Error ? err.message : String(err);
-    bm25Results = await bm25Search(expandedQuery);
     return bm25Results.slice(0, query.topK).map((result) => ({
       ...result,
       vectorStatus: "unavailable" as const,
@@ -271,8 +293,7 @@ async function hybridSearch(query: SearchQuery): Promise<SearchResult[]> {
     }));
   }
 
-  bm25Results = await bm25Search(expandedQuery);
-
+  const vectorResults = vectorOutcome.value;
   if (vectorResults.length === 0) return bm25Results.slice(0, query.topK);
   if (bm25Results.length === 0) return vectorResults.slice(0, query.topK);
 

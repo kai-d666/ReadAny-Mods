@@ -1,6 +1,7 @@
 /**
  * Embedding service — handles API calls to embedding providers
  */
+import { withTransportBudget } from "../ai/request-timeouts";
 import type { EmbeddingModel } from "../types";
 
 import { normalizeEmbeddingEndpointUrl } from "../utils/api";
@@ -17,6 +18,13 @@ export interface EmbeddingConfig {
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_DELAY = 1000;
+/**
+ * A query embedding is one short string, so this is generous. The budget matters
+ * because `fetchWithRetry` passes no AbortSignal: a stalled embedding endpoint
+ * used to block the whole hybrid search forever, burning the entire 30s tool
+ * budget and preventing the BM25 half from ever running.
+ */
+const EMBEDDING_TIMEOUT_MS = 15_000;
 
 export class EmbeddingService {
   private config: EmbeddingConfig;
@@ -98,17 +106,22 @@ export class EmbeddingService {
     // would otherwise produce `.../embeddings/embeddings` for Reader queries.
     const url = normalizeEmbeddingEndpointUrl(this.config.baseUrl);
 
-    const response = await this.fetchWithRetry(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.config.model.id,
-        input: texts,
-      }),
-    });
+    const response = await withTransportBudget(
+      (signal) =>
+        this.fetchWithRetry(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.config.model.id,
+            input: texts,
+          }),
+          signal,
+        }),
+      { timeoutMs: EMBEDDING_TIMEOUT_MS, label: "Query embedding" },
+    );
 
     if (!response.ok) {
       const error = await response.text();
