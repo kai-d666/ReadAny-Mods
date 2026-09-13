@@ -723,6 +723,7 @@ export function buildKnowledgeSystemPrompt(ctx: PromptContext): string {
   const sections: string[] = [
     buildKnowledgeRoleSection(hasTools),
     buildKnowledgeBookSection(ctx.book, ctx.currentChapter, ctx.currentPosition),
+    buildKnowledgeContentRequestHint(ctx.questionCategory),
     buildKnowledgeConstraintsSection(ctx.userLanguage, ctx.spoilerFree, ctx.book, hasTools),
   ];
   // Optional user-enabled tools: always list enabled tools (Turn-Available)
@@ -734,6 +735,31 @@ export function buildKnowledgeSystemPrompt(ctx: PromptContext): string {
   sections.push(buildOptionalToolsSection(KNOWLEDGE_CHOICE_TOOLS, ctx.allowedToolNames ?? []));
 
   return sections.filter(Boolean).join("\n\n---\n\n");
+}
+
+/** Question categories whose answer needs the book's text — impossible in K-O. */
+const KNOWLEDGE_CONTENT_QUESTION_CATEGORIES: ReadingQuestionCategory[] = [
+  "current_page_context",
+  "current_chapter_context",
+  "specific_chapter_request",
+  "book_wide_search",
+];
+
+/**
+ * Knowledge-Only cannot read the book, so "summarize this chapter"-style
+ * questions are unanswerable by design. Without this the model burns a long
+ * chain-of-thought working out how to answer anyway (observed on device), so
+ * say it up front and point at the mode switch instead.
+ */
+function buildKnowledgeContentRequestHint(category?: ReadingQuestionCategory): string {
+  if (!category || !KNOWLEDGE_CONTENT_QUESTION_CATEGORIES.includes(category)) return "";
+  return [
+    "## This Question Needs the Book's Text",
+    "The user is asking about the content of the book/chapter they are reading, which this mode cannot read.",
+    "- Do NOT deliberate about how to answer from your own knowledge, and never answer as if you had read the text.",
+    "- Reply in 1-2 sentences: this needs the book's text, which Knowledge-Only mode cannot read, and they can switch with the mode selector in the input bar (Standard reads and cites the original text; Lite is faster).",
+    "- One sentence of genuinely general background (author, series, genre) is fine; invented specifics are not.",
+  ].join("\n");
 }
 
 /** Announce disabled choice items so the model can offer to enable them. */

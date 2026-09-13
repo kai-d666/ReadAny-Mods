@@ -594,6 +594,133 @@ describe("streamReadingAgent tool registration", () => {
     );
   });
 
+  it("streams turn text immediately when liveAnswerStreaming is on", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "Let me check that. " } },
+          };
+          yield {
+            event: "on_chat_model_end",
+            data: {
+              output: {
+                tool_calls: [
+                  {
+                    name: "addCitation",
+                    args: {
+                      citationIndex: 1,
+                      chapterTitle: "Chapter 1",
+                      chapterIndex: 0,
+                      cfi: "epubcfi(/6/2)",
+                      quotedText: "source text",
+                    },
+                  },
+                ],
+              },
+            },
+          };
+          yield {
+            event: "on_tool_start",
+            name: "addCitation",
+            data: {
+              input: {
+                citationIndex: 1,
+                chapterTitle: "Chapter 1",
+                chapterIndex: 0,
+                cfi: "epubcfi(/6/2)",
+                quotedText: "source text",
+              },
+            },
+          };
+          yield {
+            event: "on_tool_end",
+            name: "addCitation",
+            data: {
+              output: JSON.stringify({
+                type: "citation",
+                bookId: "book-1",
+                chapterTitle: "Chapter 1",
+                chapterIndex: 0,
+                cfi: "epubcfi(/6/2)",
+                text: "source text",
+                citationIndex: 1,
+              }),
+            },
+          };
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "Final answer with a registered citation.[1]" } },
+          };
+          yield { event: "on_chat_model_end", data: { output: {} } };
+        },
+      })),
+    });
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+        liveAnswerStreaming: true,
+      },
+      "介绍一下这本书",
+    )) {
+      events.push(event);
+    }
+
+    // Live mode keeps the planning line as answer text instead of rerouting it
+    // to the thinking block — the turnaround is per chunk, not per turn.
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "token", content: "Let me check that. " }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "token", content: "Final answer with a registered citation.[1]" }),
+    );
+  });
+
+  it("routes <think> blocks to reasoning in live mode", async () => {
+    createReactAgentMock.mockReturnValue({
+      streamEvents: vi.fn(() => ({
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "<think>hidden plan</think>visible answer" } },
+          };
+          yield { event: "on_chat_model_end", data: { output: {} } };
+        },
+      })),
+    });
+
+    const events = [];
+    for await (const event of streamReadingAgent(
+      {
+        aiConfig: makeAIConfig(),
+        book: null,
+        bookId: "book-1",
+        enabledSkills: [],
+        isVectorized: false,
+        getAvailableTools,
+        liveAnswerStreaming: true,
+      },
+      "介绍一下这本书",
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "reasoning", content: "hidden plan" }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "token", content: "visible answer" }),
+    );
+  });
+
   it("emits Gemini OpenAI-compatible thought summaries from raw stream chunks", async () => {
     createReactAgentMock.mockReturnValue({
       streamEvents: vi.fn(() => ({

@@ -341,6 +341,33 @@ describe("buildKnowledgeSystemPrompt", () => {
   });
 });
 
+describe("buildKnowledgeSystemPrompt content-request hint", () => {
+  it("steers chapter-content questions to a mode switch", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "zh",
+      questionCategory: "current_chapter_context",
+    });
+
+    expect(prompt).toContain("This Question Needs the Book's Text");
+    expect(prompt).toContain("mode selector in the input bar");
+  });
+
+  it("stays out of the way for questions that need no book text", () => {
+    const prompt = buildKnowledgeSystemPrompt({
+      book: makeBook(),
+      enabledSkills: [],
+      isVectorized: true,
+      userLanguage: "zh",
+      questionCategory: "general_chat",
+    });
+
+    expect(prompt).not.toContain("This Question Needs the Book's Text");
+  });
+});
+
 describe("buildStaticBookInfoSection", () => {
   it("includes title/author/language/description/subjects when present", () => {
     const info = buildStaticBookInfoSection(

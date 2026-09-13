@@ -32,6 +32,7 @@ export default function DevToolsScreen() {
   const bottomBarBg = devFlags.readerBottomBarBackground;
   const syncTraceBanner = devFlags.syncTraceBanner;
   const localOpdsServer = devFlags.localOpdsServer;
+  const liveAnswerStreaming = devFlags.liveAnswerStreaming;
 
   // Z-Library 驱动配置(本地书源服务端的上游之一)
   const zlConfig = useDriverConfigStore((s) => s.zlib);
@@ -114,6 +115,22 @@ export default function DevToolsScreen() {
               <Switch
                 value={syncTraceBanner}
                 onValueChange={(v) => setDevFlag("syncTraceBanner", v)}
+                trackColor={{ true: colors.primary }}
+              />
+            </View>
+          </View>
+          <View style={s.section}>
+            <Text style={[s.sectionTitle, { color: colors.mutedForeground }]}>AI 调试</Text>
+            <View style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rowTitle, { color: colors.foreground }]}>正文实时流</Text>
+                <Text style={[s.rowDesc, { color: colors.mutedForeground }]}>
+                  开启后,走 agent 路径的回答边收边吐(与主流聊天一致)。关闭 = 原版:整轮缓冲、该轮结束才一次性吐出(工具轮的规划碎念不会进答案正文)。仅影响标准模式,以及开了工具选择项的知识模式。
+                </Text>
+              </View>
+              <Switch
+                value={liveAnswerStreaming}
+                onValueChange={(v) => setDevFlag("liveAnswerStreaming", v)}
                 trackColor={{ true: colors.primary }}
               />
             </View>

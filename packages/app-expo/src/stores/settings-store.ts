@@ -30,6 +30,11 @@ export interface SettingsState {
     syncTraceBanner: boolean;
     /** 本机书源服务端(开发者调试:本地起 OPDS 服务,自动注册"本机书源"，实验性) */
     localOpdsServer: boolean;
+    /**
+     * 正文实时流(开发者调试):agent 路径原本把每轮正文缓冲到该轮结束才一次性吐出,
+     * 开启后边收边吐。关闭 = 原版行为(工具轮的规划碎念不会落进答案正文)。
+     */
+    liveAnswerStreaming: boolean;
   };
   _hasHydrated: boolean;
   _apiKeysLoaded: boolean;
@@ -146,6 +151,7 @@ function migrateSettingsState(state: SettingsState): SettingsState {
         readerBottomBarBackground: true,
         syncTraceBanner: false,
         localOpdsServer: false,
+        liveAnswerStreaming: false,
       },
     };
   }
@@ -498,6 +504,7 @@ export const useSettingsStore = create<SettingsState>()(
         readerBottomBarBackground: true,
         syncTraceBanner: false,
         localOpdsServer: false,
+        liveAnswerStreaming: false,
       },
       _hasHydrated: false,
       _apiKeysLoaded: false,

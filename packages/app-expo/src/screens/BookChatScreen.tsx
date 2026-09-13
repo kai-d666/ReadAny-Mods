@@ -269,8 +269,9 @@ export function BookChatScreen({ route, navigation }: Props) {
   }, [backdropAnim, isTabletLandscape, sidebarAnim, sidebarWidth]);
 
   // Streaming chat
+  const liveAnswerStreaming = useSettingsStore((s) => s.devFlags.liveAnswerStreaming);
   const { isStreaming, currentMessage, currentStep, error, sendMessage, stopStream } =
-    useStreamingChat({ book, bookId });
+    useStreamingChat({ book, bookId, liveAnswerStreaming });
 
   // 模式/深思考/防剧透切换提示(复用报错横幅样式机制,顶部弹 3 秒)
   const [modeNotice, setModeNotice] = useState<string | null>(null);

@@ -91,6 +91,8 @@ function isMindmapResult(
 export interface StreamingChatOptions {
   book?: Book | null;
   bookId?: string;
+  /** Dev flag (`devFlags.liveAnswerStreaming`): stream the answer body live. */
+  liveAnswerStreaming?: boolean;
 }
 
 export interface StreamingState {
@@ -444,6 +446,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           aiConfig: aiConfigOverride || aiConfig,
           chatMode,
           toolPrefs,
+          liveAnswerStreaming: options?.liveAnswerStreaming,
           deepThinking,
           spoilerFree,
           getAvailableTools,

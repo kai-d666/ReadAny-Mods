@@ -170,8 +170,9 @@ export function ChatScreen() {
   const generalThreads = getThreadsForContext();
 
   // Streaming chat
+  const liveAnswerStreaming = useSettingsStore((s) => s.devFlags.liveAnswerStreaming);
   const { isStreaming, currentMessage, currentStep, error, sendMessage, stopStream } =
-    useStreamingChat();
+    useStreamingChat({ liveAnswerStreaming });
 
   // 模式/深思考/防剧透切换提示(复用报错横幅样式机制,顶部弹 3 秒)
   const [modeNotice, setModeNotice] = useState<string | null>(null);
