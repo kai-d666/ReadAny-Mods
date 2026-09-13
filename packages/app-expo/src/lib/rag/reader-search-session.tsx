@@ -1,5 +1,6 @@
 import type { BookContentSearchMatch, BookContentSearchProvider } from "@readany/core/ai";
 import { getBookContentSearchProvider, setBookContentSearchProvider } from "@readany/core/ai";
+import { getBook } from "@readany/core/db";
 import { Asset } from "expo-asset";
 import {
   forwardRef,
@@ -122,8 +123,45 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
   private _readyTimeout: ReturnType<typeof setTimeout> | null = null;
 
   registerBooks(books: BookLike[]): void {
+    // LibraryScreen pushes its store on every change, and that store starts
+    // empty before the library finishes loading. Clearing on [] therefore wiped
+    // a registry that was already correct, leaving every fallback* tool with
+    // "Book ... not registered for reader search" until the next non-empty push.
+    if (books.length === 0) return;
     this.bookPath.clear();
     for (const b of books) this.bookPath.set(b.id, b);
+  }
+
+  /**
+   * Resolve a book for reader search.
+   *
+   * `bookPath` is only ever filled by LibraryScreen's effect, so any session
+   * that starts without the library mounting — resuming straight into the
+   * reader, or a deep link into a book — had an empty registry and EVERY
+   * fallback* tool died with "Book ... not registered for reader search".
+   * Fall back to the database and cache the result instead.
+   */
+  private async resolveBook(bookId: string): Promise<BookLike> {
+    const cached = this.bookPath.get(bookId);
+    if (cached) return cached;
+
+    let book: Awaited<ReturnType<typeof getBook>> = null;
+    try {
+      book = await getBook(bookId);
+    } catch (err) {
+      console.warn("[ReaderSearchSession] resolveBook: getBook failed", bookId, err);
+    }
+    if (!book?.filePath) {
+      throw new Error(`Book ${bookId} not registered for reader search`);
+    }
+
+    console.log(
+      "[ReaderSearchSession] resolveBook: recovered from DB (library never registered it)",
+      JSON.stringify({ bookId, format: book.format }),
+    );
+    const resolved: BookLike = { id: book.id, filePath: book.filePath, format: book.format };
+    this.bookPath.set(bookId, resolved);
+    return resolved;
   }
 
   private sessionFor(bookId: string): BookSession {
@@ -344,8 +382,7 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
 
   // ── BookContentSearchProvider ──
   async searchBookContent(bookId: string, query: string, opts: { topK: number }) {
-    const book = this.bookPath.get(bookId);
-    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    const book = await this.resolveBook(bookId);
     await this.ensureBookOpen(book);
     const session = this.sessionFor(bookId);
 
@@ -430,8 +467,7 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
   }
 
   async getChapter(bookId: string, chapterIndex: number) {
-    const book = this.bookPath.get(bookId);
-    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    const book = await this.resolveBook(bookId);
     await this.ensureBookOpen(book);
     const session = this.sessionFor(bookId);
 
@@ -450,8 +486,7 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
   }
 
   async getChapterByHref(bookId: string, href: string) {
-    const book = this.bookPath.get(bookId);
-    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    const book = await this.resolveBook(bookId);
     await this.ensureBookOpen(book);
     const session = this.sessionFor(bookId);
 
@@ -474,8 +509,7 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
 
   /** Text around a CFI anchor — the user's actual reading position. */
   async getContextAroundCfi(bookId: string, cfi: string) {
-    const book = this.bookPath.get(bookId);
-    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    const book = await this.resolveBook(bookId);
     await this.ensureBookOpen(book);
     const session = this.sessionFor(bookId);
 
@@ -493,8 +527,7 @@ export class ReaderSearchSessionManager implements BookContentSearchProvider {
   }
 
   async getToc(bookId: string) {
-    const book = this.bookPath.get(bookId);
-    if (!book) throw new Error(`Book ${bookId} not registered for reader search`);
+    const book = await this.resolveBook(bookId);
     await this.ensureBookOpen(book);
     const session = this.sessionFor(bookId);
 
