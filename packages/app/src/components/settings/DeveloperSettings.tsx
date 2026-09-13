@@ -17,6 +17,7 @@ import {
   EyeOff,
   RefreshCw,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,8 @@ export function DeveloperSettings() {
   const setLocalOpdsServer = useDeveloperStore((s) => s.setLocalOpdsServer);
   const syncTraceBanner = useDeveloperStore((s) => s.syncTraceBanner);
   const setSyncTraceBanner = useDeveloperStore((s) => s.setSyncTraceBanner);
+  const liveAnswerStreaming = useDeveloperStore((s) => s.liveAnswerStreaming);
+  const setLiveAnswerStreaming = useDeveloperStore((s) => s.setLiveAnswerStreaming);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
 
   const zlConfig = useDriverConfigStore((s) => s.zlib);
@@ -167,6 +170,37 @@ export function DeveloperSettings() {
               setSyncTraceBanner(v);
               if (v) {
                 toast.success(t("settings.syncTraceBannerEnabled", "已开启同步日志横幅"));
+              }
+            }}
+          />
+        </div>
+      </div>
+
+      {/* AI 调试: 正文实时流 */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="size-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">
+                正文实时流
+              </span>
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                AI 调试
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              开启后，走 agent 路径的回答边收边吐（与主流聊天一致）。关闭 = 原版：整轮缓冲、该轮结束才一次性吐出（工具轮的规划碎念不会进答案正文）。仅影响标准模式，以及开了工具选择项的知识模式。
+            </p>
+          </div>
+          <Switch
+            checked={liveAnswerStreaming}
+            onCheckedChange={(v) => {
+              setLiveAnswerStreaming(v);
+              if (v) {
+                toast.success("已开启正文实时流");
+              } else {
+                toast.info("已恢复原版缓冲模式");
               }
             }}
           />

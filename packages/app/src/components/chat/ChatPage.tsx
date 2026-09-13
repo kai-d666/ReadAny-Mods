@@ -7,6 +7,7 @@ import { getBook as getBookRecord } from "@/lib/db/database";
 import { openDesktopBook } from "@/lib/library/open-book";
 import { useChatReaderStore } from "@/stores/chat-reader-store";
 import { useChatStore } from "@/stores/chat-store";
+import { useDeveloperStore } from "@/stores/developer-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
@@ -233,9 +234,12 @@ export function ChatPage() {
   const getActiveThreadId = useChatStore((s) => s.getActiveThreadId);
   const { bookTitle } = useChatReaderStore();
   const books = useLibraryStore((s) => s.books);
+  const liveAnswerStreaming = useDeveloperStore((s) => s.liveAnswerStreaming);
 
   // /chats page should only use general threads - always pass undefined for bookId
-  const { isStreaming, currentMessage, currentStep, sendMessage, stopStream } = useStreamingChat();
+  const { isStreaming, currentMessage, currentStep, sendMessage, stopStream } = useStreamingChat({
+    liveAnswerStreaming,
+  });
 
   const [showThreads, setShowThreads] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);

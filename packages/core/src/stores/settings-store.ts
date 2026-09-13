@@ -7,6 +7,7 @@ import {
   providerRequiresApiKey,
 } from "../utils";
 import { logAIEndpointDebug, summarizeDebugText } from "../ai/request-debug";
+import { withTransportBudget } from "../ai/request-timeouts";
 import { getEndpointFetch } from "../ai/llm-provider";
 import { withPersist } from "./persist";
 
@@ -482,7 +483,11 @@ export const useSettingsStore = create<SettingsState>()(
       }));
 
       try {
-        const models = await fetchModelsFromEndpoint(endpoint);
+        // The per-provider fetch helpers use raw fetch with no timeout, so a
+        // stalled endpoint would leave the "获取模型" button spinning.
+        const models = await withTransportBudget(() => fetchModelsFromEndpoint(endpoint), {
+          label: "Model list",
+        });
         set((s) => ({
           aiConfig: {
             ...s.aiConfig,

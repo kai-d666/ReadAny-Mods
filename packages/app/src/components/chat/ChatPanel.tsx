@@ -4,6 +4,7 @@
 import { ConfigGuideDialog, type ConfigGuideType } from "@/components/shared/ConfigGuideDialog";
 import { useStreamingChat } from "@/hooks/use-streaming-chat";
 import { useChatStore } from "@/stores/chat-store";
+import { useDeveloperStore } from "@/stores/developer-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
 import type { AIChatMode, Book, CitationPart } from "@readany/core/types";
@@ -51,11 +52,13 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
   const setBookActiveThread = useChatStore((s) => s.setBookActiveThread);
   const getActiveThreadId = useChatStore((s) => s.getActiveThreadId);
   const getThreadsForContext = useChatStore((s) => s.getThreadsForContext);
+  const liveAnswerStreaming = useDeveloperStore((s) => s.liveAnswerStreaming);
 
   // Use streaming chat hook with book context
   const { isStreaming, currentMessage, currentStep, sendMessage, stopStream } = useStreamingChat({
     book: book || null,
     bookId,
+    liveAnswerStreaming,
   });
 
   // Load book threads on mount
