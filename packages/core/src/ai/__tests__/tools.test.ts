@@ -439,11 +439,11 @@ describe("resolveChapterReference tool", () => {
 describe("ragSearch tool", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("should truncate results within token budget", async () => {
-    // Each result has ~100 chars → ~25 tokens. Budget is 4000 tokens.
+  it("should return a thin locator list within the excerpt budget", async () => {
+    // 200 hits x 200-char excerpts far exceed the 8000-char excerpt budget.
     const results = Array.from({ length: 200 }, (_, i) => ({
       chunk: {
-        content: "x".repeat(100),
+        content: "x".repeat(1200),
         chapterTitle: `Ch ${i}`,
         chapterIndex: i,
         startCfi: `/4/${i}`,
@@ -458,10 +458,12 @@ describe("ragSearch tool", () => {
     const tool = findTool(tools, "ragSearch");
     const result = (await tool.execute({ query: "test" })) as any;
 
-    // Should have stopped before all 200 results
-    expect(result.returnedResults).toBeLessThan(200);
-    expect(result.totalTokens).toBeLessThanOrEqual(4000);
-    expect(result.tokenBudget).toBe(4000);
+    // 8000 / 200 = 40 locations; the rest are reported rather than silently dropped.
+    expect(result.returnedLocations).toBe(40);
+    expect(result.omittedResults).toBe(160);
+    expect(result.locations[0].excerpt).toHaveLength(200);
+    expect(result.locations[0].chunkChars).toBe(1200);
+    expect(result.locations[0].content).toBeUndefined();
   });
 
   it("should pass search parameters correctly", async () => {
@@ -578,6 +580,24 @@ describe("summarize tool", () => {
     const result = (await tool.execute({ scope: "invalid" })) as any;
 
     expect(result.error).toBeDefined();
+  });
+
+  it("should cover every chapter instead of running out of budget part-way", async () => {
+    const bigBook = Array.from({ length: 100 }, (_, i) =>
+      makeChunk({ chapterIndex: i, chapterTitle: `Ch ${i}`, content: "z".repeat(2000) }),
+    );
+    vi.mocked(getChunks).mockResolvedValue(bigBook as any);
+
+    const tools = getAvailableTools({ bookId: "book-1", isVectorized: true, enabledSkills: [] });
+    const tool = findTool(tools, "summarize");
+    const result = (await tool.execute({ scope: "book" })) as any;
+
+    // The old loop spent the whole budget on the first ~27 chapters and still
+    // reported totalChapters: 100, so the model could not tell it had ~2.6% of the book.
+    expect(result.totalChapters).toBe(100);
+    expect(result.coveredChapters).toBe(100);
+    expect(result.truncated).toBe(false);
+    expect(result.chapters).toHaveLength(100);
   });
 });
 

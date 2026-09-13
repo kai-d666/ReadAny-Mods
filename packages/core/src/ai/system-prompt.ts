@@ -573,6 +573,11 @@ function buildWorkflowSection(
     steps.push(
       "- For indexed books, prefer available indexed retrieval tools for broad content questions. Use current selection/page/chapter context first only when the user explicitly asks about what they are reading right now, then fall back to indexed retrieval if needed.",
     );
+    if (canUse("ragSearch") && canUse("ragContext")) {
+      steps.push(
+        "- ragSearch returns LOCATIONS (chapter + cfi + a short excerpt + the full chunk size), NOT the passage text. To answer from a hit, read it with ragContext(chapterIndex, anchorCfi) — the anchor is what makes the middle of a long chapter readable. Answering from the excerpts alone is only acceptable for 'where does X appear' questions.",
+      );
+    }
   } else if (!isVectorized && (canUse("fallbackSearch") || canUse("fallbackChapterContext"))) {
     steps.push(
       "- For non-indexed books, prefer available fallback content tools for broad content questions. Use current selection/page/chapter context first only when the user explicitly asks about what they are reading right now, then fall back to original-file retrieval if needed.",
