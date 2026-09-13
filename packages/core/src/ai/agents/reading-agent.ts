@@ -117,6 +117,13 @@ const CURRENT_PAGE_CONTEXT_RE =
   /(?:这里|這裡|当前页|當前頁|这一页|這一頁|这页|這頁|当前位置|當前位置|目前看到|我看到这里|我看到這裡)/u;
 const CURRENT_CHAPTER_CONTEXT_RE =
   /(?:这一章|這一章|这章|這章|当前章节|當前章節|当前章|當前章|現在這章|现在这章|本章)/u;
+/**
+ * Selects how strongly the `book_wide_search` route hint steers the model — it
+ * does NOT select tools (both variants keep the same tool set, so an under-cued
+ * question like "梅琳娜是谁" can still retrieve).
+ */
+const BOOK_CONTENT_RE =
+  /(?:这本书|這本書|本书|本書|人物|角色|主角|配角|剧情|劇情|情节|情節|主题|主題|关系|關係|第一次|首次|结局|結局|梗概|总结|總結|摘要|分析|搜索|搜尋|查一下|搜一下|讲了什么|講了什麼|讲什么|講什麼)/u;
 
 const GENERAL_TOOL_NAMES = new Set([
   "listBooks",
@@ -277,11 +284,10 @@ function detectQuestionCategory(options: {
   // not the narrow specific_chapter_request set that omits them.
   if (hasExplicitCurrentChapterCue) return "current_chapter_context";
   if (CHAPTER_REFERENCE_RE.test(text)) return "specific_chapter_request";
-  // Everything else with a book in context is treated as a book-wide question.
-  // (A BOOK_CONTENT_RE test used to sit here and returned this same value either
-  // way — its result was never used. If the original intent was to fall back to
-  // "general_chat" for off-topic questions, that is a behavior change, not a
-  // cleanup: it would change which tools get registered.)
+  // Everything else with a book in context is treated as a book-wide question —
+  // deliberately including off-topic ones, so that under-cued book questions
+  // ("梅琳娜是谁") keep their retrieval tools. Whether the question actually looks
+  // like book content only tunes the route hint (see buildRouteHint).
   return "book_wide_search";
 }
 
@@ -404,6 +410,7 @@ function buildRouteHint(
   category: ReadingQuestionCategory,
   selectionActive: boolean,
   isVectorized: boolean,
+  userInput = "",
 ): string | undefined {
   switch (category) {
     case "current_selection":
@@ -422,10 +429,20 @@ function buildRouteHint(
       return isVectorized
         ? "This question targets a specific chapter reference. Resolve the chapter reference first; if resolution is weak or the user asks for content, use ragSearch/ragToc/ragContext instead of guessing."
         : "This question targets a specific chapter reference. Resolve the chapter reference first; if resolution is weak, use fallbackToc/fallbackSearch or ask for clarification.";
-    case "book_wide_search":
-      return isVectorized
-        ? "This is a book-content question and the book is indexed. Prefer ragSearch first for retrieval; use current-context tools only when the question is explicitly about the current page."
-        : "This is a book-content question and the book is not indexed. Prefer fallbackSearch/fallbackToc for retrieval.";
+    case "book_wide_search": {
+      // This bucket catches everything that matched no narrower cue, so it holds
+      // both genuine book questions and off-topic ones ("帮我写首诗"). Only the
+      // hint adapts — the tool set is identical either way.
+      const looksLikeBookContent = BOOK_CONTENT_RE.test(userInput.normalize("NFKC"));
+      if (isVectorized) {
+        return looksLikeBookContent
+          ? "This is a book-content question and the book is indexed. Prefer ragSearch first for retrieval; use current-context tools only when the question is explicitly about the current page."
+          : "The book is indexed. If this question is about the book's content, prefer ragSearch for retrieval; if it is not about the book, just answer it directly.";
+      }
+      return looksLikeBookContent
+        ? "This is a book-content question and the book is not indexed. Prefer fallbackSearch/fallbackToc for retrieval."
+        : "The book is not indexed. If this question is about the book's content, prefer fallbackSearch/fallbackToc; if it is not about the book, just answer it directly.";
+    }
     case "library_request":
       return "This is a library-management or cross-book request. Stay within library tools.";
     default:
@@ -1000,7 +1017,7 @@ export async function* streamReadingAgent(
           memorySummary,
           questionCategory,
           selectionActive,
-          routeHint: buildRouteHint(questionCategory, selectionActive, isVectorized),
+          routeHint: buildRouteHint(questionCategory, selectionActive, isVectorized, userInput),
           selectionText: readingContextSnapshot?.selection?.text || "",
           currentChapter,
           currentPosition,

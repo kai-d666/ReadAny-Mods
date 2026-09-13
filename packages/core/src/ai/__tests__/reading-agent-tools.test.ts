@@ -248,6 +248,52 @@ describe("streamReadingAgent tool registration", () => {
     expect(capturedPrompt).toContain("- Title: Test Book");
   });
 
+  it("tunes the book-wide route hint instead of re-routing off-topic questions", async () => {
+    let capturedPrompt = "";
+    let capturedToolNames: string[] = [];
+    createReactAgentMock.mockImplementation(
+      (config: { prompt: string; tools: Array<{ name: string }> }) => {
+        capturedPrompt = config.prompt;
+        capturedToolNames = config.tools.map((tool) => tool.name);
+        return {
+          streamEvents: vi.fn(() => ({
+            [Symbol.asyncIterator]: async function* () {
+              // no-op stream
+            },
+          })),
+        };
+      },
+    );
+
+    const run = async (input: string) => {
+      for await (const event of streamReadingAgent(
+        {
+          aiConfig: makeAIConfig(),
+          book: null,
+          bookId: "book-1",
+          enabledSkills: [],
+          isVectorized: false,
+          getAvailableTools,
+        },
+        input,
+      )) {
+        void event;
+      }
+      return { prompt: capturedPrompt, toolNames: capturedToolNames };
+    };
+
+    const contentish = await run("总结一下这本书");
+    expect(contentish.prompt).toContain("This is a book-content question");
+
+    const offTopic = await run("帮我写一首关于秋天的诗");
+    expect(offTopic.prompt).toContain("just answer it directly");
+    expect(offTopic.prompt).not.toContain("This is a book-content question");
+
+    // Both keep the same tool set — only the hint differs, so an under-cued book
+    // question can still retrieve.
+    expect(offTopic.toolNames).toEqual(contentish.toolNames);
+  });
+
   it("registers only the always-on tools in lite by default (choice items off)", async () => {
     // rag*/fallback* are mutually exclusive registration families (by isVectorized).
     const cases = [
