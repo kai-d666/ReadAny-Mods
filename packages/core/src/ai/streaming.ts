@@ -98,15 +98,17 @@ export class StreamingChat {
       reasoning: m.reasoning,
     }));
 
-    try {
-      let fullText = "";
-      const toolCalls: Array<{
-        name: string;
-        args: Record<string, unknown>;
-        result?: unknown;
-        error?: string;
-      }> = [];
+    // Declared before the try so the catch below can still report the partial
+    // text / tool calls when a stream error races an abort.
+    let fullText = "";
+    const toolCalls: Array<{
+      name: string;
+      args: Record<string, unknown>;
+      result?: unknown;
+      error?: string;
+    }> = [];
 
+    try {
       const stream = streamReadingAgent(
         {
           aiConfig: options.aiConfig,
@@ -222,6 +224,11 @@ export class StreamingChat {
       }
     } catch (error) {
       if (signal.aborted) {
+        // Defensive: an error surfacing while aborted must still settle the
+        // caller. stopStream() only calls abort() and the session is cleared
+        // exclusively by these callbacks, so returning silently would leave
+        // isStreaming=true and block every later send in this thread.
+        options.onAbort?.(fullText, toolCalls.length > 0 ? toolCalls : undefined);
         return;
       }
       console.error("[StreamingChat] Error:", error);

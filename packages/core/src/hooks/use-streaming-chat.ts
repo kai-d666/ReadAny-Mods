@@ -339,20 +339,19 @@ export function useStreamingChat(options?: StreamingChatOptions) {
         const enabledSkills = isFastPath && !wantsSkills ? [] : await loadEnabledSkills();
 
         // Re-read from store: ensureBookInfoMessage may have prepended the
-        // first-turn system message to this thread.
+        // first-turn system message to this thread. addMessage() above already
+        // appended the user message, so do NOT append it again — streaming.ts
+        // takes the LAST message as this turn's input and everything before it
+        // as history, which sent the same turn to the model twice.
         const freshThread =
           useChatStore.getState().threads.find((t) => t.id === thread.id) ?? thread;
-        const updatedThread: Thread = {
-          ...freshThread,
-          messages: [...freshThread.messages, userMessage as any],
-        };
         const threadForStream = isFastPath
-          ? updatedThread
+          ? freshThread
           : await maybeCompressThreadMemory(
-              updatedThread,
+              freshThread,
               aiConfigOverride || aiConfig,
             );
-        if (threadForStream.memoryMessageCount !== updatedThread.memoryMessageCount) {
+        if (threadForStream.memoryMessageCount !== freshThread.memoryMessageCount) {
           useChatStore.setState((storeState) => ({
             threads: storeState.threads.map((item) =>
               item.id === threadForStream.id

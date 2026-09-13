@@ -25,12 +25,21 @@ function buildSource(previousSummary: string | undefined, messages: Message[]): 
 
 export function getCompressibleMessages(thread: Thread, slidingWindowSize: number): Message[] {
   const safeWindow = Math.max(2, slidingWindowSize || 8);
+  // memoryMessageCount counts only user/assistant messages, so the window
+  // boundary must be computed in that same space: indexing the full array
+  // (which also holds the first-turn system message) shifted the slice by one
+  // per system message and re-summarized messages that were already compressed.
+  const rest = thread.messages.filter(
+    (message) => message.role === "user" || message.role === "assistant",
+  );
+  const systemCount = thread.messages.length - rest.length;
+  // Mirror applySlidingWindow (message-pipeline.ts): system messages count
+  // against the window, so only messages that really leave the prompt get
+  // summarized.
+  const keepFrom = Math.max(0, rest.length - Math.max(0, safeWindow - systemCount));
   const alreadySummarized = thread.memoryMessageCount || 0;
-  const keepFrom = Math.max(0, thread.messages.length - safeWindow);
   if (keepFrom <= alreadySummarized) return [];
-  return thread.messages
-    .slice(alreadySummarized, keepFrom)
-    .filter((message) => message.role === "user" || message.role === "assistant");
+  return rest.slice(alreadySummarized, keepFrom);
 }
 
 export async function maybeCompressThreadMemory(
