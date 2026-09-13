@@ -87,7 +87,6 @@
     "addCitation": "登記引用",
     "compareSections": "對比章節",
     "getSelection": "取得選取內容",
-    "getReadingProgress": "取得閱讀進度",
     "getRecentHighlights": "取得最近標註",
     "getSurroundingContext": "讀取目前頁面上下文",
     "listBooks": "查詢書籍列表",

@@ -87,7 +87,6 @@
     "addCitation": "引用を登録中",
     "compareSections": "セクションを比較中",
     "getSelection": "選択テキストを取得中",
-    "getReadingProgress": "読書進捗を取得中",
     "getRecentHighlights": "最近のハイライトを取得中",
     "getSurroundingContext": "現在ページのコンテキストを読み取り中",
     "listBooks": "書籍一覧を取得中",

@@ -87,7 +87,6 @@
     "addCitation": "인용 등록 중",
     "compareSections": "섹션 비교 중",
     "getSelection": "선택 영역 가져오는 중",
-    "getReadingProgress": "읽기 진행률 가져오는 중",
     "getRecentHighlights": "최근 하이라이트 가져오는 중",
     "getSurroundingContext": "현재 페이지 컨텍스트 읽는 중",
     "listBooks": "책 목록 가져오는 중",

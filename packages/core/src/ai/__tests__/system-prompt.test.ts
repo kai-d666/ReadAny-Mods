@@ -87,12 +87,12 @@ describe("buildSystemPrompt citations", () => {
       enabledSkills: [],
       isVectorized: true,
       userLanguage: "en",
-      allowedToolNames: ["getSurroundingContext", "getReadingProgress", "addCitation"],
+      allowedToolNames: ["getSurroundingContext", "getSelection", "addCitation"],
     });
 
     expect(prompt).toContain("## Turn-Available Tools");
     expect(prompt).toContain("- getSurroundingContext");
-    expect(prompt).toContain("- getReadingProgress");
+    expect(prompt).toContain("- getSelection");
     expect(prompt).toContain("- addCitation");
   });
 
@@ -107,8 +107,6 @@ describe("buildSystemPrompt citations", () => {
 
     expect(prompt).toContain("- getSurroundingContext");
     expect(prompt).toContain("- addCitation");
-    expect(prompt).not.toContain("- getReadingProgress");
-    expect(prompt).not.toContain("Get overall reading progress");
     expect(prompt).not.toContain("ragSearch");
     expect(prompt).not.toContain("ragContext");
     expect(prompt).not.toContain("fallbackSearch");

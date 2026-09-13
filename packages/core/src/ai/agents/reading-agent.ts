@@ -40,7 +40,6 @@ const REPEATED_TOOL_CALL_LIMIT = 2;
 const LITE_RECURSION_LIMIT = 16;
 const TOOL_TIMEOUT_MS_BY_NAME: Record<string, number> = {
   getSelection: 5_000,
-  getReadingProgress: 5_000,
   getSurroundingContext: 8_000,
   getRecentHighlights: 8_000,
   getAnnotations: 8_000,
@@ -163,7 +162,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
   ],
   current_page_context: [
     "getSurroundingContext",
-    "getReadingProgress",
     "ragSearch",
     "ragContext",
     "fallbackSearch",
@@ -172,7 +170,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
   ],
   current_chapter_context: [
     "getSurroundingContext",
-    "getReadingProgress",
     "resolveChapterReference",
     "ragSearch",
     "ragContext",
@@ -210,7 +207,6 @@ const CATEGORY_TOOL_ORDER: Record<ReadingQuestionCategory, string[]> = {
     "fallbackToc",
     "fallbackChapterContext",
     "getSurroundingContext",
-    "getReadingProgress",
     "getRecentHighlights",
     "getAnnotations",
     "addCitation",
@@ -322,14 +318,12 @@ function getFocusedToolNames(
         isVectorized
           ? [
               "getSurroundingContext",
-              "getReadingProgress",
               "ragSearch",
               "ragContext",
               "addCitation",
             ]
           : [
               "getSurroundingContext",
-              "getReadingProgress",
               "fallbackSearch",
               "fallbackChapterContext",
               "addCitation",
@@ -340,7 +334,6 @@ function getFocusedToolNames(
         isVectorized
           ? [
               "getSurroundingContext",
-              "getReadingProgress",
               "resolveChapterReference",
               "ragSearch",
               "ragContext",
@@ -350,7 +343,6 @@ function getFocusedToolNames(
             ]
           : [
               "getSurroundingContext",
-              "getReadingProgress",
               "fallbackChapterContext",
               "addCitation",
             ],

@@ -91,7 +91,6 @@
     "addCitation": "登记引用",
     "compareSections": "对比章节",
     "getSelection": "获取选中内容",
-    "getReadingProgress": "获取阅读进度",
     "getRecentHighlights": "获取最近标注",
     "getSurroundingContext": "读取当前页上下文",
     "listBooks": "查询书籍列表",

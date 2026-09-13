@@ -10,7 +10,7 @@
  *   tagBooks, manageBookTags, updateBookMetadata, manageBookGroups
  * - Skill Tools: getSkills, skillToTool
  * - Mindmap Tools: mindmap
- * - Context Tools: getSurroundingContext, getSelection, getReadingProgress, getRecentHighlights
+ * - Context Tools: getSurroundingContext, getSelection, getRecentHighlights
  */
 import type { Skill } from "../../types";
 import {
@@ -59,7 +59,7 @@ export { getContextTools } from "./context-tools";
  *  - getSurroundingContext: current page/selection context (millisecond direct read)
  *  - Retrieval family: rag* for vectorized books, fallback* for non-vectorized ones
  *  - resolveChapterReference: "第N章" → internal index (both families)
- * Choice items (getSelection/getReadingProgress/getRecentHighlights/ragToc/fallbackToc/
+ * Choice items (getSelection/getRecentHighlights/ragToc/fallbackToc/
  * mindmap) are OFF by default in lite; user toggles arrive in batch 3
  * (see docs/三模式-选项决策.md「选择项机制」).
  */
@@ -95,7 +95,6 @@ export const LITE_FORBIDDEN_TOOLS = new Set([
  * forbidden tools never appear in the settings UI list.
  */
 export const LITE_CHOICE_TOOLS = [
-  "getReadingProgress",
   "getRecentHighlights",
   "ragToc",
   "fallbackToc",
@@ -114,7 +113,6 @@ export const LITE_CHOICE_TOOLS = [
 ];
 
 export const KNOWLEDGE_CHOICE_TOOLS = [
-  "getReadingProgress",
   "getRecentHighlights",
   "getAnnotations",
   "listBooks",

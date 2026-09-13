@@ -4,10 +4,13 @@
  * Tools for accessing user's current reading context:
  * - getSurroundingContext: Current position + anchored text (eats getCurrentChapter's job)
  * - getSelection: Get user's selected text
- * - getReadingProgress: Get reading progress
  * - getRecentHighlights: Get recent highlights
+ *
+ * 注:getReadingProgress 已于 2026-09-13 删除(用户拍板,反转 08-28 的"standard 必开")——
+ * 其核心字段(percentage/currentChapter)每轮已由 system-prompt 位置注入覆盖,页码/lastActivity
+ * 价值低且会误导模型(旧描述承诺了实现里没有的 time spent/session info)。时长/会话见 getReadingStats。
  */
-import { getBook, getHighlights } from "../../db/database";
+import { getHighlights } from "../../db/database";
 import { readingContextService } from "../reading-context-service";
 import { getBookContentSearchProvider } from "../fallback-content-service";
 import type { ToolDefinition } from "./tool-types";
@@ -44,39 +47,6 @@ export function createGetSelectionTool(_bookId: string): ToolDefinition {
         chapterIndex: context.selection.chapterIndex,
         cfi: context.selection.cfi,
         surroundingContext: context.surroundingText,
-      };
-    },
-  };
-}
-
-export function createGetReadingProgressTool(bookId: string): ToolDefinition {
-  return {
-    name: "getReadingProgress",
-    description:
-      "Get the user's reading progress for the current book, including percentage, time spent, and session info.",
-    parameters: {},
-    execute: async () => {
-      const context = readingContextService.getContext();
-      const book = await getBook(bookId);
-
-      if (!context) {
-        return {
-          error: "No reading context available",
-        };
-      }
-
-      return {
-        bookId,
-        bookTitle: book?.meta?.title || context.bookTitle,
-        progress: {
-          percentage: context.currentPosition.percentage,
-          currentPage: context.currentPosition.page,
-          currentChapter: context.currentChapter.title,
-          currentChapterIndex: context.currentChapter.index,
-        },
-        lastActivity: context.timestamp,
-        operationType: context.operationType,
-        selectionActive: Boolean(context.selection?.text?.trim()),
       };
     },
   };
@@ -193,7 +163,6 @@ export function createGetSurroundingContextTool(bookId: string): ToolDefinition 
 export function getContextTools(bookId: string): ToolDefinition[] {
   return [
     createGetSelectionTool(bookId),
-    createGetReadingProgressTool(bookId),
     createGetRecentHighlightsTool(bookId),
     createGetSurroundingContextTool(bookId),
   ];

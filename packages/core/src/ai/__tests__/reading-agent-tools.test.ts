@@ -272,7 +272,6 @@ describe("streamReadingAgent tool registration", () => {
     ];
     const OFF_BY_DEFAULT = [
       "getSelection",
-      "getReadingProgress",
       "getRecentHighlights",
       "ragToc",
       "fallbackToc",
@@ -820,7 +819,7 @@ describe("streamReadingAgent tool registration", () => {
 
     const toolNames = capturedTools.map((tool) => tool.name);
     expect(toolNames).toContain("getSurroundingContext");
-    expect(toolNames).toContain("getReadingProgress");
+    expect(toolNames).not.toContain("getReadingProgress"); // 2026-09-13 删除
     expect(toolNames).toContain("ragSearch");
     expect(toolNames).toContain("ragContext");
     expect(toolNames).not.toContain("resolveChapterReference");

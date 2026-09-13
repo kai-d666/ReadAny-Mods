@@ -282,7 +282,6 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   compareSections: "toolLabels.compareSections",
   getCurrentChapter: "toolLabels.getCurrentChapter",
   getSelection: "toolLabels.getSelection",
-  getReadingProgress: "toolLabels.getReadingProgress",
   getRecentHighlights: "toolLabels.getRecentHighlights",
   getSurroundingContext: "toolLabels.getSurroundingContext",
   listBooks: "toolLabels.listBooks",

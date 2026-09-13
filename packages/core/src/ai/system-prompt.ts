@@ -232,10 +232,6 @@ function buildToolsSection(
     const contextStartIndex = tools.length;
     pushTool("getSelection", "- **getSelection**: Get the text the user has currently selected");
     pushTool(
-      "getReadingProgress",
-      "- **getReadingProgress**: Get overall reading progress, current page and chapter",
-    );
-    pushTool(
       "getRecentHighlights",
       "- **getRecentHighlights**: Get user's recent highlights and annotations (params: limit)",
     );
@@ -370,7 +366,6 @@ function buildWorkflowSection(
   ].filter(canUse);
   const contentToolNames = [
     "getSelection",
-    "getReadingProgress",
     "getSurroundingContext",
     "resolveChapterReference",
     "ragSearch",
