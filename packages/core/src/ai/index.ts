@@ -16,6 +16,11 @@ export { StreamingChat, createMessageId, createThreadId } from "./streaming";
 export type { StreamingOptions } from "./streaming";
 export { getAIEndpointRequestPreview, testAIEndpoint } from "./test-endpoint";
 export type { EndpointTestResult } from "./test-endpoint";
+export {
+  AI_TRANSPORT_TIMEOUT_MS,
+  AITransportTimeoutError,
+  withTransportBudget,
+} from "./request-timeouts";
 
 export { buildSystemPrompt } from "./system-prompt";
 

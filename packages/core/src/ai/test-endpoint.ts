@@ -2,6 +2,7 @@ import type { AIEndpoint } from "../types";
 import { getDefaultBaseUrl, providerRequiresApiKey } from "../utils";
 import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
 import { getEndpointFetch } from "./llm-provider";
+import { withTransportBudget } from "./request-timeouts";
 import {
   buildOpenAICompatibleUrl,
   buildProviderModelsUrl,
@@ -60,6 +61,12 @@ async function parseErrorBody(response: Response): Promise<string> {
   return text || `${response.status} ${response.statusText}`;
 }
 
+/**
+ * Bounded entry point: endpoint tests are user-triggered from the settings
+ * screen, so a stalled server — including one that sends headers and then
+ * stalls the body — must not leave the button spinning. The header guard in
+ * llm-provider.ts covers only the wait for headers, hence the wrapper here.
+ */
 async function fetchJson(
   url: string,
   init?: RequestInit,
@@ -68,6 +75,23 @@ async function fetchJson(
     action: string;
     model?: string;
   },
+): Promise<any> {
+  return withTransportBudget((signal) => fetchJsonOnce(url, init, debug, signal), {
+    label: `Endpoint ${debug?.action ?? "request"}`,
+  });
+}
+
+async function fetchJsonOnce(
+  url: string,
+  init: RequestInit | undefined,
+  debug:
+    | {
+        endpoint: AIEndpoint;
+        action: string;
+        model?: string;
+      }
+    | undefined,
+  signal: AbortSignal,
 ): Promise<any> {
   if (debug) {
     logAIEndpointDebug("request", debug.endpoint, {
@@ -80,7 +104,7 @@ async function fetchJson(
 
   // 使用跨域适配fetch，和AI对话逻辑一致
   const requestFetch = debug ? getEndpointFetch(debug.endpoint, debug.model) : globalThis.fetch;
-  const response = await requestFetch(url, init);
+  const response = await requestFetch(url, { ...(init ?? {}), signal });
   if (!response.ok) {
     const errorBody = await parseErrorBody(response);
     if (debug) {

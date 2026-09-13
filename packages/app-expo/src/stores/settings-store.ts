@@ -4,6 +4,7 @@
 import type { AIConfig, AIEndpoint, ReadSettings } from "@readany/core/types";
 import type { TranslationConfig, TranslationTargetLang } from "@readany/core/types/translation";
 import { logAIEndpointDebug, summarizeDebugText } from "@readany/core/ai/request-debug";
+import { withTransportBudget } from "@readany/core/ai/request-timeouts";
 import {
   buildProviderModelsUrl,
   providerRequiresApiKey,
@@ -660,7 +661,11 @@ export const useSettingsStore = create<SettingsState>()(
         }));
 
         try {
-          const models = await fetchModelsFromEndpoint(endpointWithKey);
+          // The per-provider fetch helpers use raw fetch with no timeout, so a
+          // stalled endpoint would leave the "获取模型" button spinning.
+          const models = await withTransportBudget(() => fetchModelsFromEndpoint(endpointWithKey), {
+            label: "Model list",
+          });
           set((s) => ({
             aiConfig: {
               ...s.aiConfig,
