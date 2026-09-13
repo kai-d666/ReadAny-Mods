@@ -21,6 +21,9 @@ export interface QueryEmbeddingService {
   provenance?: EmbeddingProvenance;
 }
 
+/** Cosine-similarity floor used when a query does not set its own threshold. */
+const DEFAULT_VECTOR_THRESHOLD = 0.3;
+
 let embeddingService: QueryEmbeddingService | null = null;
 
 /** Configure the embedding service for vector search */
@@ -141,6 +144,10 @@ export async function search(query: SearchQuery): Promise<SearchResult[]> {
       return bm25Search(query);
     case "hybrid":
       return hybridSearch(query);
+    default:
+      // Callers hand us model-supplied strings; without this the function
+      // returned undefined and blew up downstream (`for (const r of results)`).
+      throw new Error(`Unsupported search mode: ${String(query.mode)}`);
   }
 }
 
@@ -172,15 +179,23 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
           // Get chunks for the matched IDs
           const chunks = await getCachedChunks(query.bookId);
           const chunkMap = new Map(chunks.map((c) => [c.id, c]));
+          const threshold = query.threshold ?? DEFAULT_VECTOR_THRESHOLD;
 
-          return results
-            .filter((r) => r.score >= (query.threshold || 0.3))
+          // vec0 scores are L2 DISTANCES — the table declares no distance_metric
+          // (see app/src-tauri/src/vector/mod.rs) — while the rest of the
+          // pipeline speaks cosine similarity. For unit-norm vectors
+          // d² = 2 − 2·cos, so convert before filtering; the ranking itself is
+          // already correct because the SQL orders by distance. If nothing
+          // survives, fall through to the in-memory scan instead of reporting
+          // "no matches" (which silently degraded hybrid search to BM25).
+          const converted = results
             .map((r) => ({
               chunk: chunkMap.get(r.id)!,
-              score: r.score,
+              score: 1 - (r.score * r.score) / 2,
               matchType: "vector" as const,
             }))
-            .filter((r) => r.chunk);
+            .filter((r) => r.chunk && r.score >= threshold);
+          if (converted.length > 0) return converted;
         }
       }
     } catch (err) {
@@ -199,7 +214,7 @@ async function vectorSearch(query: SearchQuery): Promise<SearchResult[]> {
       score: cosineSimilarity(queryEmbedding, chunk.embedding!),
       matchType: "vector" as const,
     }))
-    .filter((r) => r.score >= (query.threshold || 0.3))
+    .filter((r) => r.score >= (query.threshold ?? DEFAULT_VECTOR_THRESHOLD))
     .sort((a, b) => b.score - a.score)
     .slice(0, query.topK);
 

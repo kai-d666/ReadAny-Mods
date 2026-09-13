@@ -14,7 +14,24 @@ export async function getChunks(bookId: string): Promise<Chunk[]> {
     end_cfi: string | null;
     segment_cfis: string | null;
     embedding: unknown;
-  }>("SELECT * FROM chunks WHERE book_id = ? ORDER BY chapter_index, id", [bookId]);
+  }>("SELECT * FROM chunks WHERE book_id = ? ORDER BY chapter_index", [bookId]);
+  // Chunk ids end in the chunk's index within its chapter (rag/chunker.ts builds
+  // them as `${bookId}-${chapterIndex}-${index}`), so ordering by the TEXT id
+  // puts "…-10" before "…-2". Book ids may themselves contain "-", which makes
+  // parsing the tail in SQL unreliable — sort by the trailing number in JS.
+  const chunkIndexFromId = (id: string): number | null => {
+    const match = /-(\d+)$/.exec(id);
+    return match ? Number(match[1]) : null;
+  };
+  rows.sort((a, b) => {
+    if (a.chapter_index !== b.chapter_index) return a.chapter_index - b.chapter_index;
+    const aIndex = chunkIndexFromId(a.id);
+    const bIndex = chunkIndexFromId(b.id);
+    // Ids that do not follow the chunker's shape (imported or legacy data) carry
+    // no index — keep the order the database returned them in.
+    if (aIndex === null || bIndex === null) return 0;
+    return aIndex - bIndex;
+  });
   return rows.map((r) => ({
     id: r.id,
     bookId: r.book_id,

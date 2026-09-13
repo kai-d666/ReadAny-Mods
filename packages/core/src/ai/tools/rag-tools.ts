@@ -132,11 +132,18 @@ export function createRagSearchTool(bookId: string, bookLanguage?: string): Tool
       topK: { type: "number", description: "Number of results to return (default: 5)" },
     },
     execute: async (args) => {
+      const rawQuery = typeof args.query === "string" ? args.query.trim() : "";
+      if (!rawQuery) {
+        return { error: "Query is empty" };
+      }
+      const requestedMode = args.mode as string;
       const query: SearchQuery = {
-        query: args.query as string,
+        query: rawQuery,
         bookId,
-        mode: (args.mode as "hybrid" | "vector" | "bm25") || "hybrid",
-        topK: (args.topK as number) || 5,
+        // Anything outside the whitelist used to reach search()'s switch and
+        // return undefined, which crashed the loop below.
+        mode: requestedMode === "vector" || requestedMode === "bm25" ? requestedMode : "hybrid",
+        topK: Math.max(1, Math.min(10, Number(args.topK) || 5)),
         threshold: 0.3,
       };
 
@@ -409,7 +416,7 @@ export function createRagContextTool(bookId: string, bookLanguage?: string): Too
   return {
     name: "ragContext",
     description:
-      "Get surrounding text context for a specific chapter. Use this when the user asks about content near a specific location. range = number of chunks before/after (each chunk ≈500 chars) — for 'what happens in this chapter' use range 5-8 to get enough in ONE call; avoid calling with a small range then repeating with a larger one. Returns chunks with CFI information - if addCitation is among your available tools, use the CFI from the chunk containing your quoted text when calling addCitation; otherwise cite chapterTitle/chapterIndex in plain text." + bookLanguageHint(bookLanguage),
+      "Read a chapter's text. Returns up to range*2+1 chunks STARTING FROM THE BEGINNING of the chapter — there is no anchor, so the middle/end of a long chapter is NOT reachable this way (use ragSearch for content further in). Each chunk ≈500 chars; for 'what happens in this chapter' use range 5-8 to get enough in ONE call; avoid calling with a small range then repeating with a larger one. The response reports chunksIncluded and totalChunksInChapter — when chunksIncluded < totalChunksInChapter you have only read the first part. Returns chunks with CFI information - if addCitation is among your available tools, use the CFI from the chunk containing your quoted text when calling addCitation; otherwise cite chapterTitle/chapterIndex in plain text." + bookLanguageHint(bookLanguage),
     parameters: {
       chapterIndex: { type: "number", description: "The chapter index", required: true },
       range: {
@@ -419,7 +426,7 @@ export function createRagContextTool(bookId: string, bookLanguage?: string): Too
     },
     execute: async (args) => {
       const chapterIndex = args.chapterIndex as number;
-      const range = (args.range as number) || 2;
+      const range = Math.max(1, Math.min(10, Number(args.range) || 2));
 
       const chunks = await getChunks(bookId);
       const chapterChunks = chunks.filter((c) => c.chapterIndex === chapterIndex);
@@ -461,6 +468,7 @@ export function createRagContextTool(bookId: string, bookLanguage?: string): Too
         context: contextParts.join("\n\n"),
         sourceRefs,
         chunksIncluded: contextParts.length,
+        totalChunksInChapter: chapterChunks.length,
         totalTokens,
         tokenBudget: MAX_TOTAL_TOKENS,
       };

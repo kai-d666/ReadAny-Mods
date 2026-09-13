@@ -89,6 +89,59 @@ describe("chunk-queries", () => {
       const chunks = await getChunks("book-1");
       expect(chunks[0].segmentCfis).toEqual(["cfi1", "cfi2"]);
     });
+
+    it("orders chunks inside a chapter by numeric index, not by text id", async () => {
+      // Rows arrive in TEXT id order, where "…-10" precedes "…-2".
+      mockLocalDb.select.mockResolvedValue(
+        ["0", "1", "10", "11", "2"].map((index) => ({
+          id: `book-1-3-${index}`,
+          book_id: "book-1",
+          chapter_index: 3,
+          chapter_title: "Ch3",
+          content: `chunk ${index}`,
+          token_count: 10,
+          start_cfi: null,
+          end_cfi: null,
+          segment_cfis: null,
+          embedding: null,
+        })),
+      );
+
+      const chunks = await getChunks("book-1");
+
+      expect(chunks.map((item) => item.id)).toEqual([
+        "book-1-3-0",
+        "book-1-3-1",
+        "book-1-3-2",
+        "book-1-3-10",
+        "book-1-3-11",
+      ]);
+      // Chapter order stays a SQL concern; the id tiebreaker is gone.
+      expect(String(mockLocalDb.select.mock.calls[0][0])).toContain("ORDER BY chapter_index");
+    });
+
+    it("keeps the database order for ids without a numeric index", async () => {
+      // Legacy/imported ids such as "chunk-1b" must not be treated as index 0,
+      // which would move them ahead of "chunk-1".
+      mockLocalDb.select.mockResolvedValue(
+        ["chunk-1", "chunk-1b", "chunk-2"].map((id, position) => ({
+          id,
+          book_id: "book-1",
+          chapter_index: 1,
+          chapter_title: "Tooling",
+          content: `position ${position}`,
+          token_count: 5,
+          start_cfi: null,
+          end_cfi: null,
+          segment_cfis: null,
+          embedding: null,
+        })),
+      );
+
+      const chunks = await getChunks("book-1");
+
+      expect(chunks.map((item) => item.id)).toEqual(["chunk-1", "chunk-1b", "chunk-2"]);
+    });
   });
 
   describe("insertChunks", () => {
