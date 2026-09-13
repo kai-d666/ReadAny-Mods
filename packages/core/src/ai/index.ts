@@ -12,7 +12,7 @@ export { processMessages } from "./message-pipeline";
 export type { ProcessedMessage } from "./message-pipeline";
 
 
-export { StreamingChat, createMessageId, createThreadId } from "./streaming";
+export { StreamingChat, createMessageId } from "./streaming";
 export type { StreamingOptions } from "./streaming";
 export { getAIEndpointRequestPreview, testAIEndpoint } from "./test-endpoint";
 export type { EndpointTestResult } from "./test-endpoint";

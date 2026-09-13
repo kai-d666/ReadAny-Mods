@@ -23,13 +23,7 @@ export type { EmbeddingConfig } from "./embedding-service";
 export { createBuiltinEmbeddingService } from "./builtin-embedding-service";
 export { normalizeEmbeddingEndpoint } from "./embedding-provenance";
 
-export {
-  getEmbeddingModels,
-  getDefaultModel,
-  getEmbedding,
-  getEmbeddings,
-  cosineSimilarity,
-} from "./embedding";
+export { cosineSimilarity } from "./embedding";
 
 export {
   search,
@@ -58,9 +52,6 @@ export type {
   DocMeta,
   InvertedIndex,
 } from "./inverted-index";
-
-export { vectorizeBook } from "./vectorize";
-export type { VectorizeCallback } from "./vectorize";
 
 export { triggerVectorizeBook } from "./vectorize-trigger";
 export type {

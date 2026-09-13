@@ -14,13 +14,6 @@ interface AIEndpointDebugExtras {
   modelCount?: number;
 }
 
-export function maskApiKey(apiKey?: string): string {
-  const trimmed = apiKey?.trim();
-  if (!trimmed) return "";
-  if (trimmed.length <= 10) return `${trimmed.slice(0, 2)}***${trimmed.slice(-2)}`;
-  return `${trimmed.slice(0, 6)}***${trimmed.slice(-4)}`;
-}
-
 export function summarizeDebugText(value?: string, maxLength = 280): string {
   if (!value) return "";
   const compact = value.replace(/\s+/g, " ").trim();

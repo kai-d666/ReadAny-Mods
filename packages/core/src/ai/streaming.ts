@@ -306,7 +306,3 @@ export class StreamingChat {
 export function createMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
-
-export function createThreadId(): string {
-  return `thread-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}

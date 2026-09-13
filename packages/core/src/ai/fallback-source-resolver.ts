@@ -42,7 +42,7 @@ export async function getFallbackChaptersForBook(
   }
 }
 
-export function normalizeForLookup(value: string): string {
+function normalizeForLookup(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]/gu, "")
@@ -81,7 +81,7 @@ function hasQuoteMatch(segmentText: string, quotedText: string): boolean {
   return getQuoteNeedles(quotedText).some((needle) => segment.includes(needle));
 }
 
-export function findFallbackSegmentByQuote(
+function findFallbackSegmentByQuote(
   chapter: FallbackChapter,
   quotedText: string,
   preferredCfi?: string,

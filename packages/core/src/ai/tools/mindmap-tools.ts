@@ -58,7 +58,7 @@ export function createMindmapTool(): ToolDefinition {
 }
 
 /** Convert mermaid mindmap syntax to markmap Markdown heading format */
-export function convertMermaidMindmapToMarkdown(mermaidText: string, fallbackTitle: string): string {
+function convertMermaidMindmapToMarkdown(mermaidText: string, fallbackTitle: string): string {
   // Strip mermaid code fence markers
   const text = mermaidText
     .replace(/```mermaid\s*/g, "")

@@ -472,11 +472,3 @@ You are a language expert, skilled at explaining the meaning, usage, and backgro
 export function getBuiltinSkills(): Skill[] {
   return builtinSkills;
 }
-
-export function getBuiltinSkill(id: string): Skill | undefined {
-  return builtinSkills.find((s) => s.id === id);
-}
-
-export function isBuiltinSkill(id: string): boolean {
-  return builtinSkills.some((s) => s.id === id);
-}
