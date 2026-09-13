@@ -2,6 +2,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { updateThreadMemory } from "../db/database";
 import type { AIConfig, Message, Thread } from "../types";
 import { createChatModel } from "./llm-provider";
+import { MEMORY_COMPRESS_TIMEOUT_MS } from "./request-timeouts";
 
 const MIN_COMPRESSIBLE_MESSAGES = 4;
 const MAX_SOURCE_CHARS = 12000;
@@ -45,6 +46,7 @@ export function getCompressibleMessages(thread: Thread, slidingWindowSize: numbe
 export async function maybeCompressThreadMemory(
   thread: Thread,
   aiConfig: AIConfig,
+  options?: { timeoutMs?: number },
 ): Promise<Thread> {
   const slidingWindowSize = aiConfig.slidingWindowSize || 8;
   const compressible = getCompressibleMessages(thread, slidingWindowSize);
@@ -58,26 +60,52 @@ export async function maybeCompressThreadMemory(
     });
 
     const source = buildSource(thread.memorySummary, compressible);
-    const response = await model.invoke([
-      new SystemMessage(
-        [
-          "You compress chat history for a reading assistant.",
-          "Produce durable memory only: user preferences, decisions, book-specific facts already established, unresolved tasks, and useful context for future replies.",
-          "Do not include filler conversation. Keep it concise, neutral, and in the user's language when clear.",
-        ].join("\n"),
-      ),
-      new HumanMessage(source),
-    ]);
+    // Compression runs BEFORE the stream starts, so the streaming watchdog
+    // cannot cover it — a hung request here leaves the UI "thinking" with
+    // nothing to watch. Failing is fail-open (this round simply loses its
+    // memory update), so a short budget is the safe trade.
+    const controller = new AbortController();
+    const timeoutMs = options?.timeoutMs ?? MEMORY_COMPRESS_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Race rather than rely on the abort alone, so the budget holds even if the
+    // transport ignores the signal; abort() runs alongside as cleanup.
+    const budget = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`Thread memory compression exceeded ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+    let summary: string;
+    try {
+      const response = await Promise.race([
+        model.invoke(
+          [
+            new SystemMessage(
+              [
+                "You compress chat history for a reading assistant.",
+                "Produce durable memory only: user preferences, decisions, book-specific facts already established, unresolved tasks, and useful context for future replies.",
+                "Do not include filler conversation. Keep it concise, neutral, and in the user's language when clear.",
+              ].join("\n"),
+            ),
+            new HumanMessage(source),
+          ],
+          { signal: controller.signal },
+        ),
+        budget,
+      ]);
 
-    const content =
-      typeof response.content === "string"
-        ? response.content
-        : Array.isArray(response.content)
+      const content =
+        typeof response.content === "string"
           ? response.content
-              .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
-              .join("\n")
-          : "";
-    const summary = content.trim().slice(0, MAX_SUMMARY_CHARS);
+          : Array.isArray(response.content)
+            ? response.content
+                .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+                .join("\n")
+            : "";
+      summary = content.trim().slice(0, MAX_SUMMARY_CHARS);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     if (!summary) return thread;
 
     const memoryMessageCount = (thread.memoryMessageCount || 0) + compressible.length;

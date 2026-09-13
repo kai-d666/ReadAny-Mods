@@ -3,6 +3,7 @@ import type { AIConfig, AIEndpoint } from "../types";
 import { providerRequiresApiKey } from "../utils";
 import { formatApiHost } from "../utils/api";
 import { logAIEndpointDebug, summarizeDebugText } from "./request-debug";
+import { AI_HEADERS_TIMEOUT_MS, AIHeadersTimeoutError } from "./request-timeouts";
 
 /**
  * Optional custom fetch for streaming support (e.g. expo/fetch in React Native).
@@ -380,9 +381,14 @@ async function patchGeminiThoughtSignatureRequest(
   };
 }
 
-export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof globalThis.fetch {
+export function getEndpointFetch(
+  endpoint: AIEndpoint,
+  model?: string,
+  options?: { headersTimeoutMs?: number },
+): typeof globalThis.fetch {
   const exactUrl = endpoint.useExactRequestUrl ? endpoint.baseUrl?.trim() : "";
   const baseFetch = (_streamingFetch ?? globalThis.fetch).bind(globalThis);
+  const headersTimeoutMs = options?.headersTimeoutMs ?? AI_HEADERS_TIMEOUT_MS;
 
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const finalInput = isRequestLike(input)
@@ -395,6 +401,50 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
       init?.method || (isRequestLike(finalInput) ? finalInput.method : undefined) || "GET";
     let requestInput = finalInput;
     let requestInit = init;
+
+    // ---- Response-header timeout (transport fallback) ----
+    // Only the wait for headers is bounded here — the SDK reads response.body
+    // itself, so a stalled body is caught by the event watchdog in
+    // ai/streaming.ts. The caller's signal is linked so Stop and that watchdog
+    // still cancel this request.
+    const callerSignal =
+      init?.signal ?? (isRequestLike(input) ? (input as Request).signal : undefined);
+    const headersController = new AbortController();
+    const abortFromCaller = () => headersController.abort();
+    if (callerSignal) {
+      if (callerSignal.aborted) headersController.abort();
+      else callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+    const fetchWithHeadersBudget = async (
+      budgetInput: RequestInfo | URL,
+      budgetInit: RequestInit | undefined,
+    ): Promise<Response> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // The budget is a race rather than a flag on the abort path, so it fires
+      // even if the transport ignores the signal; abort() runs alongside as
+      // best-effort cleanup of the socket.
+      const budget = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          headersController.abort();
+          reject(
+            new AIHeadersTimeoutError(
+              `AI endpoint sent no response headers within ${Math.round(headersTimeoutMs / 1000)}s.`,
+            ),
+          );
+        }, headersTimeoutMs);
+      });
+      try {
+        return await Promise.race([
+          baseFetch(budgetInput, {
+            ...(budgetInit ?? {}),
+            signal: headersController.signal,
+          }),
+          budget,
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
 
     if (shouldSanitizeCustomHeaders(endpoint)) {
       const sanitizedHeaders = sanitizeCustomHeaders(mergeRequestHeaders(finalInput, init));
@@ -437,7 +487,7 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
     });
 
     try {
-      const response = await baseFetch(requestInput, requestInit);
+      const response = await fetchWithHeadersBudget(requestInput, requestInit);
       const contentType = response.headers.get("content-type");
 
       if (!response.ok) {
@@ -477,7 +527,10 @@ export function getEndpointFetch(endpoint: AIEndpoint, model?: string): typeof g
               requestBodySummary: retryBodySummary,
               responseBodyPreview,
             });
-            const retryResponse = await baseFetch(retryRequest.input, retryRequest.init);
+            const retryResponse = await fetchWithHeadersBudget(
+              retryRequest.input,
+              retryRequest.init,
+            );
             const retryContentType = retryResponse.headers.get("content-type");
             if (retryResponse.ok) {
               logAIEndpointDebug("response", endpoint, {
@@ -608,6 +661,12 @@ export async function createChatModelFromEndpoint(
   const streaming = options.streaming ?? true;
   const endpointFetch = getEndpointFetch(endpoint, model);
 
+  // Every model below is built with `maxRetries: 0`. LangChain's AsyncCaller
+  // defaults to SIX retries, and it only stops early for AbortError-shaped
+  // failures — a timeout would otherwise be retried 6 more times (7 attempts +
+  // exponential backoff ≈ 8 minutes). Our own watchdog (ai/streaming.ts) is the
+  // single retry-free timeout layer instead.
+
   switch (endpoint.provider) {
     case "anthropic": {
       const { ChatAnthropic } = await import("@langchain/anthropic");
@@ -618,6 +677,7 @@ export async function createChatModelFromEndpoint(
         temperature: options.deepThinking ? 1 : temperature,
         maxTokens,
         streaming,
+        maxRetries: 0,
         clientOptions: {
           ...(endpoint.baseUrl ? { baseURL: endpoint.baseUrl } : {}),
           fetch: endpointFetch,
@@ -675,6 +735,7 @@ export async function createChatModelFromEndpoint(
         temperature,
         maxTokens,
         streaming,
+        maxRetries: 0,
       });
     }
 
@@ -750,6 +811,7 @@ export async function createChatModelFromEndpoint(
         temperature,
         maxTokens,
         streaming,
+        maxRetries: 0,
       } as ConstructorParameters<typeof ChatDeepSeek>[0]);
     }
 
@@ -825,6 +887,7 @@ export async function createChatModelFromEndpoint(
           temperature,
           maxTokens,
           streaming,
+          maxRetries: 0,
         } as ConstructorParameters<typeof ChatDeepSeek>[0]);
       }
 
@@ -844,6 +907,7 @@ export async function createChatModelFromEndpoint(
         temperature,
         maxTokens,
         streaming,
+        maxRetries: 0,
         ...(isLocalProvider ? { modelKwargs: { think: true } } : {}),
       });
     }

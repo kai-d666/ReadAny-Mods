@@ -6,6 +6,12 @@ import i18n from "i18next";
  */
 import type { AIChatMode, AIConfig, Book, Skill, Thread } from "../types";
 import { streamReadingAgent } from "./agents/reading-agent";
+import {
+  STREAM_FIRST_EVENT_TIMEOUT_MS,
+  STREAM_IDLE_TIMEOUT_MS,
+  STREAM_TOOL_IDLE_TIMEOUT_MS,
+  StreamTimeoutError,
+} from "./request-timeouts";
 import { processMessages } from "./message-pipeline";
 import { getToolResultError } from "./tool-result";
 import type { ToolDefinition } from "./tools/tool-types";
@@ -23,6 +29,10 @@ export interface StreamingOptions {
   chatMode?: AIChatMode;
   /** User-enabled choice items per mode (resolveModeTools in ai/tools). */
   toolPrefs?: { lite?: string[]; knowledge?: string[] };
+  /** Stream watchdog budgets — tests inject small values instead of fake timers. */
+  timeouts?: { firstEventMs?: number; idleMs?: number; toolIdleMs?: number };
+  /** Dev flag: stream the answer body live instead of buffering each model turn. */
+  liveAnswerStreaming?: boolean;
   /** Injected tool provider */
   getAvailableTools: (options: {
     bookId: string | null;
@@ -101,12 +111,16 @@ export class StreamingChat {
     // Declared before the try so the catch below can still report the partial
     // text / tool calls when a stream error races an abort.
     let fullText = "";
+    let firstEventSeen = false;
     const toolCalls: Array<{
       name: string;
       args: Record<string, unknown>;
       result?: unknown;
       error?: string;
     }> = [];
+    const firstEventMs = options.timeouts?.firstEventMs ?? STREAM_FIRST_EVENT_TIMEOUT_MS;
+    const idleMs = options.timeouts?.idleMs ?? STREAM_IDLE_TIMEOUT_MS;
+    const toolIdleMs = options.timeouts?.toolIdleMs ?? STREAM_TOOL_IDLE_TIMEOUT_MS;
 
     try {
       const stream = streamReadingAgent(
@@ -122,21 +136,33 @@ export class StreamingChat {
           chatMode: options.chatMode,
           toolPrefs: options.toolPrefs ?? options.aiConfig.toolPrefs,
           getAvailableTools: options.getAvailableTools,
+          liveAnswerStreaming: options.liveAnswerStreaming,
           signal,
         },
         userInput,
         history,
       );
 
-      // Helper to race iterator next() against abort signal
-      const raceNext = async (
-        iterator: AsyncIterator<unknown>,
-      ): Promise<IteratorResult<unknown>> => {
+      // Helper to race iterator next() against the abort signal AND the idle
+      // watchdog. A budget expiry resolves with a sentinel instead of throwing:
+      // every `signal.aborted` branch below means "user stopped", and the
+      // trailing "tool call incomplete" check means "stream ended" — a thrown
+      // timeout would be misreported as one of those.
+      type RaceResult = IteratorResult<unknown> & { timedOut?: boolean; budgetMs?: number };
+      const raceNext = async (iterator: AsyncIterator<unknown>): Promise<RaceResult> => {
         if (signal.aborted) {
           return { done: true, value: undefined };
         }
+        // A pending tool call legitimately silences the stream while it runs
+        // (longest tool budget is 60s), so it gets its own allowance.
+        const budgetMs = toolCalls.some((tc) => tc.result === undefined)
+          ? toolIdleMs
+          : firstEventSeen
+            ? idleMs
+            : firstEventMs;
         let onAbort: (() => void) | undefined;
-        const abortPromise = new Promise<IteratorResult<unknown>>((resolve) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const abortPromise = new Promise<RaceResult>((resolve) => {
           const handler = () => {
             signal.removeEventListener("abort", handler);
             resolve({ done: true, value: undefined });
@@ -144,17 +170,46 @@ export class StreamingChat {
           onAbort = handler;
           signal.addEventListener("abort", handler);
         });
+        const timeoutPromise = new Promise<RaceResult>((resolve) => {
+          timer = setTimeout(
+            () => resolve({ done: true, value: undefined, timedOut: true, budgetMs }),
+            budgetMs,
+          );
+        });
         try {
-          return await Promise.race([iterator.next(), abortPromise]);
+          return await Promise.race([iterator.next(), abortPromise, timeoutPromise]);
         } finally {
-          // iterator.next() usually wins. Remove its unused abort listener so a
-          // long conversation does not accumulate one listener per event.
+          // iterator.next() usually wins. Remove its unused abort listener and
+          // timer so a long conversation does not accumulate one per event.
+          if (timer) clearTimeout(timer);
           if (onAbort) signal.removeEventListener("abort", onAbort);
         }
       };
 
       const iterator = stream[Symbol.asyncIterator]();
+      const reportTimeout = (budgetMs: number): void => {
+        // Kill the underlying request first (signal forwarding makes it real),
+        // then settle the caller with a localized message.
+        this.abortController?.abort();
+        void iterator.return?.(undefined).catch(() => {});
+        const seconds = Math.round(budgetMs / 1000);
+        options.onError(
+          new StreamTimeoutError(
+            i18n.t("streaming.timeout", {
+              seconds,
+              defaultValue:
+                `The AI request timed out (no response for ${seconds}s). ` +
+                "Check your network or the AI endpoint, then send your question again.",
+            }),
+          ),
+        );
+      };
       let eventResult = await raceNext(iterator);
+      if (eventResult.timedOut) {
+        reportTimeout(eventResult.budgetMs ?? firstEventMs);
+        return;
+      }
+      firstEventSeen = true;
 
       while (!eventResult.done) {
         const event = eventResult.value as any;
@@ -205,6 +260,10 @@ export class StreamingChat {
         }
 
         eventResult = await raceNext(iterator);
+        if (eventResult.timedOut) {
+          reportTimeout(eventResult.budgetMs ?? idleMs);
+          return;
+        }
       }
 
       // If loop exited due to abort, call onAbort

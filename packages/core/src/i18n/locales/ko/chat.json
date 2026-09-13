@@ -72,7 +72,8 @@
     "loadingMindmap": "마인드맵 로딩 중...",
     "toolFailed": "호출 실패",
     "toolFailedDetail": "도구 호출 실패",
-    "aborted": "사용자가 생성을 중단했어요"
+    "aborted": "사용자가 생성을 중단했어요",
+    "timeout": "AI 요청이 시간 초과되었습니다({{seconds}}초 동안 응답 없음). 네트워크 또는 AI 엔드포인트를 확인한 후 다시 보내 주세요."
   },
   "toolLabels": {
     "ragSearch": "책 내용 검색 중",

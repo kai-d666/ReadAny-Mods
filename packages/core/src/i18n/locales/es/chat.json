@@ -72,7 +72,8 @@
     "loadingMindmap": "Cargando mapa mental...",
     "toolFailed": "Llamada fallida",
     "toolFailedDetail": "La llamada de herramienta falló",
-    "aborted": "Generación detenida por el usuario"
+    "aborted": "Generación detenida por el usuario",
+    "timeout": "La solicitud de IA agotó el tiempo de espera (sin respuesta durante {{seconds}} s). Comprueba tu red o el endpoint de IA y vuelve a enviar la pregunta."
   },
   "toolLabels": {
     "ragSearch": "Buscando en el contenido del libro",

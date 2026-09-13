@@ -590,6 +590,13 @@ export interface ReadingAgentOptions {
   signal?: AbortSignal;
   /** Maximum time a single tool may run before returning an error result. */
   toolTimeoutMs?: number;
+  /**
+   * Stream the answer body as it arrives instead of buffering each model turn
+   * (dev flag `devFlags.liveAnswerStreaming`). Default false = original behavior,
+   * where a turn's text is held until the turn ends so that tool-planning
+   * chatter never lands in the answer body.
+   */
+  liveAnswerStreaming?: boolean;
 }
 
 // --- Build Zod schema from ToolDefinition.parameters ---
@@ -820,6 +827,7 @@ export async function* streamReadingAgent(
     toolTimeoutMs = DEFAULT_TOOL_TIMEOUT_MS,
     chatMode = "standard",
     toolPrefs,
+    liveAnswerStreaming = false,
   } = options;
 
   const isLite = chatMode === "lite";
@@ -960,6 +968,9 @@ export async function* streamReadingAgent(
           isVectorized,
           userLanguage: i18n.language || "en",
           spoilerFree,
+          // Lets the prompt steer content questions ("summarize this chapter")
+          // straight to a mode switch instead of a long unanswerable reasoning run.
+          questionCategory,
           currentChapter,
           currentPosition,
           effectiveLanguage: effectiveBookLanguage,
@@ -1042,7 +1053,9 @@ export async function* streamReadingAgent(
     if (tools.length === 0) {
       const { SystemMessage } = await import("@langchain/core/messages");
       const allMessages = [new SystemMessage(fullPrompt), ...inputMessages];
-      const stream = await model.stream(allMessages);
+      // Forward the abort signal into the HTTP layer: without it Stop only ends
+      // the generator while the socket keeps downloading (and keeps billing).
+      const stream = await model.stream(allMessages, { signal });
       const thinkTagParser = new ThinkTagStreamParser();
       const emittedGeminiThoughtSummaries = new Set<string>();
       let lastUsage: {
@@ -1269,6 +1282,9 @@ export async function* streamReadingAgent(
       { messages: inputMessages },
       {
         version: "v2",
+        // Pregel forwards this to every node/model call, so Stop (and the
+        // streaming watchdog) actually cancels the in-flight HTTP request.
+        signal,
         recursionLimit: isLite
           ? LITE_RECURSION_LIMIT
           : isChapterTask
@@ -1313,6 +1329,22 @@ export async function* streamReadingAgent(
     let turnTextBuffer = "";
     const emittedGeminiThoughtSummaries = new Set<string>();
 
+    // Live answer streaming (dev flag): parse each chunk the moment it arrives.
+    // flush() also resets the parser, so one instance lasts the whole stream.
+    const turnParser = liveAnswerStreaming ? new ThinkTagStreamParser() : null;
+
+    function* emitParsedTurnChunks(
+      chunks: Array<{ type: "token" | "reasoning"; content: string }>,
+    ): Generator<AgentStreamEvent> {
+      for (const chunk of chunks) {
+        if (chunk.type === "reasoning") {
+          yield { type: "reasoning", content: chunk.content, stepType: "thinking" };
+        } else {
+          yield { type: "token", content: chunk.content };
+        }
+      }
+    }
+
     function* flushBufferedTurnText(hasToolCalls: boolean): Generator<AgentStreamEvent> {
       if (!turnTextBuffer) return;
       const parser = new ThinkTagStreamParser();
@@ -1348,16 +1380,26 @@ export async function* streamReadingAgent(
 
           const content = chunk.content;
 
-          // Buffer normal text until the model turn ends. If the same turn also
-          // calls tools, that text is tool-planning chatter rather than final
-          // answer text and must not be streamed into the response body.
+          // Buffered (default): hold the turn's text until the turn ends. If the
+          // same turn also calls tools, that text is tool-planning chatter rather
+          // than final answer text and must not be streamed into the response body.
+          // Live (dev flag): emit it immediately — planning chatter then appears
+          // above the tool card, exactly like mainstream chat UIs.
           if (typeof content === "string" && content) {
-            turnTextBuffer += content;
+            if (turnParser) {
+              yield* emitParsedTurnChunks(turnParser.push(content));
+            } else {
+              turnTextBuffer += content;
+            }
           } else if (Array.isArray(content)) {
             // Handle Anthropic-style content blocks (text + thinking)
             for (const block of content) {
               if (block.type === "text" && typeof block.text === "string" && block.text) {
-                turnTextBuffer += block.text;
+                if (turnParser) {
+                  yield* emitParsedTurnChunks(turnParser.push(block.text));
+                } else {
+                  turnTextBuffer += block.text;
+                }
               } else if (block.type === "thinking") {
                 // Anthropic may return thinking content in different fields
                 // Try block.text first (most common), then block.thinking, then block.content
@@ -1456,6 +1498,11 @@ export async function* streamReadingAgent(
 
         for (const flushedEvent of flushBufferedTurnText(hasToolCalls)) {
           yield flushedEvent;
+        }
+        if (turnParser) {
+          // Emits any dangling text (e.g. an unclosed <think>) and resets the
+          // parser so the next turn starts clean.
+          yield* emitParsedTurnChunks(turnParser.flush());
         }
 
         // Clear streaming accumulator for the next LLM turn

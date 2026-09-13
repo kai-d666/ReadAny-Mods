@@ -72,7 +72,8 @@
     "loadingMindmap": "載入心智圖...",
     "toolFailed": "呼叫失敗",
     "toolFailedDetail": "工具呼叫失敗",
-    "aborted": "使用者取消了產生"
+    "aborted": "使用者取消了產生",
+    "timeout": "AI 請求逾時(已 {{seconds}} 秒無回應)。請檢查網路或 AI 端點設定後,重新傳送。"
   },
   "toolLabels": {
     "ragSearch": "搜尋書籍內容",

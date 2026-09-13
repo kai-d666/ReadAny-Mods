@@ -210,3 +210,57 @@ describe("getEndpointFetch custom endpoint compatibility", () => {
     expect(requestBodies[1]?.tools).toEqual(requestBodies[0]?.tools);
   });
 });
+
+describe("getEndpointFetch header timeout", () => {
+  it("rejects with a timeout code when the endpoint never sends headers", async () => {
+    // A transport that hangs forever, like the 4-minute stall seen on device.
+    globalThis.fetch = vi.fn(() => new Promise<Response>(() => {})) as typeof fetch;
+    const endpoint = makeEndpoint();
+    const endpointFetch = getEndpointFetch(endpoint, "test-model", { headersTimeoutMs: 40 });
+
+    await expect(
+      endpointFetch(endpoint.baseUrl, { method: "POST", body: "{}" }),
+    ).rejects.toMatchObject({ code: "ai_request_headers_timeout" });
+  });
+
+  it("does not trip on a fast response", async () => {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+    ) as typeof fetch;
+    const endpoint = makeEndpoint();
+    const endpointFetch = getEndpointFetch(endpoint, "test-model", { headersTimeoutMs: 40 });
+
+    const response = await endpointFetch(endpoint.baseUrl, { method: "POST", body: "{}" });
+
+    expect(response.ok).toBe(true);
+  });
+
+  it("forwards a caller abort instead of reporting its own timeout", async () => {
+    globalThis.fetch = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const fail = () => reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+          // Real fetch rejects immediately when the signal is already aborted,
+          // so the mock must too (the request races with the abort here).
+          if (init?.signal?.aborted) {
+            fail();
+            return;
+          }
+          init?.signal?.addEventListener("abort", fail, { once: true });
+        }),
+    ) as typeof fetch;
+    const endpoint = makeEndpoint();
+    const endpointFetch = getEndpointFetch(endpoint, "test-model", { headersTimeoutMs: 10_000 });
+
+    const controller = new AbortController();
+    const pending = endpointFetch(endpoint.baseUrl, {
+      method: "POST",
+      body: "{}",
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});

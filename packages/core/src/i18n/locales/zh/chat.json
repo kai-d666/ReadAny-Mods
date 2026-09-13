@@ -76,7 +76,8 @@
     "toolNoticeDetail": "章节搜索已停止",
     "toolFailed": "调用失败",
     "toolFailedDetail": "工具调用失败",
-    "aborted": "用户取消了生成"
+    "aborted": "用户取消了生成",
+    "timeout": "AI 请求超时(已 {{seconds}} 秒无响应)。请检查网络或 AI 端点配置后,重新发送。"
   },
   "toolLabels": {
     "ragSearch": "搜索书籍内容",

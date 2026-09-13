@@ -72,7 +72,8 @@
     "loadingMindmap": "Chargement de la carte mentale...",
     "toolFailed": "Appel échoué",
     "toolFailedDetail": "L'appel de l'outil a échoué",
-    "aborted": "Génération arrêtée par l'utilisateur"
+    "aborted": "Génération arrêtée par l'utilisateur",
+    "timeout": "La requête IA a expiré (aucune réponse pendant {{seconds}} s). Vérifiez votre réseau ou le point de terminaison IA, puis renvoyez votre question."
   },
   "toolLabels": {
     "ragSearch": "Recherche dans le contenu du livre",

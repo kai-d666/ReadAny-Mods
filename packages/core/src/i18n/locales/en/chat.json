@@ -74,7 +74,8 @@
     "loadingMindmap": "Loading mindmap...",
     "toolFailed": "Call failed",
     "toolFailedDetail": "Tool call failed",
-    "aborted": "Generation stopped by user"
+    "aborted": "Generation stopped by user",
+    "timeout": "The AI request timed out (no response for {{seconds}}s). Check your network or the AI endpoint, then send your question again."
   },
   "toolLabels": {
     "ragSearch": "Searching book content",

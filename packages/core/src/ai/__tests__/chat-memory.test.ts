@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
-import type { Message, Thread } from "../../types";
-import { getCompressibleMessages } from "../chat-memory";
+import { describe, expect, it, vi } from "vitest";
+import type { AIConfig, Message, Thread } from "../../types";
+import { getCompressibleMessages, maybeCompressThreadMemory } from "../chat-memory";
+
+vi.mock("../llm-provider", () => ({
+  createChatModel: vi.fn(async () => ({
+    // Deliberately ignores the abort signal: the budget must hold anyway.
+    invoke: vi.fn(() => new Promise(() => {})),
+  })),
+}));
 
 function message(id: number): Message {
   return {
@@ -88,5 +95,23 @@ describe("chat memory window with a first-turn system message", () => {
     expect(summarized).not.toContain("msg-9");
     expect(summarized).not.toContain("msg-10");
     expect(summarized.at(-1)).toBe("msg-7");
+  });
+});
+
+describe("thread memory compression budget", () => {
+  it("fails open and warns when the compression call hangs", async () => {
+    const messages = Array.from({ length: 12 }, (_, index) => message(index + 1));
+    const subject = thread(messages);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await maybeCompressThreadMemory(
+      subject,
+      { slidingWindowSize: 4 } as unknown as AIConfig,
+      { timeoutMs: 30 },
+    );
+
+    expect(result).toBe(subject);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
