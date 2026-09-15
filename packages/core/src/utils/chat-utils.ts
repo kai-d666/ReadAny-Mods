@@ -79,6 +79,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
               type: "text",
               text: entry.text || m.content,
               tokens: entry.tokens,
+              updatedAt: entry.updatedAt,
               status: "completed",
               createdAt: m.createdAt,
             });
@@ -103,6 +104,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
                 text: r.content,
                 thinkingType: r.type,
                 tokens: entry.tokens,
+                updatedAt: entry.updatedAt,
                 status: "completed",
                 createdAt: r.timestamp || m.createdAt,
               });
@@ -120,6 +122,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
                 result: tc.result,
                 error: tc.error,
                 tokens: entry.tokens,
+                updatedAt: entry.updatedAt,
                 status: tc.status || "completed",
                 createdAt: m.createdAt,
               });
@@ -217,6 +220,30 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
       createdAt: m.createdAt,
     };
   });
+}
+
+/**
+ * How long a thinking card was actually thinking, in whole seconds.
+ *
+ * `updatedAt` is stamped on every reasoning delta and again when the part
+ * completes, so the gap from `createdAt` is the thinking span (it does NOT
+ * include the wait before the first thinking token).
+ *
+ * Returns undefined when there is nothing trustworthy to show: a part restored
+ * from a row written before `updatedAt` was persisted, or one whose timestamps
+ * run backwards (clock skew). Callers fall back to a duration-less label.
+ */
+export function reasoningDurationSeconds(
+  createdAt: number,
+  updatedAt?: number,
+): number | undefined {
+  if (updatedAt == null) return undefined;
+
+  const elapsedMs = updatedAt - createdAt;
+  if (elapsedMs < 0) return undefined;
+
+  // Never render "0 秒" — anything under a second reads as one.
+  return Math.max(1, Math.round(elapsedMs / 1000));
 }
 
 /**

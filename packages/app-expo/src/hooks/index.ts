@@ -14,3 +14,5 @@ export { rnSessionEventSource } from "@/lib/platform/rn-session-event-source";
 
 export { useDebounce } from "./use-debounce";
 export { useThrottledValue, useThrottledCallback } from "./use-throttled-value";
+export { useStickToBottom, isNearBottom, BOTTOM_THRESHOLD } from "./use-stick-to-bottom";
+export type { StickToBottom } from "./use-stick-to-bottom";

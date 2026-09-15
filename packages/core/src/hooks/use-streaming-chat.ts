@@ -50,6 +50,9 @@ function buildPartsOrder(parts: Part[]) {
       // come back tokenless and every card renders bare. JSON.stringify drops
       // the key when it is undefined, so older rows are unaffected.
       ...(p.tokens != null ? { tokens: p.tokens } : {}),
+      // Same reason: a restored thinking card needs its end time to report how
+      // long it thought.
+      ...(p.updatedAt != null ? { updatedAt: p.updatedAt } : {}),
     };
     if (p.type === "text") {
       return { ...base, text: (p as TextPart).text };

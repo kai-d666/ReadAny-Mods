@@ -1,4 +1,5 @@
 import { CheckIcon, ChevronDownIcon, CopyIcon } from "@/components/ui/Icon";
+import { useStickToBottom } from "@/hooks/use-stick-to-bottom";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { CitationPart, MessageV2, QuotePart, TextPart } from "@readany/core/types/message";
@@ -14,8 +15,6 @@ import {
   FlatList,
   Keyboard,
   Modal,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
   Platform,
   Pressable,
   StyleSheet,
@@ -35,8 +34,6 @@ interface MessageListProps {
   /** Tap on a quoted text chip — jump to the quote's location in the reader. */
   onQuoteClick?: (text: string, cfi?: string) => void;
 }
-
-const BOTTOM_THRESHOLD = 80;
 
 function sortCitationsByIndex(citations: CitationPart[]): CitationPart[] {
   return citations
@@ -62,15 +59,23 @@ export function MessageList({
   const { t } = useTranslation();
   const colors = useColors();
   const s = makeStyles(colors);
-  const flatListRef = useRef<FlatList>(null);
   // 输入栏恒 absolute 悬浮(不占布局),列表恒留占位:
   // - 容器 paddingBottom 压缩可视区,键盘弹出前后列表尺寸一致,背景不跳变
   // - 内容 paddingBottom 留滚动余量,最后一条消息可滚到输入栏上方
   // - 占位须与输入栏双层结构真实高度(rig≈70dp)匹配:旧值 120 把列表视口压得过高,
   //   底部出现"滚动信息被截断"的隐形裂缝(展开中线位置),2026-09-05 修为 78
   const listBottomPad = Platform.OS === "android" ? 78 : 0;
-  const isAtBottomRef = useRef(true);
-  const [showScrollDown, setShowScrollDown] = useState(false);
+  const {
+    listRef,
+    isPinned,
+    pinToBottom,
+    resetToBottom,
+    onScroll,
+    onScrollBeginDrag: onStickBeginDrag,
+    onScrollEndDrag,
+    onContentSizeChange,
+    onLayout,
+  } = useStickToBottom();
 
   const lastMsg = messages[messages.length - 1];
 
@@ -83,69 +88,26 @@ export function MessageList({
   const sessionSumsRef = useRef<number[]>(sessionSums);
   sessionSumsRef.current = sessionSums;
 
-  // Auto-scroll when new messages arrive or parts update
+  // Sending a message means the reader wants to watch the answer.
   useEffect(() => {
-    if (isAtBottomRef.current && flatListRef.current && messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages.length]);
+    if (isStreaming) pinToBottom();
+  }, [isStreaming, pinToBottom]);
 
-  // Periodic scroll during streaming
+  // Switching conversations must not inherit the previous one's scroll position
+  // (the first message is the thread's system card, so its id identifies the thread).
+  const firstMessageId = messages[0]?.id;
   useEffect(() => {
-    if (!isStreaming) return;
-    const interval = setInterval(() => {
-      if (isAtBottomRef.current) {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }
-    }, 300);
-    return () => clearInterval(interval);
-  }, [isStreaming]);
+    resetToBottom();
+  }, [firstMessageId, resetToBottom]);
 
-  // Force scroll to bottom when streaming ends
-  useEffect(() => {
-    if (!isStreaming && flatListRef.current && messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-        isAtBottomRef.current = true;
-        setShowScrollDown(false);
-      }, 200);
-    }
-  }, [isStreaming, messages.length]);
-
-  // Listen for keyboard hide events to restore scroll position
-  useEffect(() => {
-    const keyboardDidHide = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardDidHide" : "keyboardDidHide",
-      () => {
-        // When keyboard hides, ensure we scroll to bottom if we were at bottom
-        if (isAtBottomRef.current && flatListRef.current && messages.length > 0) {
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }, 100);
-        }
-      },
-    );
-
-    return () => {
-      keyboardDidHide.remove();
-    };
-  }, [messages.length]);
-
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const nearBottom =
-      contentSize.height - contentOffset.y - layoutMeasurement.height < BOTTOM_THRESHOLD;
-    isAtBottomRef.current = nearBottom;
-    setShowScrollDown(!nearBottom);
-  }, []);
+  const handleScrollBeginDrag = useCallback(() => {
+    Keyboard.dismiss();
+    onStickBeginDrag();
+  }, [onStickBeginDrag]);
 
   const handleScrollToBottom = useCallback(() => {
-    isAtBottomRef.current = true;
-    setShowScrollDown(false);
-    flatListRef.current?.scrollToEnd({ animated: true });
-  }, []);
+    resetToBottom(true);
+  }, [resetToBottom]);
 
   const [selectModalText, setSelectModalText] = useState<string | null>(null);
   const handleBubbleLongPress = useCallback((text: string) => {
@@ -193,13 +155,19 @@ export function MessageList({
     // 键盘弹出时容器 paddingBottom 压缩可视区,高度与键盘弹出前(输入栏占位)一致,背景不跳变
     <View style={[s.container, { paddingBottom: listBottomPad }]} onTouchStart={Keyboard.dismiss}>
       <FlatList
-        ref={flatListRef}
+        ref={listRef}
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
         contentContainerStyle={[s.listContent, { paddingBottom: listBottomPad }]}
-        onScroll={handleScroll}
-        onScrollBeginDrag={Keyboard.dismiss}
+        // Content growth (streaming deltas, indicators appearing) and viewport
+        // changes (keyboard) are the two things that can push the bottom away.
+        // Following is gated on the reader still wanting it — see the hook.
+        onScroll={onScroll}
+        onContentSizeChange={onContentSizeChange}
+        onLayout={onLayout}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={onScrollEndDrag}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -219,8 +187,8 @@ export function MessageList({
         }
       />
 
-      {/* Scroll to bottom button */}
-      {showScrollDown && (
+      {/* Scroll to bottom button — only while the reader has scrolled away. */}
+      {!isPinned && (
         // Android 输入栏为悬浮层(absolute),底部 listBottomPad 是它的占位区,
         // 按钮需抬到占位区之上(86),否则被输入卡盖住;iOS 输入栏为流式占位,8 即合理
         <View style={[s.scrollDownWrap, { bottom: listBottomPad + 8 }]}>

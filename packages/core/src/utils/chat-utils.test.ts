@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertToMessageV2 } from "./chat-utils";
+import { convertToMessageV2, reasoningDurationSeconds } from "./chat-utils";
 
 describe("convertToMessageV2", () => {
   it("preserves failed tool calls when reconstructing ordered parts", () => {
@@ -235,5 +235,48 @@ describe("convertToMessageV2", () => {
 
       expect(message.totalTokens).toBe(42);
     });
+
+    it("restores the timestamp a thinking card measures its duration against", () => {
+      const [message] = convertToMessageV2([
+        {
+          id: "message-5",
+          threadId: "thread-1",
+          role: "assistant",
+          content: "",
+          reasoning: [{ id: "reasoning-1", type: "thinking", content: "想", timestamp: 1000 }],
+          partsOrder: [{ type: "reasoning", id: "reasoning-1", tokens: 5, updatedAt: 13_000 }],
+          createdAt: 123,
+        },
+      ]);
+
+      expect(message.parts[0].updatedAt).toBe(13_000);
+      expect(reasoningDurationSeconds(1000, message.parts[0].updatedAt)).toBe(12);
+    });
+  });
+});
+
+describe("reasoningDurationSeconds", () => {
+  it("reports whole seconds of thinking", () => {
+    expect(reasoningDurationSeconds(1_000, 13_000)).toBe(12);
+  });
+
+  it("returns undefined when the timestamp was never persisted", () => {
+    // Rows written before `updatedAt` was stored — the caller shows a
+    // duration-less label instead of guessing.
+    expect(reasoningDurationSeconds(1_000, undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when the timestamps run backwards", () => {
+    // Clock skew or a corrupt row; a negative duration is never shown.
+    expect(reasoningDurationSeconds(13_000, 1_000)).toBeUndefined();
+  });
+
+  it("never reports zero seconds", () => {
+    expect(reasoningDurationSeconds(5_000, 5_000)).toBe(1);
+    expect(reasoningDurationSeconds(5_000, 5_400)).toBe(1);
+  });
+
+  it("rounds to the nearest second past one", () => {
+    expect(reasoningDurationSeconds(0, 12_500)).toBe(13);
   });
 });

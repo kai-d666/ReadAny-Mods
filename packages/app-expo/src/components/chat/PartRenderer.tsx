@@ -14,7 +14,8 @@ import type {
   TextPart,
   ToolCallPart,
 } from "@readany/core/types/message";
-import { useEffect, useMemo, useState } from "react";
+import { reasoningDurationSeconds } from "@readany/core/utils";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -193,6 +194,14 @@ function TextPartView({
   );
 }
 
+/**
+ * Cards the reader opened by hand. Module-level (the same trick `enrichedPartIds`
+ * uses below) because `removeClippedSubviews` unmounts cards that scroll out of
+ * the window — without this, a card someone opened would silently fold itself
+ * again the moment it came back into view.
+ */
+const manuallyOpenedReasoningIds = new Set<string>();
+
 function ReasoningPartView({
   part,
   totalTokens,
@@ -202,31 +211,54 @@ function ReasoningPartView({
   totalTokens?: number;
   showTotalTokenUsage?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(part.status === "running" || part.status === "completed");
+  const isRunning = part.status === "running";
   const throttledText = useThrottledValue(part.text, 100);
+  const [isOpen, setIsOpen] = useState(
+    () => isRunning || manuallyOpenedReasoningIds.has(part.id),
+  );
   const { t } = useTranslation();
   const colors = useColors();
   const s = makeReasoningStyles(colors);
 
+  // Keyed on status, never on the text: `throttledText` trails the real content
+  // by ~100ms, so folding on it would collapse with the tail still arriving.
   useEffect(() => {
-    if (part.status === "running") setIsOpen(true);
-  }, [part.status]);
+    if (isRunning) {
+      setIsOpen(true);
+      return;
+    }
+    // Finished thinking folds itself away — unless the reader opened this one.
+    if (!manuallyOpenedReasoningIds.has(part.id)) setIsOpen(false);
+  }, [isRunning, part.id]);
+
+  const toggle = useCallback(() => {
+    setIsOpen((open) => {
+      const next = !open;
+      if (next) manuallyOpenedReasoningIds.add(part.id);
+      else manuallyOpenedReasoningIds.delete(part.id);
+      return next;
+    });
+  }, [part.id]);
 
   if (!part.text?.trim()) return null;
 
+  const seconds = reasoningDurationSeconds(part.createdAt, part.updatedAt);
+
   return (
     <View style={s.container}>
-      <TouchableOpacity style={s.header} onPress={() => setIsOpen(!isOpen)} activeOpacity={0.7}>
+      <TouchableOpacity style={s.header} onPress={toggle} activeOpacity={0.7}>
         <View style={s.headerLeft}>
-          {part.status === "running" ? (
+          {isRunning ? (
             <View style={s.pulsingDot} />
           ) : (
             <BrainIcon size={14} color={colors.mutedForeground} />
           )}
           <Text style={s.headerText}>
-            {part.status === "running"
+            {isRunning
               ? t("streaming.reasoningRunning", "思考中...")
-              : t("streaming.reasoningDone", "思考完成")}
+              : seconds != null
+                ? t("streaming.reasoningDoneSeconds", "思考了 {{seconds}} 秒", { seconds })
+                : t("streaming.reasoningDone", "思考完成")}
           </Text>
         </View>
         {renderTokenBadge(part.tokens, totalTokens, showTotalTokenUsage, s.tokenText)}

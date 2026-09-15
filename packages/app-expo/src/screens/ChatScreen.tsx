@@ -30,6 +30,7 @@ import { useChatStore } from "@/stores/chat-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPlatformService } from "@readany/core/services";
 import type { AttachedQuote } from "@readany/core/types";
+import type { MessageV2 } from "@readany/core/types/message";
 import {
   convertToMessageV2,
   exportChatAsJSON,
@@ -188,13 +189,21 @@ export function ChatScreen() {
     }, 0);
   }, []);
 
-  // Messages - compute directly without useMemo to ensure reactivity
   const activeThread = generalActiveThreadId
     ? threads.find((th) => th.id === generalActiveThreadId)
     : null;
 
   const activeCurrentMessage = activeThread?.id === currentMessage?.threadId ? currentMessage : null;
-  const displayMessages = convertToMessageV2(activeThread?.messages || []);
+  // Keyed on identity that only moves when the conversation actually changes,
+  // NOT on the thread object — the store rewrites `threads` on every 160ms
+  // streaming publish, and rebuilding every message object there would
+  // invalidate `memo(MessageBubble)` for the whole list on each frame.
+  // BookChatScreen.tsx uses the same key. Reactivity is preserved because a
+  // new message changes `messages.length`.
+  const displayMessages: MessageV2[] = useMemo(() => {
+    if (!activeThread) return [];
+    return convertToMessageV2(activeThread.messages);
+  }, [activeThread?.id, activeThread?.messages.length]);
   const allMessages = mergeMessagesWithStreaming(displayMessages, activeCurrentMessage, isStreaming);
 
   // Handlers

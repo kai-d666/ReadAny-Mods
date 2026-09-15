@@ -86,6 +86,9 @@ export interface PartsOrderEntry {
    * Persisted here so the badges survive a reload.
    */
   tokens?: number;
+  /** Last write to this part; for reasoning it marks the end of thinking, which
+   *  is what the "thought for N seconds" label is measured against. */
+  updatedAt?: number;
 }
 
 export interface Thread {
