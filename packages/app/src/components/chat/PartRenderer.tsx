@@ -13,7 +13,7 @@ import type {
   TextPart,
   ToolCallPart,
 } from "@readany/core/types/message";
-import { cn } from "@readany/core/utils";
+import { cn, reasoningDurationSeconds } from "@readany/core/utils";
 import {
   AlertTriangle,
   Brain,
@@ -25,7 +25,7 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MarkdownRenderer, MermaidBlock } from "./MarkdownRenderer";
 
@@ -144,8 +144,6 @@ function TextPartView({
   part,
   citations,
   onCitationClick,
-  totalTokens,
-  showTotalTokenUsage,
 }: {
   part: TextPart;
   citations?: CitationPart[];
@@ -176,48 +174,68 @@ function TextPartView({
         citations={citations}
         onCitationClick={onCitationClick}
       />
-      {showTotalTokenUsage && totalTokens !== undefined && totalTokens > 0 && (
-        <div className="mt-1 flex items-center justify-end text-[11px] font-mono text-muted-foreground/60 select-none">
-          <span title="Total tokens across all calls in this message">
-            {formatTotalTokens(totalTokens)}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
 
+/**
+ * Cards the user opened by hand. Module-level because components may re-mount
+ * during list updates — without this, a card someone opened would silently fold
+ * itself again the moment it re-renders.
+ */
+const manuallyOpenedReasoningIds = new Set<string>();
+
 function ReasoningPartView({
   part,
-  totalTokens,
-  showTotalTokenUsage,
 }: {
   part: ReasoningPart;
   totalTokens?: number;
   showTotalTokenUsage?: boolean;
 }) {
   const { t } = useTranslation();
-  // Start expanded when streaming; keep expanded after completion
-  const [isOpen, setIsOpen] = useState(part.status === "running" || part.status === "completed");
+  const isRunning = part.status === "running";
   const throttledText = useThrottledText(part.text);
+  const [isOpen, setIsOpen] = useState(
+    () => isRunning || manuallyOpenedReasoningIds.has(part.id),
+  );
 
-  // Expand when streaming starts
+  // Keyed on status, never on the text: `throttledText` trails the real content
+  // by ~100ms, so folding on it would collapse with the tail still arriving.
   useEffect(() => {
-    if (part.status === "running") {
+    if (isRunning) {
       setIsOpen(true);
+      return;
     }
-  }, [part.status]);
+    // Finished thinking folds itself away — unless the user opened this one.
+    if (!manuallyOpenedReasoningIds.has(part.id)) {
+      setIsOpen(false);
+    }
+  }, [isRunning, part.id]);
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      setIsOpen(open);
+      if (open) {
+        manuallyOpenedReasoningIds.add(part.id);
+      } else {
+        manuallyOpenedReasoningIds.delete(part.id);
+      }
+    },
+    [part.id],
+  );
 
   if (!throttledText.trim()) return null;
 
+  const seconds = reasoningDurationSeconds(part.createdAt, part.updatedAt);
+
   return (
     <div className="my-1">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <Collapsible open={isOpen} onOpenChange={handleOpenChange}>
         <div className="overflow-hidden rounded-lg border border-primary/20 bg-primary/5">
           <CollapsibleTrigger asChild>
             <div className="flex h-auto w-full cursor-pointer items-center justify-between gap-2 px-3 py-2 hover:bg-primary/10">
               <div className="flex flex-1 items-center gap-2 overflow-hidden">
-                {part.status === "running" ? (
+                {isRunning ? (
                   <div className="flex h-4 w-4 items-center justify-center">
                     <div className="h-3 w-3 animate-pulse rounded-full bg-primary/60" />
                   </div>
@@ -225,9 +243,11 @@ function ReasoningPartView({
                   <Brain className="h-4 w-4 text-primary" />
                 )}
                 <span className="text-sm font-medium text-foreground">
-                  {part.status === "running"
-                    ? t("streaming.reasoningRunning")
-                    : t("streaming.reasoningDone")}
+                  {isRunning
+                    ? t("streaming.reasoningRunning", "正在思考...")
+                    : seconds != null
+                      ? t("streaming.reasoningDoneSeconds", "思考了 {{seconds}} 秒", { seconds })
+                      : t("streaming.reasoningDone", "思考过程")}
                 </span>
                 {part.thinkingType && (
                   <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -236,11 +256,6 @@ function ReasoningPartView({
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono text-muted-foreground">
-                {showTotalTokenUsage && totalTokens !== undefined && totalTokens > 0 && (
-                  <span className="font-semibold text-primary/80" title="Total tokens across all calls in this message">
-                    {formatTotalTokens(totalTokens)}
-                  </span>
-                )}
                 {part.tokens !== undefined && part.tokens > 0 && (
                   <span className="opacity-75" title="Tokens used by this step">
                     {formatTokens(part.tokens)}
@@ -297,8 +312,6 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
 
 function ToolCallPartView({
   part,
-  totalTokens,
-  showTotalTokenUsage,
 }: {
   part: ToolCallPart;
   totalTokens?: number;
@@ -392,11 +405,6 @@ function ToolCallPartView({
                 )}
               </div>
               <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono text-muted-foreground">
-                {showTotalTokenUsage && totalTokens !== undefined && totalTokens > 0 && (
-                  <span className="font-semibold text-primary/80" title="Total tokens across all calls in this message">
-                    {formatTotalTokens(totalTokens)}
-                  </span>
-                )}
                 {part.tokens !== undefined && part.tokens > 0 && (
                   <span className="opacity-75" title="Tokens used by this step">
                     {formatTokens(part.tokens)}

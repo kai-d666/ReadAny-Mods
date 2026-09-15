@@ -340,7 +340,13 @@ export function ChatPage() {
     [books, t],
   );
 
-  const displayMessages = convertToMessageV2(activeThread?.messages || []);
+  // Keyed on thread identity and message count, NOT on thread object,
+  // preventing re-converting every message on every 160ms streaming chunk.
+  const displayMessages = useMemo(() => {
+    if (!activeThread?.messages) return [];
+    return convertToMessageV2(activeThread.messages);
+  }, [activeThread?.id, activeThread?.messages?.length]);
+
   const activeCurrentMessage =
     activeThread?.id === currentMessage?.threadId ? currentMessage : null;
   const allMessages = mergeMessagesWithStreaming(

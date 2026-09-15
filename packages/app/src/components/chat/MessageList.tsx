@@ -3,8 +3,9 @@
  * Uses Part-based rendering for real-time updates
  */
 import type { CitationPart, MessageV2, QuotePart } from "@readany/core/types/message";
+import { computeSessionTokenTotals, formatTurnAndSessionTokens } from "@readany/core/utils";
 import { ArrowDown, Check, Copy, Quote } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PartRenderer } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
@@ -80,8 +81,16 @@ export function MessageList({
     return () => el.removeEventListener("scroll", onScroll);
   }, [isNearBottom]);
 
-  // Auto-scroll when new messages/parts arrive, but only if user is near bottom
+  // Auto-scroll when new messages/parts arrive. If user asked a new question, always scroll to bottom.
+  // Otherwise, only auto-scroll if user was already at bottom.
   useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last?.role === "user") {
+      userAtBottomRef.current = true;
+      setShowScrollDown(false);
+      scrollToBottom("smooth");
+      return;
+    }
     if (userAtBottomRef.current) {
       scrollToBottom("smooth");
     }
@@ -104,6 +113,10 @@ export function MessageList({
     scrollToBottom("smooth");
   }, [scrollToBottom]);
 
+  // Running session totals: sessionSums[i] = tokens burned by every assistant
+  // turn up to and including messages[i].
+  const sessionSums = useMemo(() => computeSessionTokenTotals(messages), [messages]);
+
   // Show streaming indicator when streaming but the last assistant message has no visible parts yet
   const lastMsg = messages[messages.length - 1];
   const showStreamingIndicator =
@@ -123,6 +136,7 @@ export function MessageList({
           <MessageBubble
             key={msg.id}
             message={msg}
+            sessionSum={sessionSums[idx] ?? 0}
             onCitationClick={onCitationClick}
             isStreaming={idx === messages.length - 1 && isLastMsgStreaming}
             currentStep={currentStep}
@@ -150,6 +164,7 @@ export function MessageList({
 
 interface MessageBubbleProps {
   message: MessageV2;
+  sessionSum?: number;
   onCitationClick?: (citation: CitationPart) => void;
   isStreaming?: boolean;
   currentStep?: "thinking" | "tool_calling" | "responding" | "idle";
@@ -200,7 +215,13 @@ function CopyMessageButton({ message }: { message: MessageV2 }) {
   );
 }
 
-function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: MessageBubbleProps) {
+function MessageBubble({
+  message,
+  sessionSum,
+  onCitationClick,
+  isStreaming,
+  currentStep,
+}: MessageBubbleProps) {
   if (message.role === "user") {
     const quoteParts = message.parts.filter((p) => p.type === "quote") as QuotePart[];
     const textParts = message.parts.filter((p) => p.type === "text");
@@ -257,41 +278,34 @@ function MessageBubble({ message, onCitationClick, isStreaming, currentStep }: M
     !isLastPartRunningText &&
     !isLastPartActiveToolCall;
 
-  // Calculate total tokens across all parts in this assistant message
-  const totalTokens = message.parts.reduce((sum, p) => {
-    if ("tokens" in p && typeof (p as { tokens?: unknown }).tokens === "number") {
-      return sum + ((p as { tokens: number }).tokens);
-    }
-    return sum;
-  }, 0);
-
-  // Find the index of the last part that displays content
-  const lastDisplayPartIndex = message.parts.reduce((lastIdx, p, idx) => {
-    if (
-      p.type === "text" ||
-      p.type === "reasoning" ||
-      p.type === "tool_call" ||
-      p.type === "mermaid"
-    ) {
-      return idx;
-    }
-    return lastIdx;
-  }, -1);
+  // This turn's cost, recorded by the streaming hook. Not derived from the
+  // part badges: those answer different questions per part type (a reasoning
+  // card shows the thinking itself, a tool card its round trip) and one LLM
+  // call can produce several, so summing them double-counts.
+  const turnTokens = message.totalTokens ?? 0;
 
   return (
     <div className="group flex w-full select-text flex-col gap-1">
-      {message.parts.map((part, idx) => (
+      {message.parts.map((part) => (
         <PartRenderer
           key={part.id}
           part={part}
           citations={citations}
           onCitationClick={onCitationClick}
-          totalTokens={totalTokens > 0 ? totalTokens : undefined}
-          showTotalTokenUsage={idx === lastDisplayPartIndex}
         />
       ))}
       {showGapIndicator && <StreamingIndicator step="thinking" />}
-      {!isStreaming && <CopyMessageButton message={message} />}
+      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+        {!isStreaming && <CopyMessageButton message={message} />}
+        {turnTokens > 0 && (
+          <span
+            className="ml-auto font-mono text-[11px] opacity-75 select-none"
+            title="本轮消耗 / 会话累计消耗"
+          >
+            {formatTurnAndSessionTokens(turnTokens, sessionSum ?? turnTokens)}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

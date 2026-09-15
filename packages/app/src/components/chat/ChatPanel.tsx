@@ -207,10 +207,13 @@ export function ChatPanel({ book, onNavigateToCitation }: ChatPanelProps) {
     [removeThread],
   );
 
-  const displayMessages = activeThread?.messages || [];
+  // Keyed on thread identity and message count, NOT on thread object,
+  // preventing re-converting every message on every 160ms streaming chunk.
+  const storeMessages = useMemo(() => {
+    if (!activeThread?.messages) return [];
+    return convertToMessageV2(activeThread.messages);
+  }, [activeThread?.id, activeThread?.messages?.length]);
 
-  // Build message list with streaming message
-  const storeMessages = convertToMessageV2(displayMessages);
   const activeCurrentMessage =
     activeThread?.id === currentMessage?.threadId ? currentMessage : null;
   const allMessages = mergeMessagesWithStreaming(storeMessages, activeCurrentMessage, isStreaming);
