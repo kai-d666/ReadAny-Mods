@@ -81,6 +81,39 @@ describe("message-queries", () => {
       const messages = await getMessages("thread-1");
       expect(messages).toEqual([]);
     });
+
+    it("maps the stored turn token total, and null back to undefined", async () => {
+      mockSelect.mockResolvedValue([
+        {
+          id: "msg-1",
+          thread_id: "thread-1",
+          role: "assistant",
+          content: "Hi",
+          citations: null,
+          tool_calls: null,
+          reasoning: null,
+          parts_order: null,
+          total_tokens: 6100,
+          created_at: 1000,
+        },
+        {
+          id: "msg-2",
+          thread_id: "thread-1",
+          role: "assistant",
+          content: "旧",
+          citations: null,
+          tool_calls: null,
+          reasoning: null,
+          parts_order: null,
+          total_tokens: null,
+          created_at: 2000,
+        },
+      ]);
+
+      const messages = await getMessages("thread-1");
+      expect(messages[0].totalTokens).toBe(6100);
+      expect(messages[1].totalTokens).toBeUndefined();
+    });
   });
 
   describe("insertMessage", () => {
@@ -127,6 +160,33 @@ describe("message-queries", () => {
       expect(params[4]).toBe('[{"source":"book-1"}]');
       // toolCalls should be serialized as JSON
       expect(params[5]).toBe('[{"name":"search","args":{}}]');
+    });
+
+    it("stores the turn token total and sends null when there is none", async () => {
+      mockExecute.mockResolvedValue(undefined);
+
+      await insertMessage({
+        id: "msg-3",
+        threadId: "thread-1",
+        role: "assistant",
+        content: "answer",
+        totalTokens: 6100,
+        createdAt: 3000,
+      });
+      await insertMessage({
+        id: "msg-4",
+        threadId: "thread-1",
+        role: "user",
+        content: "question",
+        createdAt: 4000,
+      });
+
+      const [firstSql, firstParams] = mockExecute.mock.calls[0];
+      const [, secondParams] = mockExecute.mock.calls[1];
+      expect(firstSql).toContain("total_tokens");
+      expect(firstParams[8]).toBe(6100);
+      // undefined must not reach sqlite — the column wants NULL.
+      expect(secondParams[8]).toBeNull();
     });
   });
 });

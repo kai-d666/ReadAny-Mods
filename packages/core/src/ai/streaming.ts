@@ -41,8 +41,10 @@ export interface StreamingOptions {
   }) => ToolDefinition[];
   onToken: (token: string) => void;
   /** Emitted per completed LLM call with its total token usage (prompt+completion)
-   *  and how many tool calls that call produced (0 = pure reasoning/reply). */
-  onLlmUsage?: (totalTokens: number, toolCalls: number) => void;
+   *  and how many tool calls that call produced (0 = pure reasoning/reply).
+   *  `reasoningTokens` is the call's own thinking-token count when the provider
+   *  reports one — absent for Anthropic/Gemini, which report none. */
+  onLlmUsage?: (totalTokens: number, toolCalls: number, reasoningTokens?: number) => void;
   onComplete: (
     fullText: string,
     toolCalls?: Array<{
@@ -217,7 +219,7 @@ export class StreamingChat {
             break;
 
           case "llm_usage":
-            options.onLlmUsage?.(event.totalTokens, event.toolCalls);
+            options.onLlmUsage?.(event.totalTokens, event.toolCalls, event.reasoningTokens);
             break;
 
           case "tool_call":

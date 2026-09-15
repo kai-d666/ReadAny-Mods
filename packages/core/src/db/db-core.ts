@@ -557,6 +557,11 @@ export async function initDatabase(): Promise<void> {
       } catch {
         // Column already exists, ignore
       }
+      try {
+        await database.execute("ALTER TABLE messages ADD COLUMN total_tokens INTEGER");
+      } catch {
+        // Column already exists, ignore
+      }
       // --- Sync migrations ---
       // Migration 4: Add updated_at and file_hash to books
       try {

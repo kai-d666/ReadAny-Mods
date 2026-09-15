@@ -23,6 +23,7 @@ import {
   buildSystemPrompt,
 } from "../system-prompt";
 import { ThinkTagStreamParser } from "../think-tag-parser";
+import { readReasoningTokens } from "../token-accounting";
 import { resolveModeTools } from "../tools";
 import type { ToolDefinition, ToolParameter } from "../tools/tool-types";
 
@@ -560,7 +561,13 @@ function buildRepeatedToolCallResult(
 
 export type AgentStreamEvent =
   | { type: "token"; content: string }
-  | { type: "llm_usage"; totalTokens: number; toolCalls: number }
+  | {
+      type: "llm_usage";
+      totalTokens: number;
+      toolCalls: number;
+      /** The call's own thinking tokens, when the provider reports them. */
+      reasoningTokens?: number;
+    }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; result: unknown }
   | {
@@ -1077,6 +1084,7 @@ export async function* streamReadingAgent(
       let lastUsage: {
         promptTokens?: number;
         completionTokens?: number;
+        reasoningTokens?: number;
       } | null = null;
       for await (const chunk of stream) {
         // Streaming usage arrives on the final chunk — LangChain normalizes to
@@ -1097,6 +1105,9 @@ export async function* streamReadingAgent(
           lastUsage = {
             promptTokens: u.prompt_tokens ?? u.input_tokens ?? u.promptTokenCount,
             completionTokens: u.completion_tokens ?? u.output_tokens ?? u.candidatesTokenCount,
+            // Same final chunk carries the thinking breakdown for providers
+            // that report one; undefined elsewhere (the UI then estimates).
+            reasoningTokens: readReasoningTokens(chunk, chunkUsage),
           };
         }
         for (const summary of extractGeminiThoughtSummariesFromRaw(
@@ -1158,6 +1169,7 @@ export async function* streamReadingAgent(
           type: "llm_usage",
           totalTokens: promptTokens + completionTokens,
           toolCalls: 0,
+          reasoningTokens: lastUsage.reasoningTokens,
         };
       }
       return;
@@ -1489,12 +1501,17 @@ export async function* streamReadingAgent(
             promptTokens != null && completionTokens != null
               ? promptTokens + completionTokens
               : undefined;
+          // Thinking tokens ride along so the reasoning card can show the
+          // thought's own size instead of the whole call (prompt included).
+          // Absent for providers that do not report them — the UI estimates.
+          const reasoningTokens = readReasoningTokens(output, usage);
           console.log(
             "[ReadingAgent][llm-usage]",
             JSON.stringify({
               promptTokens,
               completionTokens,
               totalTokens,
+              reasoningTokens,
               toolCalls: Array.isArray(output?.tool_calls) ? output.tool_calls.length : 0,
             }),
           );
@@ -1503,6 +1520,7 @@ export async function* streamReadingAgent(
               type: "llm_usage",
               totalTokens,
               toolCalls: Array.isArray(output?.tool_calls) ? output.tool_calls.length : 0,
+              reasoningTokens,
             };
           }
         }

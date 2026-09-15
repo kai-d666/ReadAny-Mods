@@ -63,3 +63,9 @@ export {
 } from "./book-metadata";
 export { getBookProgressPercent, normalizeBookProgress } from "./book-progress";
 export type { BookMetadataFormValues, ExtractedBookMetadata } from "./book-metadata";
+export {
+  computeSessionTokenTotals,
+  formatTokenCount,
+  formatTurnAndSessionTokens,
+} from "./token-usage";
+export type { TokenLedgerMessage } from "./token-usage";

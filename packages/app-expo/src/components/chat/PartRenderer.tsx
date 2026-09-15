@@ -30,10 +30,14 @@ interface PartProps {
   part: Part;
   citations?: CitationPart[];
   onCitationClick?: (citation: CitationPart) => void;
-  /** Sum of all LLM-call token counts in the whole assistant message. */
+  /**
+   * Reserved — not wired on mobile. The live app renders the turn/session
+   * ledger in the message footer instead ("+546/9,764sum"); passing these
+   * would ALSO print a bare `1,123sum` in the card header. The desktop app
+   * still uses them.
+   */
   totalTokens?: number;
-  /** True only on the LAST part of the message that displays a token count —
-   *  renders the total (1,123sum) to the left of its tk. */
+  /** Reserved, see above. Renders the total (1,123sum) left of the part's tk. */
   showTotalTokenUsage?: boolean;
 }
 

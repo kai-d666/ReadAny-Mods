@@ -46,6 +46,10 @@ function buildPartsOrder(parts: Part[]) {
     const base = {
       type: p.type as "text" | "reasoning" | "tool_call" | "citation" | "mindmap",
       id: p.id,
+      // Carried here so the badges survive a reload — without it the parts
+      // come back tokenless and every card renders bare. JSON.stringify drops
+      // the key when it is undefined, so older rows are unaffected.
+      ...(p.tokens != null ? { tokens: p.tokens } : {}),
     };
     if (p.type === "text") {
       return { ...base, text: (p as TextPart).text };
@@ -381,6 +385,16 @@ export function useStreamingChat(options?: StreamingChatOptions) {
          *  (both branches) — never in onToolCall, which fires BEFORE llm_usage
          *  on streaming providers and would empty the retro-attach range. */
         let usageBoundaryIndex = 0;
+        /**
+         * One entry per completed LLM call, in arrival order. This — not the
+         * sum of part badges — is the per-turn total: a single call can produce
+         * several parts (and its reasoning part deliberately carries only the
+         * thinking's own tokens), so summing badges would double-count.
+         * Append-only, so a call that already finished is still recorded when
+         * the turn is aborted or errors later.
+         */
+        const callUsages: number[] = [];
+        const turnTotalTokens = () => callUsages.reduce((sum, value) => sum + value, 0);
         let pendingPublishTimer: ReturnType<typeof setTimeout> | null = null;
         let pendingCurrentStep: StreamingState["currentStep"] | undefined;
         let lastPublishedAt = 0;
@@ -397,7 +411,12 @@ export function useStreamingChat(options?: StreamingChatOptions) {
           pendingCurrentStep = undefined;
           updateStreamingSession(sessionKey, {
             isStreaming: true,
-            currentMessage: { ...initialMessage, parts: [...currentParts] },
+            currentMessage: {
+              ...initialMessage,
+              parts: [...currentParts],
+              // Live running total so the footer climbs while the turn streams.
+              totalTokens: callUsages.length > 0 ? turnTotalTokens() : undefined,
+            },
             ...(currentStep ? { currentStep } : {}),
             updatedAt: lastPublishedAt,
           });
@@ -499,6 +518,7 @@ export function useStreamingChat(options?: StreamingChatOptions) {
                 .map((p) => toolCallPartToMessageToolCall(p as ToolCallPart)),
               reasoning: reasoning.length > 0 ? reasoning : undefined,
               partsOrder: partsOrder.length > 0 ? partsOrder : undefined,
+              totalTokens: callUsages.length > 0 ? turnTotalTokens() : undefined,
               createdAt: Date.now(),
             };
 
@@ -548,6 +568,8 @@ export function useStreamingChat(options?: StreamingChatOptions) {
                 .filter((p) => p.type === "tool_call")
                 .map((p) => toolCallPartToMessageToolCall(p as ToolCallPart)),
               partsOrder: partsOrder.length > 0 ? partsOrder : undefined,
+              // Calls that did finish before the failure were really paid for.
+              totalTokens: callUsages.length > 0 ? turnTotalTokens() : undefined,
               createdAt: Date.now(),
             };
 
@@ -599,6 +621,8 @@ export function useStreamingChat(options?: StreamingChatOptions) {
                 .map((p) => toolCallPartToMessageToolCall(p as ToolCallPart)),
               reasoning: reasoning.length > 0 ? reasoning : undefined,
               partsOrder: partsOrder.length > 0 ? partsOrder : undefined,
+              // Stopping mid-answer does not un-spend the calls already made.
+              totalTokens: callUsages.length > 0 ? turnTotalTokens() : undefined,
               createdAt: Date.now(),
             };
 
@@ -652,31 +676,32 @@ export function useStreamingChat(options?: StreamingChatOptions) {
             currentReasoningPart.updatedAt = Date.now();
             scheduleCurrentMessage("thinking");
           },
-          onLlmUsage: (totalTokens, toolCalls) => {
+          onLlmUsage: (totalTokens, toolCalls, reasoningTokens) => {
+            // Exactly one ledger entry per LLM call, whichever branch runs
+            // below. This — not the part badges — is what the footer and the
+            // stored per-turn total are built from.
+            callUsages.push(totalTokens);
+
             // A call that emitted tool calls: the parts it produced may either
             // already exist (streaming providers emit tool_call during the
             // stream, BEFORE this usage event) or arrive right after (non-
             // streaming ordering). Cover both: retro-attach to every
-            // tool_call/reasoning part since usageBoundaryIndex, AND keep a
-            // pending value for onToolCall to consume. The pending value stays
-            // until the NEXT llm_usage overwrites it, so a call that emits
-            // several tools attaches the same count to each.
-            if (toolCalls > 0) {
-              pendingUsageForToolCalls = totalTokens;
-              attachTokenUsageToParts(currentParts, usageBoundaryIndex, totalTokens);
-              usageBoundaryIndex = currentParts.length;
-              scheduleCurrentMessage();
-              return;
-            }
-            // Pure reasoning/reply call → attach to the live reasoning/text part.
-            pendingUsageForToolCalls = undefined;
+            // tool_call/reasoning/text part since usageBoundaryIndex, AND keep
+            // a pending value for onToolCall to consume. The pending value
+            // stays until the NEXT llm_usage overwrites it, so a call that
+            // emits several tools attaches the same count to each.
+            //
+            // A call WITHOUT tool calls must clear the pending value, or the
+            // next call's first tool part would inherit this call's usage.
+            pendingUsageForToolCalls = toolCalls > 0 ? totalTokens : undefined;
+
+            // Same attribution either way: the parts since the boundary are
+            // exactly the ones this call produced.
+            attachTokenUsageToParts(currentParts, usageBoundaryIndex, totalTokens, {
+              reasoningTokens,
+            });
             usageBoundaryIndex = currentParts.length;
-            const target = currentReasoningPart || currentTextPart;
-            if (target) {
-              (target as { tokens?: number }).tokens = totalTokens;
-              (target as { updatedAt?: number }).updatedAt = Date.now();
-              scheduleCurrentMessage();
-            }
+            scheduleCurrentMessage();
           },
           onCitation: (citation) => {
             const citationPart = createCitationPart(

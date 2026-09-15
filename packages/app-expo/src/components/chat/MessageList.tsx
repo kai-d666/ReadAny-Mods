@@ -2,6 +2,7 @@ import { CheckIcon, ChevronDownIcon, CopyIcon } from "@/components/ui/Icon";
 import { fontSize as fs, radius, useColors, withOpacity } from "@/styles/theme";
 import type { ThemeColors } from "@/styles/theme";
 import type { CitationPart, MessageV2, QuotePart, TextPart } from "@readany/core/types/message";
+import { computeSessionTokenTotals, formatTurnAndSessionTokens } from "@readany/core/utils";
 import * as Clipboard from "expo-clipboard";
 /**
  * MessageList — FlatList message renderer matching app-mobile MessageList.
@@ -23,7 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { PartRenderer, formatTotalTokens } from "./PartRenderer";
+import { PartRenderer } from "./PartRenderer";
 import { StreamingIndicator } from "./StreamingIndicator";
 
 interface MessageListProps {
@@ -72,6 +73,15 @@ export function MessageList({
   const [showScrollDown, setShowScrollDown] = useState(false);
 
   const lastMsg = messages[messages.length - 1];
+
+  // Running session totals: sessionSums[i] = tokens burned by every assistant
+  // turn up to and including messages[i]. Read through a ref rather than passed
+  // into renderMessage's deps — the array identity changes on every 160ms
+  // streaming publish, which would invalidate MessageBubble's memo and
+  // re-render every visible row (see the note on MessageBubble below).
+  const sessionSums = useMemo(() => computeSessionTokenTotals(messages), [messages]);
+  const sessionSumsRef = useRef<number[]>(sessionSums);
+  sessionSumsRef.current = sessionSums;
 
   // Auto-scroll when new messages arrive or parts update
   useEffect(() => {
@@ -151,6 +161,7 @@ export function MessageList({
       return (
         <MessageBubble
           message={item}
+          sessionSum={sessionSumsRef.current[index] ?? 0}
           colors={colors}
           isStreaming={isLastMsgStreaming}
           currentStep={currentStep}
@@ -315,6 +326,8 @@ const quoteStyles = (colors: ThemeColors) =>
 
 interface MessageBubbleProps {
   message: MessageV2;
+  /** Running total of assistant tokens up to and including this message. */
+  sessionSum?: number;
   colors: ThemeColors;
   isStreaming?: boolean;
   currentStep?: "thinking" | "tool_calling" | "responding" | "idle";
@@ -344,6 +357,7 @@ function extractPlainText(message: MessageV2): string {
 // 见 mergeMessagesWithStreaming)必须整体跳过,只有最后一条真正重建。
 const MessageBubble = memo(function MessageBubble({
   message,
+  sessionSum,
   colors,
   isStreaming,
   currentStep,
@@ -367,14 +381,11 @@ const MessageBubble = memo(function MessageBubble({
     if (text) onLongPress(text);
   }, [message, onLongPress]);
 
-  // Sum of all LLM-call token counts in this message — rendered bottom-right
-  // in the assistant footer ("1,123sum"). Must live with the other hooks
-  // (above any conditional return) — a hook after `return null` breaks the
-  // Rules of Hooks on re-render.
-  const totalTokens = useMemo(
-    () => message.parts.reduce((sum, p) => sum + ((p as { tokens?: number }).tokens ?? 0), 0) || 0,
-    [message.parts],
-  );
+  // This turn's cost, recorded by the streaming hook. Not derived from the
+  // part badges: those answer different questions per part type (a reasoning
+  // card shows the thinking itself, a tool card its round trip) and one LLM
+  // call can produce several, so summing them double-counts.
+  const turnTokens = message.totalTokens ?? 0;
 
   // First-turn book info (static title/author/language/description/subjects).
   // Rendered as a context card, not a chat bubble.
@@ -464,11 +475,14 @@ const MessageBubble = memo(function MessageBubble({
         ))}
       </Pressable>
       {showGapIndicator && <StreamingIndicator step="thinking" />}
-      {/* Footer: copy button bottom-left, total token sum bottom-right. */}
+      {/* Footer: copy button bottom-left, token ledger bottom-right
+          ("+546/9,764sum" — this turn / running session total). */}
       <View style={s.assistantFooter}>
         {!isStreaming && <CopyButton onPress={copyText} colors={colors} />}
-        {totalTokens > 0 && (
-          <Text style={s.totalTokensText}>{formatTotalTokens(totalTokens)}</Text>
+        {turnTokens > 0 && (
+          <Text style={s.totalTokensText}>
+            {formatTurnAndSessionTokens(turnTokens, sessionSum ?? turnTokens)}
+          </Text>
         )}
       </View>
     </View>

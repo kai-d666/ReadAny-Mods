@@ -58,6 +58,12 @@ export interface Message {
   reasoning?: ReasoningStep[];
   partsOrder?: PartsOrderEntry[];
   createdAt: number;
+  /**
+   * Tokens consumed by every LLM call of this answer (prompt + completion,
+   * summed). This is the "this turn cost N" figure — it is NOT the sum of the
+   * part badges, which deliberately answer different questions per part type.
+   */
+  totalTokens?: number;
 }
 
 /** Records the order of parts as they appeared during streaming */
@@ -74,6 +80,12 @@ export interface PartsOrderEntry {
   citationIndex?: number;
   title?: string;
   markdown?: string;
+  /**
+   * The part's own badge count: a reasoning card carries the thinking's own
+   * tokens, a tool/text part carries the tokens of the call that produced it.
+   * Persisted here so the badges survive a reload.
+   */
+  tokens?: number;
 }
 
 export interface Thread {

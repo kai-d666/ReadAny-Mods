@@ -13,22 +13,29 @@ export interface BasePart {
   status: PartStatus;
   createdAt: number;
   updatedAt?: number;
+  /**
+   * The badge count shown on this part's header. What it measures depends on
+   * the part type, deliberately:
+   *  - `reasoning`  → the thinking's OWN tokens (provider `reasoning_tokens`,
+   *                   or a length estimate when the provider reports none)
+   *  - `tool_call`  → the tokens of the LLM call that issued it (prompt +
+   *                   completion) — the cost of that round trip
+   *  - `text`       → the tokens of the call that produced it; also feeds the
+   *                   desktop app's parts-sum footer
+   * They are NOT additive — the per-answer total lives on the message.
+   */
+  tokens?: number;
 }
 
 export interface TextPart extends BasePart {
   type: "text";
   text: string;
-  /** LLM-call token usage attached retroactively (plain-text turns) — used
-   *  by the assistant footer "sum" badge; not rendered inline. */
-  tokens?: number;
 }
 
 export interface ReasoningPart extends BasePart {
   type: "reasoning";
   text: string;
   thinkingType?: "thinking" | "planning" | "analyzing" | "deciding";
-  /** Total tokens consumed by the LLM call that produced this reasoning (prompt+completion). */
-  tokens?: number;
 }
 
 export interface ToolCallPart extends BasePart {
@@ -39,8 +46,6 @@ export interface ToolCallPart extends BasePart {
   error?: string;
   reasoning?: string;
   notice?: string;
-  /** Total tokens consumed by the LLM call that issued this tool call (prompt+completion). */
-  tokens?: number;
 }
 
 export interface CitationPart extends BasePart {
@@ -101,6 +106,12 @@ export interface MessageV2 {
   parts: Part[];
   createdAt: number;
   updatedAt?: number;
+  /**
+   * Tokens consumed by every LLM call of this answer (prompt + completion,
+   * summed) — the per-turn figure, and the basis of the session total. Absent
+   * on user/system messages and on rows written before this was recorded.
+   */
+  totalTokens?: number;
 }
 
 export interface ThreadV2 {

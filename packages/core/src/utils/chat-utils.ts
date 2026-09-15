@@ -49,6 +49,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
         threadId: m.threadId,
         role: m.role,
         parts: m.parts,
+        totalTokens: m.totalTokens,
         createdAt: m.createdAt,
       };
     }
@@ -77,6 +78,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
               id: entry.id,
               type: "text",
               text: entry.text || m.content,
+              tokens: entry.tokens,
               status: "completed",
               createdAt: m.createdAt,
             });
@@ -100,6 +102,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
                 type: "reasoning",
                 text: r.content,
                 thinkingType: r.type,
+                tokens: entry.tokens,
                 status: "completed",
                 createdAt: r.timestamp || m.createdAt,
               });
@@ -116,6 +119,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
                 args: tc.args,
                 result: tc.result,
                 error: tc.error,
+                tokens: entry.tokens,
                 status: tc.status || "completed",
                 createdAt: m.createdAt,
               });
@@ -155,6 +159,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
         threadId: m.threadId,
         role: m.role,
         parts,
+        totalTokens: m.totalTokens,
         createdAt: m.createdAt,
       };
     }
@@ -208,6 +213,7 @@ export function convertToMessageV2(messages: any[]): MessageV2[] {
       threadId: m.threadId,
       role: m.role,
       parts,
+      totalTokens: m.totalTokens,
       createdAt: m.createdAt,
     };
   });
