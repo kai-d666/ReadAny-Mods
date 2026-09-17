@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/codedogQBY/ReadAny/releases/latest">
-    <img src="https://img.shields.io/github/v/release/codedogQBY/ReadAny?color=blue&label=Download" alt="Release">
+  <a href="https://github.com/kai-d666/ReadAny-Mods/releases/latest">
+    <img src="https://img.shields.io/github/v/release/kai-d666/ReadAny-Mods?color=blue&label=Download" alt="Release">
   </a>
   <a href="https://github.com/codedogQBY/ReadAny/stargazers">
     <img src="https://img.shields.io/github/stars/codedogQBY/ReadAny?color=yellow" alt="Stars">
@@ -179,10 +179,10 @@ TXT 和 UMD 会在导入时转换为 EPUB，以支持阅读、笔记、搜索与
 |------|------|
 | macOS (Apple Silicon) | [下载 .dmg](https://github.com/codedogQBY/ReadAny/releases/latest) |
 | macOS (Intel) | [下载 .dmg](https://github.com/codedogQBY/ReadAny/releases/latest) |
-| Windows | [下载 .msi](https://github.com/codedogQBY/ReadAny/releases/latest) |
+| Windows | [下载 .msi](https://github.com/kai-d666/ReadAny-Mods/releases/latest) |
 | Linux | [下载 .AppImage](https://github.com/codedogQBY/ReadAny/releases/latest) |
 | iOS | [加入 TestFlight](https://testflight.apple.com/join/qNdvNv2p) |
-| Android | [下载 .apk](https://github.com/codedogQBY/ReadAny/releases/latest) |
+| Android | [下载 .apk](https://github.com/kai-d666/ReadAny-Mods/releases/latest) |
 
 #### Homebrew（macOS）
 
@@ -204,8 +204,8 @@ ReadAny 现已支持移动设备！
 **Expo (React Native) 版本：**
 ```bash
 # 克隆并设置
-git clone https://github.com/codedogQBY/ReadAny.git
-cd ReadAny
+git clone https://github.com/kai-d666/ReadAny-Mods.git
+cd ReadAny-Mods
 pnpm install
 
 # 安装/运行 iOS 开发构建
@@ -265,8 +265,8 @@ Expo Go。Expo Go 无法加载 ReadAny 当前依赖的原生模块和应用配�
 
 ```bash
 # 克隆
-git clone https://github.com/codedogQBY/ReadAny.git
-cd ReadAny
+git clone https://github.com/kai-d666/ReadAny-Mods.git
+cd ReadAny-Mods
 
 # 安装依赖
 pnpm install

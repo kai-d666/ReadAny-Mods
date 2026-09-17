@@ -21,8 +21,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/codedogQBY/ReadAny/releases/latest">
-    <img src="https://img.shields.io/github/v/release/codedogQBY/ReadAny?color=blue&label=Download" alt="Release">
+  <a href="https://github.com/kai-d666/ReadAny-Mods/releases/latest">
+    <img src="https://img.shields.io/github/v/release/kai-d666/ReadAny-Mods?color=blue&label=Download" alt="Release">
   </a>
   <a href="https://github.com/codedogQBY/ReadAny/stargazers">
     <img src="https://img.shields.io/github/stars/codedogQBY/ReadAny?color=yellow" alt="Stars">
@@ -179,10 +179,10 @@ TXT and UMD are imported by converting them to EPUB for reading, notes, search, 
 |----------|----------|
 | macOS (Apple Silicon) | [Download .dmg](https://github.com/codedogQBY/ReadAny/releases/latest) |
 | macOS (Intel) | [Download .dmg](https://github.com/codedogQBY/ReadAny/releases/latest) |
-| Windows | [Download .msi](https://github.com/codedogQBY/ReadAny/releases/latest) |
+| Windows | [Download .msi](https://github.com/kai-d666/ReadAny-Mods/releases/latest) |
 | Linux | [Download .AppImage](https://github.com/codedogQBY/ReadAny/releases/latest) |
 | iOS | [Join TestFlight](https://testflight.apple.com/join/qNdvNv2p) |
-| Android | [Download .apk](https://github.com/codedogQBY/ReadAny/releases/latest) |
+| Android | [Download .apk](https://github.com/kai-d666/ReadAny-Mods/releases/latest) |
 
 #### Homebrew (macOS)
 
@@ -204,8 +204,8 @@ ReadAny is now available on mobile devices!
 **Expo (React Native) Version:**
 ```bash
 # Clone and setup
-git clone https://github.com/codedogQBY/ReadAny.git
-cd ReadAny
+git clone https://github.com/kai-d666/ReadAny-Mods.git
+cd ReadAny-Mods
 pnpm install
 
 # Install/run the development build on iOS
@@ -266,8 +266,8 @@ Mobile app source lives in [`packages/app-expo`](packages/app-expo).
 
 ```bash
 # Clone
-git clone https://github.com/codedogQBY/ReadAny.git
-cd ReadAny
+git clone https://github.com/kai-d666/ReadAny-Mods.git
+cd ReadAny-Mods
 
 # Install
 pnpm install
