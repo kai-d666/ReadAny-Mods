@@ -348,7 +348,7 @@ iOS 的 Xcode 或 Android 的 Android Studio/SDK。
 ---
 
 <p align="center">
-  用 ❤️ 打造 by ReadAny Team
+  基于 <a href="https://github.com/codedogQBY/ReadAny">ReadAny</a> 的个人魔改版 · 原项目 © ReadAny Team (GPL-3.0)
 </p>
 
 <p align="center">
@@ -356,30 +356,3 @@ iOS 的 Xcode 或 Android 的 Android Studio/SDK。
   <a href="https://github.com/codedogQBY/ReadAny/issues">🐛 问题反馈</a>
 </p>
 
-<p align="center">
-  <img src="assets/小红书群.jpg" width="200" alt="小红书群">
-  <img src="assets/微信群.jpg" width="200" alt="微信群">
-</p>
-
-## ☕ 请作者喝杯咖啡
-
-如果你觉得 ReadAny 对你有帮助，欢迎请我喝杯咖啡，支持项目的持续开发！
-
-<p align="center">
-  <img src="assets/微信赞赏码.jpg" width="200" alt="微信赞赏码">
-  <img src="assets/支付宝收款码.jpg" width="200" alt="支付宝收款码">
-</p>
-
-<p align="center">
-  <a href="https://ifdian.net/a/codedogQBY">餐桌：爱发电支持</a>
-</p>
-
----
-
-## Star 历史
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=codedogQBY/ReadAny&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=codedogQBY/ReadAny&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/image?repos=codedogQBY/ReadAny&type=Date" />
-</picture>

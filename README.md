@@ -350,7 +350,7 @@ Thanks to [linux.do](https://linux.do/) — a vibrant Chinese tech community whe
 ---
 
 <p align="center">
-  Made with ❤️ by the ReadAny Team
+  基于 <a href="https://github.com/codedogQBY/ReadAny">ReadAny</a> 的个人魔改版 · 原项目 © ReadAny Team (GPL-3.0)
 </p>
 
 <p align="center">
@@ -358,30 +358,3 @@ Thanks to [linux.do](https://linux.do/) — a vibrant Chinese tech community whe
   <a href="https://github.com/codedogQBY/ReadAny/issues">🐛 Issues</a>
 </p>
 
-<p align="center">
-  <img src="assets/小红书群.jpg" width="200" alt="小红书群">
-  <img src="assets/微信群.jpg" width="200" alt="微信群">
-</p>
-
-## ☕ Support the Project
-
-If you find ReadAny helpful, consider buying me a coffee to support ongoing development!
-
-<p align="center">
-  <img src="assets/微信赞赏码.jpg" width="200" alt="微信赞赏码">
-  <img src="assets/支付宝收款码.jpg" width="200" alt="支付宝收款码">
-</p>
-
-<p align="center">
-  <a href="https://ifdian.net/a/codedogQBY">Dining Table on Afdian</a>
-</p>
-
----
-
-## Star History
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=codedogQBY/ReadAny&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=codedogQBY/ReadAny&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/image?repos=codedogQBY/ReadAny&type=Date" />
-</picture>
