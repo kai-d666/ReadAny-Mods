@@ -351,8 +351,3 @@ iOS 的 Xcode 或 Android 的 Android Studio/SDK。
   基于 <a href="https://github.com/codedogQBY/ReadAny">ReadAny</a> 的个人魔改版 · 原项目 © ReadAny Team (GPL-3.0)
 </p>
 
-<p align="center">
-  <a href="https://github.com/codedogQBY/ReadAny/discussions">💬 讨论区</a> •
-  <a href="https://github.com/codedogQBY/ReadAny/issues">🐛 问题反馈</a>
-</p>
-

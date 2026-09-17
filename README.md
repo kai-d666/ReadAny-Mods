@@ -353,8 +353,3 @@ Thanks to [linux.do](https://linux.do/) — a vibrant Chinese tech community whe
   基于 <a href="https://github.com/codedogQBY/ReadAny">ReadAny</a> 的个人魔改版 · 原项目 © ReadAny Team (GPL-3.0)
 </p>
 
-<p align="center">
-  <a href="https://github.com/codedogQBY/ReadAny/discussions">💬 Discussions</a> •
-  <a href="https://github.com/codedogQBY/ReadAny/issues">🐛 Issues</a>
-</p>
-
