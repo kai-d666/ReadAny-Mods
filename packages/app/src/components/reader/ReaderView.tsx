@@ -3128,7 +3128,8 @@ export function ReaderView({ bookId, tabId }: ReaderViewProps) {
                 text={translationText}
                 position={translationPos}
                 dictionary={translationMode === "dictionary"}
-                preferPlacement={translationPlacement}
+                preferPlacement={translationMode === "dictionary" ? undefined : translationPlacement}
+                topOffset={(readerTitleBarVisible ? 32 : 0) + (toolbarVisible ? 44 : 0) + 8}
                 onClose={closeTranslationPopover}
               />
             )}

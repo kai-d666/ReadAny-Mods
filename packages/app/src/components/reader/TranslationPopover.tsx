@@ -1,14 +1,13 @@
-import { useTranslator } from "@/hooks/useTranslator";
 /**
- * TranslationPopover — compact floating popover for translation
- * Robust positioning: always stays within viewport
+ * TranslationPopover — compact floating popover for word lookup and translation
+ * Content-driven auto-height with customizable persistent width.
  */
+import { useTranslator } from "@/hooks/useTranslator";
 import { lookupLocalDictionary, type ECDICTEntry } from "@/lib/ecdict-lookup";
 import { useSettingsStore } from "@/stores/settings-store";
 import { buildDictionaryPrompt } from "@readany/core/translation/providers";
 import {
   TRANSLATOR_PROVIDERS,
-  type TranslationTargetLang,
   type TranslatorName,
 } from "@readany/core/types/translation";
 import { BookOpen, Check, ChevronDown, Copy, Loader2, RefreshCw, Volume2 } from "lucide-react";
@@ -30,12 +29,14 @@ interface TranslationPopoverProps {
   dictionary?: boolean;
   /** Preferred placement relative to anchor (e.g. "below" when SelectionPopover is above) */
   preferPlacement?: "above" | "below" | "right" | "left";
+  /** Distance in pixels to avoid from the top edge (e.g. TabBar, Toolbar) */
+  topOffset?: number;
 }
 
-const POPOVER_WIDTH = 288; // w-72 = 18rem = 288px
-const POPOVER_MIN_HEIGHT = 100; // header + content min height
-const POPOVER_MAX_HEIGHT = 200; // max total height
+const DEFAULT_POPOVER_WIDTH = 320;
 const POPOVER_MIN_WIDTH = 220;
+const POPOVER_FALLBACK_HEIGHT = 80;
+const POPOVER_MAX_CONTENT_HEIGHT = 460;
 const PADDING = 16;
 const GAP = 8;
 
@@ -45,67 +46,65 @@ export function TranslationPopover({
   onClose,
   dictionary = false,
   preferPlacement,
+  topOffset,
 }: TranslationPopoverProps) {
   const { t } = useTranslation();
   const translationConfig = useSettingsStore((s) => s.translationConfig);
   const updateTranslationConfig = useSettingsStore((s) => s.updateTranslationConfig);
+  const targetLang = translationConfig.targetLang;
 
-  // Local state
-  const [targetLang] = useState<TranslationTargetLang>(translationConfig.targetLang);
+  // Local UI state
   const [translation, setTranslation] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
-  const [providerRevision, setProviderRevision] = useState(0);
-  const translationRequestKey = `${targetLang}:${providerRevision}`;
-
-  // Bump to force a fresh request after clearing the cache
   const [refreshKey, setRefreshKey] = useState(0);
-  // Local ECDICT hit (offline, fastest) — checked first for any dictionary lookup
-  const [ecdictEntry, setEcdictEntry] = useState<ECDICTEntry | null>(null);
-  // Gate: AI must wait until the local lookup settles, otherwise a local hit
-  // would race with an already-fired AI request and overwrite the result.
-  // Uses a ref for the *instant* gate (state would not be visible to effects
-  // running in the same commit) + state to re-render when the gate opens.
-  const [ecdictChecking, setEcdictChecking] = useState(false);
-  const ecdictCheckingRef = useRef(false);
-  // Bumped after the local lookup settles — forces the AI effect to re-evaluate
-  // (setState for the gate can be batched away, leaving deps unchanged).
-  const [ecdictDoneTick, setEcdictDoneTick] = useState(0);
-  // Non-AI method (ECDICT) falls back to AI only when enabled.
-  // Declared early — effects below reference it (avoid TDZ).
-  const useDictionaryFallback =
-    translationConfig.dictionaryFallback !== false;
 
-  // Local dictionary lookup — only in ECDICT mode (the chosen method decides
-  // the primary engine; AI mode goes straight to AI). Hits skip AI fallback.
+  // ECDICT offline lookup state
+  const isEcdictMode = dictionary && translationConfig.dictionaryMethod === "ecdict";
+  const [ecdictSearching, setEcdictSearching] = useState(false);
+  const [ecdictEntry, setEcdictEntry] = useState<ECDICTEntry | null>(null);
+  const [ecdictChecked, setEcdictChecked] = useState(false);
+
+  const useDictionaryFallback = translationConfig.dictionaryFallback !== false;
+
+  // 1. Local ECDICT lookup
   useEffect(() => {
-    if (!dictionary || translationConfig.dictionaryMethod !== "ecdict") return;
+    if (!isEcdictMode) {
+      setEcdictEntry(null);
+      setEcdictSearching(false);
+      setEcdictChecked(false);
+      return;
+    }
+
     let cancelled = false;
     setEcdictEntry(null);
-    ecdictCheckingRef.current = true;
-    setEcdictChecking(true);
+    setEcdictSearching(true);
+    setEcdictChecked(false);
+
     lookupLocalDictionary(text)
       .then((entry) => {
         if (cancelled) return;
-        console.log("[ECDICT] word:", text, "hit:", !!entry);
         setEcdictEntry(entry);
       })
+      .catch((err) => {
+        console.warn("[ECDICT] lookup error for", text, err);
+      })
       .finally(() => {
-        ecdictCheckingRef.current = false;
-        setEcdictDoneTick((t) => t + 1);
-        if (!cancelled) setEcdictChecking(false);
+        if (!cancelled) {
+          setEcdictSearching(false);
+          setEcdictChecked(true);
+        }
       });
+
     return () => {
       cancelled = true;
     };
-  }, [dictionary, translationConfig.dictionaryMethod, text, refreshKey]);
-  // Dictionary mode resolves its own prompt from settings (live targetLang, so
-  // switching the language in the popover re-renders the prompt too).
+  }, [text, isEcdictMode, refreshKey]);
+
+  // Prompt configuration
   const systemPrompt = useMemo(() => {
     if (!dictionary) return undefined;
-    const p = buildDictionaryPrompt(translationConfig.dictionaryPrompt, "AUTO", targetLang, text);
-    console.log("[DictPrompt] word:", text, "prompt:", p.slice(0, 120));
-    return p;
+    return buildDictionaryPrompt(translationConfig.dictionaryPrompt, "AUTO", targetLang, text);
   }, [dictionary, translationConfig.dictionaryPrompt, targetLang, text]);
 
   const { translate, clearCache, loading, error, provider } = useTranslator({
@@ -114,178 +113,74 @@ export function TranslationPopover({
     mode: dictionary ? "dictionary" : "selection",
   });
 
-  // Refs
+  // Decide if AI/online translation should run:
+  // - Selection translation: always online
+  // - Dictionary mode with AI engine: always online
+  // - Dictionary mode with ECDICT: only when local lookup finished with NO hit AND fallback is enabled
+  const shouldRunAI = useMemo(() => {
+    if (!dictionary) return true;
+    if (translationConfig.dictionaryMethod === "ai") return true;
+    if (isEcdictMode && ecdictChecked && !ecdictEntry && useDictionaryFallback) return true;
+    return false;
+  }, [dictionary, translationConfig.dictionaryMethod, isEcdictMode, ecdictChecked, ecdictEntry, useDictionaryFallback]);
+
+  // In-flight request deduplication for StrictMode / rapid clicks
+  const inflightTranslationsRef = useRef<Map<string, Promise<string[]>>>(new Map());
+
+  useEffect(() => {
+    if (!shouldRunAI) {
+      setTranslation(null);
+      return;
+    }
+
+    let cancelled = false;
+    setTranslation(null);
+
+    const input = text.split("\n").join(" ").trim();
+    const requestKey = `${input}:${targetLang}:${translationConfig.provider.id}`;
+    let request = inflightTranslationsRef.current.get(requestKey);
+    if (!request) {
+      request = translate([input]).finally(() => {
+        inflightTranslationsRef.current.delete(requestKey);
+      });
+      inflightTranslationsRef.current.set(requestKey, request);
+    }
+
+    request
+      .then((results) => {
+        if (!cancelled && results[0]) setTranslation(results[0]);
+      })
+      .catch((err) => {
+        console.error("[TranslationPopover] error:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldRunAI, text, targetLang, translate, refreshKey, translationConfig.provider.id]);
+
+  // DOM Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const providerRef = useRef<HTMLDivElement>(null);
 
-  // Resizable size (height null = auto until the user drags the handle).
-  // Restores the last dragged size from settings. Resizing only changes the
-  // box — position stays put (no jumping). Pointer capture is released on
-  // pointerup AND pointercancel so the popover never gets "dragged along".
-  const [size, setSize] = useState<{ width: number; height: number | null }>(
-    translationConfig.popoverSize?.[dictionary ? "dictionary" : "selection"] ?? {
-      width: POPOVER_WIDTH,
-      height: null,
-    },
-  );
-  const sizeRef = useRef(size);
-  sizeRef.current = size;
+  // Width is user-resizable and remembered; height is ALWAYS content-driven (auto)
+  const modeKey = dictionary ? "dictionary" : "selection";
+  const [width, setWidth] = useState<number>(() => {
+    return translationConfig.popoverSize?.[modeKey]?.width ?? DEFAULT_POPOVER_WIDTH;
+  });
+  const widthRef = useRef(width);
+  widthRef.current = width;
 
-  // Deduplicate in-flight translation requests: React StrictMode runs effects
-  // twice in dev, which would fire two identical API calls per lookup — a
-  // fast path to provider rate limits (SiliconFlow hangs silently when
-  // rate-limited). The second effect reuses the first request instead.
-  const inflightTranslationsRef = useRef<Map<string, Promise<string[]>>>(new Map());
-
-  // Resize drag state (follows the project's ResizeHandle pattern: element-level
-  // pointer events + setPointerCapture + userSelect lock).
+  // Resize drag handling (horizontally adjusts width, reflows text & auto-adapts height)
   const [isResizing, setIsResizing] = useState(false);
-  const resizeStartRef = useRef({ x: 0, y: 0, w: POPOVER_WIDTH, h: POPOVER_MIN_HEIGHT });
+  const resizeStartRef = useRef({ x: 0, startW: DEFAULT_POPOVER_WIDTH });
 
-  // Prevent text selection while dragging (ResizeHandle pattern)
-  useEffect(() => {
-    if (isResizing) {
-      document.body.style.userSelect = "none";
-      document.body.style.cursor = "se-resize";
-    }
-    return () => {
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [isResizing]);
-
-  // Cleanup on unmount (popover might close while dragging)
-  useEffect(() => {
-    return () => {
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, []);
-
-  // Position: above the anchor when there is room, else below; when there is
-  // no vertical room at all, flip to the anchor's right (then left). Anchored
-  // on the word/selection's edges so it never covers it.
-  // preferMode: keep the current direction (used after a resize) — the box is
-  // re-clamped to the viewport without switching direction.
-  const calculatePosition = useCallback(
-    (preferMode?: "above" | "below" | "right" | "left") => {
-    const popoverHeight =
-      sizeRef.current.height ??
-      Math.min(
-        containerRef.current?.offsetHeight || POPOVER_MIN_HEIGHT,
-        POPOVER_MAX_HEIGHT,
-      );
-    const popoverWidth = containerRef.current?.offsetWidth || POPOVER_WIDTH;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    const anchorTop = position.top ?? position.y;
-    const anchorBottom = position.bottom ?? position.y;
-    const anchorLeft = position.left ?? position.x;
-    const anchorRight = position.right ?? position.x;
-    const anchorCenterY = (anchorTop + anchorBottom) / 2;
-
-    const spaceAbove = anchorTop - GAP;
-    const spaceBelow = viewportHeight - anchorBottom - GAP;
-    const spaceLeft = anchorLeft - GAP;
-    const spaceRight = viewportWidth - anchorRight - GAP;
-
-    let x: number;
-    let y: number;
-    let mode: "above" | "below" | "right" | "left";
-
-    const targetMode = preferMode ?? preferPlacement;
-    if (targetMode) {
-      mode = targetMode;
-      if (mode === "above") {
-        x = position.x;
-        y = anchorTop - GAP;
-      } else if (mode === "below") {
-        x = position.x;
-        y = anchorBottom + GAP;
-      } else if (mode === "right") {
-        x = anchorRight + GAP;
-        y = anchorCenterY;
-      } else {
-        x = anchorLeft - GAP - popoverWidth;
-        y = anchorCenterY;
-      }
-    } else if (!dictionary && spaceRight >= popoverWidth) {
-      // Selection translation prefers left/right placement
-      mode = "right";
-      x = anchorRight + GAP;
-      y = anchorCenterY;
-    } else if (!dictionary && spaceLeft >= popoverWidth) {
-      mode = "left";
-      x = anchorLeft - GAP - popoverWidth;
-      y = anchorCenterY;
-    } else if (spaceAbove >= popoverHeight) {
-      mode = "above";
-      x = position.x;
-      y = anchorTop - GAP;
-    } else if (spaceBelow >= popoverHeight) {
-      mode = "below";
-      x = position.x;
-      y = anchorBottom + GAP;
-    } else if (spaceRight >= popoverWidth) {
-      // No vertical room — place to the right of the anchor
-      mode = "right";
-      x = anchorRight + GAP;
-      y = anchorCenterY;
-    } else if (spaceLeft >= popoverWidth) {
-      // No vertical room and no right room — place to the left
-      mode = "left";
-      x = anchorLeft - GAP - popoverWidth;
-      y = anchorCenterY;
-    } else {
-      // Nothing fits — use the side with the most room, clamped
-      const rooms = [
-        { mode: "above" as const, room: spaceAbove },
-        { mode: "below" as const, room: spaceBelow },
-        { mode: "right" as const, room: spaceRight },
-        { mode: "left" as const, room: spaceLeft },
-      ].sort((a, b) => b.room - a.room)[0];
-      mode = rooms.mode;
-      if (mode === "above") {
-        x = position.x;
-        y = PADDING + popoverHeight;
-      } else if (mode === "below") {
-        x = position.x;
-        y = anchorBottom + GAP;
-        y = Math.min(y, viewportHeight - popoverHeight - PADDING);
-      } else if (mode === "right") {
-        x = anchorRight + GAP;
-        y = anchorCenterY;
-      } else {
-        x = anchorLeft - GAP - popoverWidth;
-        y = anchorCenterY;
-      }
-    }
-
-    // Clamp to viewport
-    if (mode === "above" || mode === "below") {
-      const halfWidth = popoverWidth / 2;
-      x = Math.max(halfWidth + PADDING, Math.min(x, viewportWidth - halfWidth - PADDING));
-    } else {
-      y = Math.max(
-        PADDING + popoverHeight / 2,
-        Math.min(y, viewportHeight - popoverHeight / 2 - PADDING),
-      );
-    }
-
-    return { x, y, mode };
-  }, [position, dictionary]);
-
-  // Resize handlers are defined after calculatePosition — their deps reference
-  // it and would hit TDZ otherwise (this caused a white-screen crash before).
   const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     resizeStartRef.current = {
       x: e.clientX,
-      y: e.clientY,
-      w: sizeRef.current.width,
-      h: sizeRef.current.height ?? containerRef.current?.offsetHeight ?? POPOVER_MIN_HEIGHT,
+      startW: widthRef.current,
     };
     setIsResizing(true);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -294,17 +189,15 @@ export function TranslationPopover({
   const handleResizePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isResizing) return;
-      const { x, y, w, h } = resizeStartRef.current;
-      const next = {
-        width: Math.max(POPOVER_MIN_WIDTH, Math.min(w + (e.clientX - x), window.innerWidth - PADDING * 2)),
-        height: Math.max(POPOVER_MIN_HEIGHT, Math.min(h + (e.clientY - y), window.innerHeight - PADDING * 2)),
-      };
-      sizeRef.current = next;
-      setSize(next);
-      // Real-time position update during the drag (keep direction, clamp to viewport)
-      setPos(calculatePosition(posRef.current.mode));
+      const deltaX = e.clientX - resizeStartRef.current.x;
+      const nextWidth = Math.max(
+        POPOVER_MIN_WIDTH,
+        Math.min(resizeStartRef.current.startW + deltaX, window.innerWidth - PADDING * 2),
+      );
+      widthRef.current = nextWidth;
+      setWidth(nextWidth);
     },
-    [isResizing, calculatePosition],
+    [isResizing],
   );
 
   const handleResizePointerUp = useCallback(
@@ -312,31 +205,201 @@ export function TranslationPopover({
       if (!isResizing) return;
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
       setIsResizing(false);
-      // Remember the dragged size for this mode (selection / dictionary)
       updateTranslationConfig({
         popoverSize: {
           ...translationConfig.popoverSize,
-          [dictionary ? "dictionary" : "selection"]: sizeRef.current,
+          [modeKey]: { width: widthRef.current },
         },
       });
-      // Re-anchor with the final size, keeping the current direction so the
-      // box never escapes the viewport (and never jumps direction).
-      setPos(calculatePosition(posRef.current.mode));
     },
-    [isResizing, updateTranslationConfig, calculatePosition, translationConfig, dictionary],
+    [isResizing, modeKey, updateTranslationConfig, translationConfig.popoverSize],
+  );
+
+  // Lock cursor and selection during resize
+  useEffect(() => {
+    if (isResizing) {
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "ew-resize";
+    }
+    return () => {
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizing]);
+
+  // Position calculation with real measured height and boundary clamping
+  const calculatePosition = useCallback(
+    (preferMode?: "above" | "below" | "right" | "left") => {
+      const popoverHeight = containerRef.current?.offsetHeight || POPOVER_FALLBACK_HEIGHT;
+      const popoverWidth = widthRef.current || containerRef.current?.offsetWidth || DEFAULT_POPOVER_WIDTH;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      // Minimum clearance from window top (accounts for TabBar 32px, toolbar 44px, and padding)
+      const topAvoidance = Math.max(PADDING, (topOffset ?? 0) > 0 ? (topOffset ?? 0) : PADDING);
+
+      const anchorTop = position.top ?? position.y;
+      const anchorBottom = position.bottom ?? position.y;
+      const anchorLeft = position.left ?? position.x;
+      const anchorRight = position.right ?? position.x;
+      const anchorCenterY = (anchorTop + anchorBottom) / 2;
+
+      const spaceAbove = anchorTop - topAvoidance - GAP;
+      const spaceBelow = viewportHeight - anchorBottom - GAP - PADDING;
+      const spaceLeft = anchorLeft - GAP;
+      const spaceRight = viewportWidth - anchorRight - GAP;
+
+      let x: number;
+      let y: number;
+      let mode: "above" | "below" | "right" | "left";
+
+      // 1. Explicit user request (e.g. during resize drag preservation or preferPlacement)
+      const targetMode = preferMode ?? preferPlacement;
+      if (targetMode) {
+        if (targetMode === "above" && spaceAbove >= popoverHeight) {
+          mode = "above";
+          x = position.x;
+          y = anchorTop - GAP;
+        } else if (targetMode === "below" && spaceBelow >= popoverHeight) {
+          mode = "below";
+          x = position.x;
+          y = anchorBottom + GAP;
+        } else if (targetMode === "right" && spaceRight >= popoverWidth) {
+          mode = "right";
+          x = anchorRight + GAP;
+          y = anchorCenterY;
+        } else if (targetMode === "left" && spaceLeft >= popoverWidth) {
+          mode = "left";
+          x = anchorLeft - GAP - popoverWidth;
+          y = anchorCenterY;
+        } else {
+          // Requested mode cannot cleanly fit — fall back to side with more space
+          const fitsAbove = spaceAbove >= popoverHeight;
+          const fitsBelow = spaceBelow >= popoverHeight;
+          if (fitsBelow || spaceBelow >= spaceAbove) {
+            mode = "below";
+            x = position.x;
+            y = anchorBottom + GAP;
+          } else if (fitsAbove) {
+            mode = "above";
+            x = position.x;
+            y = anchorTop - GAP;
+          } else {
+            mode = targetMode;
+            x = position.x;
+            y = targetMode === "above" ? anchorTop - GAP : anchorBottom + GAP;
+          }
+        }
+      } else if (!dictionary && spaceRight >= popoverWidth) {
+        // Selection translation prefers left/right placement
+        mode = "right";
+        x = anchorRight + GAP;
+        y = anchorCenterY;
+      } else if (!dictionary && spaceLeft >= popoverWidth) {
+        mode = "left";
+        x = anchorLeft - GAP - popoverWidth;
+        y = anchorCenterY;
+      } else {
+        // Dictionary lookup or vertical placement:
+        // When anchor is in upper half of viewport, strongly prefer BELOW to naturally avoid the top edge.
+        // When in lower half, prefer ABOVE to avoid the bottom edge.
+        const isUpperHalf = anchorCenterY < viewportHeight / 2;
+
+        if (isUpperHalf && spaceBelow >= popoverHeight) {
+          mode = "below";
+          x = position.x;
+          y = anchorBottom + GAP;
+        } else if (!isUpperHalf && spaceAbove >= popoverHeight) {
+          mode = "above";
+          x = position.x;
+          y = anchorTop - GAP;
+        } else if (spaceBelow >= popoverHeight) {
+          mode = "below";
+          x = position.x;
+          y = anchorBottom + GAP;
+        } else if (spaceAbove >= popoverHeight) {
+          mode = "above";
+          x = position.x;
+          y = anchorTop - GAP;
+        } else if (spaceRight >= popoverWidth) {
+          mode = "right";
+          x = anchorRight + GAP;
+          y = anchorCenterY;
+        } else if (spaceLeft >= popoverWidth) {
+          mode = "left";
+          x = anchorLeft - GAP - popoverWidth;
+          y = anchorCenterY;
+        } else {
+          // Tight space: pick whichever side has more room
+          if (spaceBelow >= spaceAbove) {
+            mode = "below";
+            x = position.x;
+            y = anchorBottom + GAP;
+          } else {
+            mode = "above";
+            x = position.x;
+            y = anchorTop - GAP;
+          }
+        }
+      }
+
+      // 2. Rigid boundary clamping across all modes
+      if (mode === "above") {
+        const halfWidth = popoverWidth / 2;
+        x = Math.max(halfWidth + PADDING, Math.min(x, viewportWidth - halfWidth - PADDING));
+        // Popover top in DOM is (y - popoverHeight). Must stay >= topAvoidance!
+        if (y - popoverHeight < topAvoidance) {
+          if (spaceBelow > spaceAbove) {
+            mode = "below";
+            y = Math.max(topAvoidance, Math.min(anchorBottom + GAP, viewportHeight - popoverHeight - PADDING));
+          } else {
+            y = Math.max(topAvoidance + popoverHeight, y);
+          }
+        }
+      } else if (mode === "below") {
+        const halfWidth = popoverWidth / 2;
+        x = Math.max(halfWidth + PADDING, Math.min(x, viewportWidth - halfWidth - PADDING));
+        // Popover top in DOM is y. Must be >= topAvoidance!
+        y = Math.max(topAvoidance, y);
+        // Popover bottom in DOM is y + popoverHeight. Must stay <= viewportHeight - PADDING!
+        if (y + popoverHeight > viewportHeight - PADDING) {
+          if (spaceAbove > spaceBelow && spaceAbove >= popoverHeight) {
+            mode = "above";
+            y = Math.max(topAvoidance + popoverHeight, anchorTop - GAP);
+          } else {
+            y = Math.min(y, Math.max(topAvoidance, viewportHeight - popoverHeight - PADDING));
+          }
+        }
+      } else {
+        // mode === "right" || mode === "left"
+        x = Math.max(PADDING, Math.min(x, viewportWidth - popoverWidth - PADDING));
+        y = Math.max(
+          topAvoidance + popoverHeight / 2,
+          Math.min(y, viewportHeight - popoverHeight / 2 - PADDING),
+        );
+      }
+
+      return { x, y, mode };
+    },
+    [position, dictionary, preferPlacement, topOffset],
   );
 
   const [pos, setPos] = useState(() => calculatePosition());
   const posRef = useRef(pos);
   posRef.current = pos;
 
-  // Update position when content changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: content height changes after loading/translation updates.
+  // Real-time position update whenever container DOM dimensions change
   useEffect(() => {
-    setPos(calculatePosition());
-  }, [calculatePosition, translation, loading]);
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      setPos(calculatePosition(posRef.current.mode));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [calculatePosition]);
 
-  // Update position on resize
+  // Window resize handler
   useEffect(() => {
     const handleResize = () => setPos(calculatePosition());
     window.addEventListener("resize", handleResize);
@@ -346,8 +409,11 @@ export function TranslationPopover({
   // Click outside to close
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (containerRef.current && !containerRef.current.contains(target)) {
         onClose();
+      } else if (providerRef.current && !providerRef.current.contains(target)) {
+        setProviderOpen(false);
       }
     };
     const timer = setTimeout(() => document.addEventListener("mousedown", handler), 50);
@@ -366,6 +432,7 @@ export function TranslationPopover({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  // Audio pronunciation (TTS)
   const handleSpeak = useCallback(async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -392,49 +459,7 @@ export function TranslationPopover({
     void handleSpeak();
   }, [dictionary, translationConfig.dictionarySpeak, handleSpeak]);
 
-  // Fetch translation (AI path; skipped on a local dictionary hit or while
-  // the local lookup is still settling. For non-AI dictionary methods, AI
-  // only runs as fallback when enabled.)
-  useEffect(() => {
-    // Instant gate via ref (state wouldn't be visible in the same commit)
-    if (ecdictCheckingRef.current || ecdictEntry) return;
-    if (dictionary && translationConfig.dictionaryMethod !== "ai" && !useDictionaryFallback)
-      return;
-    void translationRequestKey;
-    let cancelled = false;
-    setTranslation(null);
-
-    const input = text.split("\n").join(" ").trim();
-    const requestKey = `${input}:${targetLang}`;
-    let request = inflightTranslationsRef.current.get(requestKey);
-    if (!request) {
-      request = translate([input]).finally(() => {
-        inflightTranslationsRef.current.delete(requestKey);
-      });
-      inflightTranslationsRef.current.set(requestKey, request);
-    }
-    request
-      .then((results) => {
-        if (!cancelled && results[0]) setTranslation(results[0]);
-      })
-      .catch((err) => console.error("Translation error:", err));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    text,
-    targetLang,
-    translate,
-    systemPrompt,
-    refreshKey,
-    ecdictEntry,
-    ecdictChecking,
-    ecdictDoneTick,
-    useDictionaryFallback,
-    translationConfig.dictionaryMethod,
-  ]);
-
+  // Provider switching
   const handleProviderChange = (providerId: TranslatorName, providerName: string) => {
     updateTranslationConfig({
       provider: {
@@ -443,21 +468,20 @@ export function TranslationPopover({
         name: providerName,
       },
     });
-    setProviderRevision((revision) => revision + 1);
     setProviderOpen(false);
   };
 
+  // Copy result
   const handleCopy = async () => {
-    if (translation) {
-      await navigator.clipboard.writeText(translation);
+    const textToCopy = translation || ecdictEntry?.translation;
+    if (textToCopy) {
+      await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
-  // Get provider display name — must reflect the model actually used by this
-  // popover instance (dictionary mode reads dictionaryModel, normal mode
-  // selectionModel), showing the concrete model name rather than the endpoint.
+  // Provider display name resolution
   const aiConfig = useSettingsStore((s) => s.aiConfig);
   const sel = dictionary ? translationConfig.dictionaryModel : translationConfig.selectionModel;
   const endpointId =
@@ -473,13 +497,19 @@ export function TranslationPopover({
         ? t(providerLabel.labelKey)
         : translationConfig.provider.name;
 
+  // Maximum allowed height to guarantee full viewport & topAvoidance clearance
+  const topAvoidance = Math.max(PADDING, (topOffset ?? 0) > 0 ? (topOffset ?? 0) : PADDING);
+  const maxAllowedHeight = Math.min(
+    POPOVER_MAX_CONTENT_HEIGHT,
+    Math.max(160, (typeof window !== "undefined" ? window.innerHeight : 800) - topAvoidance - PADDING * 2),
+  );
+
   return (
     <div
       ref={containerRef}
-      className="fixed z-50"
+      className="fixed z-50 select-none"
       style={{
-        width: size.width,
-        // Never wider than the viewport (narrow windows)
+        width,
         maxWidth: "calc(100vw - 32px)",
         left: pos.x,
         top: pos.y,
@@ -492,29 +522,29 @@ export function TranslationPopover({
       }}
     >
       <div
-        className="relative overflow-hidden rounded-lg border border-border shadow-lg"
+        className="relative flex flex-col overflow-hidden rounded-lg border border-border shadow-lg"
         style={{
-          height: size.height ?? undefined,
-          // Clamp against the viewport so content never escapes the window
-          maxHeight: "calc(100vh - 32px)",
-          // Explicit theme colors: never let the popover end up with a
-          // transparent background (would bleed text onto the page below)
+          // Content-driven natural auto height!
+          height: "auto",
+          maxHeight: `${maxAllowedHeight}px`,
           backgroundColor: "var(--background)",
           color: "var(--foreground)",
         }}
       >
-        {/* Resize handle (bottom-right) — ResizeHandle pattern */}
+        {/* Resize handle (bottom-right: drags width horizontally) */}
         <div
-          className="absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize"
+          className="absolute bottom-0 right-0 z-10 flex h-4 w-4 cursor-ew-resize items-end justify-end p-0.5"
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}
           onPointerUp={handleResizePointerUp}
           onPointerCancel={handleResizePointerUp}
+          title={t("common.resize", "拖拽调节宽度")}
         >
-          <div className="absolute bottom-0.5 right-0.5 h-1.5 w-1.5 border-b-2 border-r-2 border-muted-foreground/40" />
+          <div className="h-2 w-2 border-b-2 border-r-2 border-muted-foreground/40 hover:border-foreground transition-colors" />
         </div>
-        {/* Header: Language selector + Close */}
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+
+        {/* Header: Method/Provider + Speak + Refresh */}
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
           <div className="flex min-w-0 items-center gap-2">
             {dictionary && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -529,9 +559,7 @@ export function TranslationPopover({
             <div className="relative min-w-0" ref={providerRef}>
               <button
                 type="button"
-                onClick={() => {
-                  setProviderOpen(!providerOpen);
-                }}
+                onClick={() => setProviderOpen(!providerOpen)}
                 className="flex max-w-28 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 title={providerName}
               >
@@ -565,7 +593,7 @@ export function TranslationPopover({
           </div>
 
           <div className="flex items-center gap-0.5">
-            {/* 查词模式：喇叭重读按钮（点击用已配置 TTS 朗读原词，对齐安卓 commit d0977159） */}
+            {/* Pronounce word in dictionary mode */}
             {dictionary && (
               <button
                 type="button"
@@ -577,13 +605,27 @@ export function TranslationPopover({
               </button>
             )}
 
-            {/* Refresh: clear this word's cache and re-request (top-right corner).
-                Shown while loading too — a stuck request is exactly when you
-                want to retry. */}
+            {/* Quick copy in header (available for both ECDICT and AI translation) */}
+            {!loading && !error && (translation || ecdictEntry) && (
+              <button
+                type="button"
+                title={copied ? t("common.copied", "已复制") : t("common.copy", "复制")}
+                className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => void handleCopy()}
+              >
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 text-green-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
+
+            {/* Refresh cache & retry */}
             {(loading || (!error && translation)) && (
               <button
                 type="button"
-                title="清除缓存并重新翻译"
+                title={t("common.retry", "清除缓存并重新翻译")}
                 className="flex shrink-0 items-center rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                 onClick={() => {
                   void clearCache(text).then(() => setRefreshKey((k) => k + 1));
@@ -595,10 +637,14 @@ export function TranslationPopover({
           </div>
         </div>
 
-        {/* Translation content */}
-        <div className="flex h-full flex-col p-3">
-          <div className="min-h-0 flex-1 overflow-y-auto">
-          {dictionary && ecdictEntry ? (
+        {/* Translation content (naturally wraps, scrolls if exceeding maxHeight) */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 select-text">
+          {isEcdictMode && ecdictSearching ? (
+            <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{t("common.loading", "查询中...")}</span>
+            </div>
+          ) : isEcdictMode && ecdictEntry ? (
             <div className="space-y-1.5">
               {ecdictEntry.translation.split("\n").map((line, i) => (
                 <div key={i} className="text-sm leading-relaxed">
@@ -612,7 +658,7 @@ export function TranslationPopover({
           ) : (
             <>
               {loading && (
-                <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span>{t("translation.translating")}</span>
                 </div>
@@ -627,36 +673,40 @@ export function TranslationPopover({
                       {t("settings.dictionaryFallbackHint")}
                     </div>
                   )}
-                  <p className="whitespace-pre-line text-sm leading-relaxed">{translation}</p>
+                  <div className="text-sm leading-relaxed whitespace-pre-line">
+                    <span>{translation}</span>
+                    {/* Float-right inline badge: shares the line with text or smoothly wraps if full */}
+                    <span className="float-right ml-2.5 mt-0.5 mr-2 inline-flex items-center gap-1.5 select-none text-xs text-muted-foreground">
+                      <span className="text-[10px] opacity-70">{providerName}</span>
+                      <button
+                        type="button"
+                        onClick={handleCopy}
+                        className="inline-flex items-center gap-1 rounded border border-border/50 bg-muted/40 px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
+                        title={copied ? t("common.copied", "已复制") : t("common.copy", "复制")}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="h-3 w-3 text-green-500" />
+                            <span className="text-green-500">{t("common.copied", "已复制")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3" />
+                            <span>{t("common.copy", "复制")}</span>
+                          </>
+                        )}
+                      </button>
+                    </span>
+                  </div>
                 </>
               )}
+
+              {!loading && !error && !translation && isEcdictMode && ecdictChecked && !ecdictEntry && !useDictionaryFallback && (
+                <div className="py-1 text-sm text-muted-foreground">
+                  {t("settings.noDictionaryResult", "未在本地词典中找到该词")}
+                </div>
+              )}
             </>
-          )}
-          </div>
-          {/* Bottom row — pinned to the popover bottom, outside the scroll area */}
-          {!loading && !error && translation && (
-            <div className="flex shrink-0 items-center justify-end gap-2 pt-1">
-              <span className="max-w-28 truncate text-[10px] text-muted-foreground">
-                {providerName}
-              </span>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-3 w-3" />
-                    <span>{t("common.copied")}</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3 w-3" />
-                    <span>{t("common.copy")}</span>
-                  </>
-                )}
-              </button>
-            </div>
           )}
         </div>
       </div>
